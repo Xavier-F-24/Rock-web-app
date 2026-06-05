@@ -32,6 +32,16 @@ def capture_print(fn, *args, **kwargs):
 
     return result, buf.getvalue()
 
+def load_game_from_uploaded_file(uploaded_file):
+    """
+    Load a GameState from a Streamlit uploaded JSON file.
+    """
+    if uploaded_file is None:
+        return None
+
+    json_string = uploaded_file.getvalue().decode("utf-8")
+    return game_from_json_string(json_string)
+
 def get_catalog_option_maps(gene_name):
     """
     Return values and label map for REQUEST_TRAIT_CATALOG selectboxes.
@@ -162,6 +172,8 @@ def reset_game(seed=None):
     st.session_state.selected_sell_rock = None
     st.session_state.requested_import_message = ""
 
+    if "uploaded_save" in st.session_state:
+        del st.session_state["uploaded_save"]
 
 def option_labels_and_values(options):
     """
@@ -226,13 +238,23 @@ with st.sidebar:
         for event in game.events[-8:][::-1]:
             st.write(f"- {event}")
 
+    st.divider()
+    st.subheader("Quick Save")
+
+    st.download_button(
+        label="Download Save",
+        data=game_to_json_string(game),
+        file_name=make_save_filename(game),
+        mime="application/json"
+    )
+
 
 # -----------------------------
 # Tabs
 # -----------------------------
 
-tab_board, tab_breeding, tab_market, tab_tables = st.tabs(
-    ["🌳 Game Board", "🧬 Breeding", "💰 Market", "📋 Tables"]
+tab_board, tab_breeding, tab_market, tab_save, tab_tables = st.tabs(
+    ["🌳 Game Board", "🧬 Breeding", "💰 Market", "💾 Save / Load", "📋 Tables"]
 )
 
 
@@ -499,6 +521,57 @@ with tab_market:
     _, inventory_text = capture_print(show_inventory, game)
     st.text(inventory_text)
 
+
+# -----------------------------
+# Save / Load
+# -----------------------------
+
+with tab_save:
+    st.subheader("Save Game")
+
+    save_json = game_to_json_string(game)
+    save_filename = make_save_filename(game)
+
+    st.download_button(
+        label="Download Save JSON",
+        data=save_json,
+        file_name=save_filename,
+        mime="application/json",
+        type="primary"
+    )
+
+    st.caption("This saves your full game state: rocks, genes, lineage, money, potions, queue, and events.")
+
+    st.divider()
+
+    st.subheader("Load Game")
+
+    uploaded_save = st.file_uploader(
+        "Upload a Rock Game JSON save",
+        type=["json"]
+    )
+
+    if uploaded_save is not None:
+        if st.button("Load Uploaded Save", type="primary"):
+            try:
+                loaded_game = load_game_from_uploaded_file(uploaded_save)
+
+                st.session_state.game = loaded_game
+                st.session_state.requested_import_message = ""
+                st.session_state.selected_parent_a = None
+                st.session_state.selected_parent_b = None
+                st.session_state.selected_sell_rock = None
+
+                st.success("Save loaded successfully.")
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Could not load save file: {e}")
+
+    st.warning(
+        "Loading a save replaces the current game in this browser session. "
+        "Download your current save first if you want to keep it."
+    )
 
 # -----------------------------
 # Tables
