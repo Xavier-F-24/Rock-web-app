@@ -9344,7 +9344,80 @@ def make_save_filename(game):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"rock_game_gen{game.generation}_money{game.money}_{timestamp}.json"
 
+def describe_rock_for_breeding(rock):
+    """
+    Compact description of one rock for breeding UI/debug.
+    """
+    evaluate_rock_value(rock)
 
+    status_bits = []
+
+    if is_rock_sold(rock):
+        status_bits.append("SOLD")
+
+    if is_rock_craisen(rock):
+        status_bits.append("CRAISEN")
+
+    if len(status_bits) == 0:
+        status_bits.append("OK")
+
+    parent_text = "Founder/import"
+    if rock.parents is not None:
+        parent_text = f"Parents: #{rock.parents[0]} and #{rock.parents[1]}"
+
+    return (
+        f"#{rock.id} {rock.name} | "
+        f"{get_rock_gender_name(rock)} | "
+        f"Gen {rock.generation} | "
+        f"Value ${rock.sell_value} | "
+        f"{', '.join(status_bits)} | "
+        f"{parent_text}"
+    )
+
+
+def preview_breeding_pair(game, parent_a_id, parent_b_id):
+    """
+    Print a readable breeding-pair validation report.
+    """
+    result = validate_breeding_pair(game, parent_a_id, parent_b_id)
+
+    parent_a = result["parent_a"]
+    parent_b = result["parent_b"]
+
+    print("====================================")
+    print("BREEDING PAIR PREVIEW")
+    print("====================================")
+
+    if parent_a is not None:
+        print("Parent A:", describe_rock_for_breeding(parent_a))
+    else:
+        print(f"Parent A: #{parent_a_id} not found")
+
+    if parent_b is not None:
+        print("Parent B:", describe_rock_for_breeding(parent_b))
+    else:
+        print(f"Parent B: #{parent_b_id} not found")
+
+    print("------------------------------------")
+
+    if result["valid"]:
+        print("Status: VALID PAIR")
+    else:
+        print("Status: INVALID PAIR")
+
+    if len(result["errors"]) > 0:
+        print("\nErrors:")
+        for error in result["errors"]:
+            print(f"- {error}")
+
+    if len(result["warnings"]) > 0:
+        print("\nWarnings:")
+        for warning in result["warnings"]:
+            print(f"- {warning}")
+
+    print("====================================")
+
+    return result
 
 
 
