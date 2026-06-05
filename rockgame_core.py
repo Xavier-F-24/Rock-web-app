@@ -41,7 +41,7 @@ class GameState:
     events: list = field(default_factory=list)
     game_over: bool = False
 
-DEFAULT_STARTING_MONEY = 0
+DEFAULT_STARTING_MONEY = 10
 DEFAULT_MAX_GENERATION = 7
 DEFAULT_MAX_PAIRS_PER_GENERATION = 3
 
@@ -6755,11 +6755,12 @@ def draw_game_tree(
         dragmode="pan"
     )
 
-    fig.show(config={
-        "scrollZoom": True,
-        "displayModeBar": True,
-        "responsive": True
-    })
+    if show:
+        fig.show(config={
+            "scrollZoom": True,
+            "displayModeBar": True,
+            "responsive": True
+        })
 
     return fig
 
@@ -6982,7 +6983,7 @@ STARTER_GENDERS = {
     4: ("Female", "00"),
 }
 
-DEFAULT_STARTING_MONEY = 0
+DEFAULT_STARTING_MONEY = 10
 DEFAULT_MAX_GENERATION = 7
 DEFAULT_MAX_PAIRS_PER_GENERATION = 3
 
@@ -8976,9 +8977,95 @@ def show_game_rocks(game, cols=4, figsize_per_rock=4, include_sold=False):
         sort_by_generation=True
     )
 
+def show_potion_shop():
+    print("====================================")
+    print("POTION SHOP")
+    print("====================================")
+
+    for key, info in POTION_SHOP.items():
+        print(f"{key}: {info['name']} — ${info['cost']}")
+        print(f"   {info['description']}")
+
+    print("====================================")
 
 
+def show_inventory(game):
+    print("====================================")
+    print("INVENTORY")
+    print("====================================")
+    print(f"Cash money: ${game.money}")
 
+    if len(game.potions) == 0:
+        print("No potions.")
+    else:
+        for potion_key, count in game.potions.items():
+            name = POTION_SHOP.get(potion_key, {}).get("name", potion_key)
+            print(f"{name}: {count}")
+
+    print("====================================")
+
+
+def buy_potion(game, potion_key):
+    if potion_key not in POTION_SHOP:
+        print(f"Unknown potion: {potion_key}")
+        return False
+
+    potion = POTION_SHOP[potion_key]
+    cost = potion["cost"]
+
+    if game.money < cost:
+        print(f"Not enough money. Need ${cost}, have ${game.money}.")
+        return False
+
+    game.money -= cost
+    game.potions[potion_key] = game.potions.get(potion_key, 0) + 1
+
+    game.events.append(
+        f"Bought {potion['name']} for ${cost}."
+    )
+
+    print(f"Bought {potion['name']} for ${cost}.")
+    print(f"Cash money is now ${game.money}.")
+
+    return True
+
+def show_rock_money_table(game, include_sold=False):
+    evaluate_all_rocks(game)
+
+    print("================================================================================")
+    print("ROCK MONEY TABLE")
+    print("================================================================================")
+    print(f"{'ID':>4} {'Name':<24} {'Gen':>4} {'Base':>6} {'Sell':>6} {'Score':>6} {'Flags'}")
+    print("--------------------------------------------------------------------------------")
+
+    for rid, rock in sorted(game.rocks.items()):
+        if getattr(rock, "sold", False) and not include_sold:
+            continue
+
+        flags = []
+
+        if getattr(rock, "sold", False):
+            flags.append("SOLD")
+        if getattr(rock, "imported", False):
+            flags.append("IMPORTED")
+        if getattr(rock, "used_as_parent", False):
+            flags.append("BRED_PARENT")
+        if getattr(rock, "is_craisen", 0) == 1:
+            flags.append("CRAISEN")
+
+        flag_text = ", ".join(flags) if len(flags) > 0 else "OK"
+
+        print(
+            f"{rid:>4} "
+            f"{rock.name:<24.24s} "
+            f"{rock.generation:>4} "
+            f"${rock.base_value:>5} "
+            f"${rock.sell_value:>5} "
+            f"${rock.score_value:>5} "
+            f"{flag_text}"
+        )
+
+    print("================================================================================")
 
 
 
