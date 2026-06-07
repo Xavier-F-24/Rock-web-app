@@ -240,13 +240,6 @@ with st.sidebar:
         ]
     )
 
-    st.subheader("Recent Events")
-    if len(game.events) == 0:
-        st.write("No events yet.")
-    else:
-        for event in game.events[-8:][::-1]:
-            st.write(f"- {event}")
-
     st.divider()
     st.subheader("Quick Save")
 
@@ -257,6 +250,15 @@ with st.sidebar:
         mime="application/json"
     )
 
+    st.divider()
+    st.subheader("Recent Events")
+    if len(game.events) == 0:
+        st.write("No events yet.")
+    else:
+        for event in game.events[-8:][::-1]:
+            st.write(f"- {event}")
+
+    
 # -----------------------------
 # Game Board
 # -----------------------------
