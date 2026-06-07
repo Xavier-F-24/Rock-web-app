@@ -6616,7 +6616,7 @@ def draw_game_tree(
     show_sold=True,
     inactive_sold_opacity=0.55,
     show = False,
-    highlight_breeding_queue=True
+    highlight_breeding_queue=False
 ):
     """
     Draw the full game lineage tree.

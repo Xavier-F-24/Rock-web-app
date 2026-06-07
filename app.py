@@ -451,7 +451,7 @@ elif page == "🧬 Breeding":
 
     show_breeding_tree = st.checkbox(
         "Show queue tree on breeding page",
-        value=False
+        value=True
     )
 
     selected_breeding_ids = []
