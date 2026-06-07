@@ -53,7 +53,6 @@ def get_catalog_option_maps(gene_name):
 
     return values, label_by_value
 
-
 def requested_dependency_ok_streamlit(gene_name):
     """
     Streamlit-side dependency logic.
@@ -72,7 +71,6 @@ def requested_dependency_ok_streamlit(gene_name):
         return hair_checked and hair_value != "00"
 
     return True
-
 
 def collect_requested_values_from_streamlit():
     """
@@ -96,7 +94,6 @@ def collect_requested_values_from_streamlit():
 
     return requested_values
 
-
 def clear_requested_import_state():
     """
     Clear requested import checkboxes and pending quote.
@@ -111,7 +108,6 @@ def clear_requested_import_state():
         st.session_state.game.pending_requested_import = None
 
     st.session_state.requested_import_message = ""
-
 
 def show_requested_quote_preview(game):
     """
@@ -157,13 +153,11 @@ def show_requested_quote_preview(game):
     else:
         st.write("**Requested traits:** None")
 
-
 def get_game():
     if "game" not in st.session_state:
         st.session_state.game = create_new_game(seed=None)
 
     return st.session_state.game
-
 
 def reset_game(seed=None):
     st.session_state.game = create_new_game(seed=seed)
@@ -231,6 +225,21 @@ with st.sidebar:
 
     st.divider()
 
+    # -----------------------------
+    # Pages
+    # -----------------------------
+
+    page = st.sidebar.radio(
+        "Page",
+        [
+            "🌳 Game Board",
+            "🧬 Breeding",
+            "💰 Market",
+            "💾 Save / Load",
+            "📋 Tables",
+        ]
+    )
+
     st.subheader("Recent Events")
     if len(game.events) == 0:
         st.write("No events yet.")
@@ -248,21 +257,11 @@ with st.sidebar:
         mime="application/json"
     )
 
-
-# -----------------------------
-# Tabs
-# -----------------------------
-
-tab_board, tab_breeding, tab_market, tab_save, tab_tables = st.tabs(
-    ["🌳 Game Board", "🧬 Breeding", "💰 Market", "💾 Save / Load", "📋 Tables"]
-)
-
-
 # -----------------------------
 # Game Board
 # -----------------------------
 
-with tab_board:
+if page == "🌳 Game Board":
     st.subheader("Family Tree")
 
     fig = draw_game_tree(
@@ -287,7 +286,7 @@ with tab_board:
 # Breeding
 # -----------------------------
 
-with tab_breeding:
+elif page == "🧬 Breeding":
     st.subheader("Breeding")
 
     parent_options = get_breeding_dropdown_options(game)
@@ -361,7 +360,7 @@ with tab_breeding:
 # Market
 # -----------------------------
 
-with tab_market:
+elif page == "💰 Market":
     st.subheader("Sell Rocks")
 
     sell_options = get_sell_dropdown_options(game)
@@ -526,7 +525,7 @@ with tab_market:
 # Save / Load
 # -----------------------------
 
-with tab_save:
+elif page == "💾 Save / Load":
     st.subheader("Save Game")
 
     save_json = game_to_json_string(game)
@@ -577,7 +576,7 @@ with tab_save:
 # Tables
 # -----------------------------
 
-with tab_tables:
+elif page == "📋 Tables":
     st.subheader("Money Table")
 
     _, money_text = capture_print(show_rock_money_table, game)

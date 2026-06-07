@@ -6429,6 +6429,93 @@ def show_money_summary(game):
     print(f"Current score estimate: ${get_final_score_estimate(game)}")
     print("====================================")
 
+def get_rock_render_signature(rock):
+    """
+    Stable signature for a rock's visual appearance.
+
+    If genes change, signature changes.
+    If ID changes, signature changes, which matters because many drawings
+    use rock.id for deterministic variation.
+    """
+    payload = {
+        "id": rock.id,
+        "genes": rock.genes,
+    }
+
+    raw = json.dumps(payload, sort_keys=True)
+
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def ensure_render_cache(game):
+    """
+    Runtime-only image cache.
+    Not saved to JSON.
+    """
+    if not hasattr(game, "render_cache"):
+        game.render_cache = {}
+
+    return game.render_cache
+
+
+def rock_to_image_uri_cached(game, rock):
+    """
+    Cached rock image renderer.
+
+    This avoids regenerating the Matplotlib/base64 image every rerun.
+    """
+    cache = ensure_render_cache(game)
+
+    sig = get_rock_render_signature(rock)
+
+    if sig not in cache:
+        cache[sig] = rock_to_image_uri(rock)
+
+    return cache[sig]
+
+
+def clear_render_cache(game):
+    """
+    Useful if draw_rock changes while debugging.
+    """
+    game.render_cache = {}
+
+def format_selected_phenotype_hover(rock):
+    v = get_visual_phenotype(rock)
+
+    preferred_keys = [
+        "gender",
+        "shape",
+        "size",
+        "color",
+        "eyes",
+        "eye_color",
+        "mouths",
+        "noses",
+        "arms",
+        "wings",
+        "horns",
+        "halos",
+        "ears",
+        "hair",
+        "hair_color",
+        "facial_hair",
+        "wrinkles",
+        "fuzz",
+        "freckles",
+        "stones",
+        "tails",
+        "splitting",
+    ]
+
+    lines = []
+
+    for key in preferred_keys:
+        if key in v:
+            lines.append(f"{key}: {clean_hover_value(v[key])}")
+
+    return "<br>".join(lines)
+
 def draw_game_tree(
     game,
     selected_ids=None,
@@ -6537,7 +6624,7 @@ def draw_game_tree(
         x, y = pos[rid]
 
         if rid not in image_cache:
-            image_cache[rid] = rock_to_image_uri(rock)
+            image_cache[rid] = rock_to_image_uri_cached(game, rock)
 
         size_scale = get_rock_size_scale(rock)
 
@@ -6620,7 +6707,7 @@ def draw_game_tree(
 
         flag_text = ", ".join(flags) if flags else "OK"
 
-        full_phenotype_text = format_full_phenotype_hover(rock)
+        full_phenotype_text = format_selected_phenotype_hover(rock)
 
         text = (
             f"<b>{rock.name} #{rock.id}</b><br>"
