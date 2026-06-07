@@ -6359,6 +6359,69 @@ def get_queue_entry_pair(entry):
 
     return entry
 
+def get_queued_parent_ids(game):
+    """
+    Return all rock IDs currently used in the breeding queue.
+    """
+    queued = set()
+
+    if game is None:
+        return queued
+
+    if not hasattr(game, "breeding_queue") or game.breeding_queue is None:
+        return queued
+
+    for entry in game.breeding_queue:
+        try:
+            a, b = get_queue_entry_pair(entry)
+            queued.add(int(a))
+            queued.add(int(b))
+        except Exception:
+            continue
+
+    #print("pog")
+
+    return queued
+
+def is_rock_queued_for_breeding(game, rock_id):
+    """
+    True if this rock is already in the current generation's breeding queue.
+    """
+    if rock_id is None:
+        return False
+    
+    #print("frog")
+
+    return int(rock_id) in get_queued_parent_ids(game)
+
+def get_queue_labels_by_rock(game):
+    """
+    Return mapping:
+        rock_id -> ["❤1", "❤2", ...]
+
+    Each queued pair gets a number based on queue position.
+    """
+    labels = {}
+
+    if game is None:
+        return labels
+
+    if not hasattr(game, "breeding_queue") or game.breeding_queue is None:
+        return labels
+
+    for i, entry in enumerate(game.breeding_queue, start=1):
+        try:
+            a, b = get_queue_entry_pair(entry)
+        except Exception:
+            continue
+
+        label = f"❤{i}"
+
+        labels.setdefault(int(a), []).append(label)
+        labels.setdefault(int(b), []).append(label)
+
+    return labels
+
 def get_queue_entry_potion(entry):
     """
     Supports old tuple queue entries and new dict entries.
@@ -6367,6 +6430,33 @@ def get_queue_entry_potion(entry):
         return normalize_potion_key(entry.get("potion", None))
 
     return None
+
+    """
+    Return mapping:
+        rock_id -> ["❤1", "❤2", ...]
+
+    Each queued pair gets a number based on queue position.
+    """
+    labels = {}
+
+    if game is None:
+        return labels
+
+    if not hasattr(game, "breeding_queue") or game.breeding_queue is None:
+        return labels
+
+    for i, entry in enumerate(game.breeding_queue, start=1):
+        try:
+            a, b = get_queue_entry_pair(entry)
+        except Exception:
+            continue
+
+        label = f"❤{i}"
+
+        labels.setdefault(int(a), []).append(label)
+        labels.setdefault(int(b), []).append(label)
+
+    return labels
 
 POTION_SHOP = {
     "anti_craisen": {
@@ -6446,7 +6536,6 @@ def get_rock_render_signature(rock):
 
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
-
 def ensure_render_cache(game):
     """
     Runtime-only image cache.
@@ -6456,7 +6545,6 @@ def ensure_render_cache(game):
         game.render_cache = {}
 
     return game.render_cache
-
 
 def rock_to_image_uri_cached(game, rock):
     """
@@ -6472,7 +6560,6 @@ def rock_to_image_uri_cached(game, rock):
         cache[sig] = rock_to_image_uri(rock)
 
     return cache[sig]
-
 
 def clear_render_cache(game):
     """
@@ -6528,7 +6615,8 @@ def draw_game_tree(
     show_labels=True,
     show_sold=True,
     inactive_sold_opacity=0.55,
-    show = False
+    show = False,
+    highlight_breeding_queue=True
 ):
     """
     Draw the full game lineage tree.
@@ -6740,6 +6828,83 @@ def draw_game_tree(
             status_text.append(symbol)
             status_colors.append(get_rock_status_color(rock))
 
+            # Queued breeding pair markers.
+        if highlight_breeding_queue and len(game.breeding_queue) > 0:
+            queue_labels_by_rock = get_queue_labels_by_rock(game)
+
+            # Draw dashed red lines between currently queued future parents.
+            for i, entry in enumerate(game.breeding_queue, start=1):
+                a, b = get_queue_entry_pair(entry)
+
+                if a not in pos or b not in pos:
+                    continue
+
+                xa, ya = pos[a]
+                xb, yb = pos[b]
+
+                # Slightly above rocks so it reads as a planned pair, not lineage.
+                ya2 = ya + 0.78 * rock_image_size
+                yb2 = yb + 0.78 * rock_image_size
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=[xa, xb],
+                        y=[ya2, yb2],
+                        mode="lines",
+                        line=dict(
+                            color="crimson",
+                            width=3,
+                            dash="dot"
+                        ),
+                        hoverinfo="skip",
+                        showlegend=False
+                    )
+                )
+
+                mid_x = 0.5 * (xa + xb)
+                mid_y = 0.5 * (ya2 + yb2)
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=[mid_x],
+                        y=[mid_y + 0.12 * rock_image_size],
+                        mode="text",
+                        text=[f"❤{i}"],
+                        textfont=dict(
+                            size=28,
+                            color="crimson",
+                            family="Arial Black"
+                        ),
+                        hoverinfo="skip",
+                        showlegend=False
+                    )
+                )
+
+            # Draw heart labels on each queued rock.
+            for rid, labels in queue_labels_by_rock.items():
+                if rid not in pos:
+                    continue
+
+                x, y = pos[rid]
+                rock = rocks_dict[rid]
+                size_scale = get_rock_size_scale(rock)
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=[x - 0.42 * rock_image_size * size_scale],
+                        y=[y + 0.42 * rock_image_size * size_scale],
+                        mode="text",
+                        text=[" ".join(labels)],
+                        textfont=dict(
+                            size=24,
+                            color="crimson",
+                            family="Arial Black"
+                        ),
+                        hoverinfo="skip",
+                        showlegend=False
+                    )
+                )
+
     # Invisible hover/labels.
     fig.add_trace(
         go.Scatter(
@@ -6891,6 +7056,16 @@ def add_pair_to_breeding_queue(game, parent_a_id, parent_b_id, potion_key=None):
 
     if pair_already_in_queue(game, parent_a_id, parent_b_id):
         print("That pair is already in the breeding queue.")
+        return False
+
+    queued_ids = get_queued_parent_ids(game)
+
+    if int(parent_a_id) in queued_ids:
+        print(f"Rock #{parent_a_id} is already queued for breeding this generation.")
+        return False
+
+    if int(parent_b_id) in queued_ids:
+        print(f"Rock #{parent_b_id} is already queued for breeding this generation.")
         return False
 
     result = validate_breeding_pair(game, parent_a_id, parent_b_id)
@@ -7988,13 +8163,18 @@ def get_breeding_dropdown_options(game):
     - not puffed
     - not craisen
     - not already used as parent
+    - not already queued this generation
     """
     evaluate_all_rocks(game)
 
+    queued_ids = get_queued_parent_ids(game)
     options = []
 
     for rid, rock in sorted(game.rocks.items()):
         if not is_parent_dropdown_eligible(rock):
+            continue
+
+        if rid in queued_ids:
             continue
 
         gender = get_rock_gender_name(rock)

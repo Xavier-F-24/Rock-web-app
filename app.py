@@ -5,7 +5,6 @@ import streamlit as st
 
 from rockgame_core import *
 
-
 st.set_page_config(
     page_title="Rock Game",
     page_icon="🪨",
@@ -184,6 +183,104 @@ def option_labels_and_values(options):
 
     return values, labels
 
+def get_breeding_candidate_rocks(game, include_queued=True):
+    """
+    Rocks that are biologically/actionably breedable.
+
+    include_queued=True means queued rocks still show in the gallery,
+    but we label them as queued.
+    """
+    evaluate_all_rocks(game)
+
+    candidates = []
+
+    for rid, rock in sorted(game.rocks.items()):
+        if not is_parent_dropdown_eligible(rock):
+            continue
+
+        if not include_queued and is_rock_queued_for_breeding(game, rid):
+            continue
+
+        candidates.append(rock)
+
+    return candidates
+
+def get_streamlit_rock_image_uri(game, rock):
+    """
+    Use cached renderer if available.
+    """
+    try:
+        return rock_to_image_uri_cached(game, rock)
+    except Exception:
+        return rock_to_image_uri(rock)
+
+def render_breeder_card(game, rock, selected=False):
+    """
+    Render one breeder card.
+    """
+    uri = get_streamlit_rock_image_uri(game, rock)
+
+    border = "4px solid gold" if selected else "1px solid #dddddd"
+
+    #print("why")
+
+    queued = is_rock_queued_for_breeding(game, rock.id)
+
+    queue_text = ""
+    if queued:
+        labels = get_queue_labels_by_rock(game).get(rock.id, [])
+        queue_text = f"<div style='color:crimson; font-weight:bold;'>{' '.join(labels)} QUEUED</div>"
+
+    gender_symbol = get_gender_symbol(rock)
+    gender_color = get_gender_color(rock)
+
+    st.markdown(
+        f"""
+        <div style="
+            border:{border};
+            border-radius:12px;
+            padding:8px;
+            text-align:center;
+            background-color:#ffffff;
+            min-height:300px;
+        ">
+            <div style="text-align:right; font-size:24px; color:{gender_color}; font-weight:bold;">
+                {gender_symbol}
+            </div>
+            <img src="{uri}" style="width:150px; max-width:100%;">
+            <div style="font-weight:bold;">#{rock.id} {rock.name}</div>
+            <div>Gen {rock.generation} | ${rock.sell_value}</div>
+            {queue_text}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def render_available_breeders_gallery(game, selected_ids=None, max_cols=4):
+    """
+    Show breeding candidates at the top of the Breeding page.
+    """
+    selected_ids = set(selected_ids or [])
+
+    candidates = get_breeding_candidate_rocks(game, include_queued=True)
+
+    if len(candidates) == 0:
+        st.info("No breeding candidates available.")
+        return
+
+    st.write(f"**Breeding candidates:** {len(candidates)}")
+
+    for start in range(0, len(candidates), max_cols):
+        row = candidates[start:start + max_cols]
+        cols = st.columns(max_cols)
+
+        for col, rock in zip(cols, row):
+            with col:
+                render_breeder_card(
+                    game,
+                    rock,
+                    selected=(rock.id in selected_ids)
+                )
 
 # -----------------------------
 # Header
@@ -351,6 +448,47 @@ elif page == "🧬 Breeding":
     st.subheader("Current Breeding Queue")
     _, queue_text = capture_print(show_breeding_queue, game)
     st.text(queue_text)
+
+    show_breeding_tree = st.checkbox(
+        "Show queue tree on breeding page",
+        value=False
+    )
+
+    selected_breeding_ids = []
+
+    if parent_a is not None:
+        selected_breeding_ids.append(parent_a)
+
+    if parent_b is not None:
+        selected_breeding_ids.append(parent_b)
+
+    with st.expander("Available Breeding Rocks", expanded=True):
+        render_available_breeders_gallery(
+            game,
+            selected_ids=selected_breeding_ids,
+            max_cols=4
+        )
+
+    if show_breeding_tree:
+        fig = draw_game_tree(
+            game,
+            selected_ids=selected_breeding_ids,
+            show_labels=True,
+            show=False,
+            highlight_breeding_queue=True
+        )
+
+        st.plotly_chart(
+            fig,
+            width="stretch",
+            config={
+                "scrollZoom": True,
+                "displayModeBar": True,
+                "responsive": True
+            }
+        )
+
+    st.divider()
 
     if st.button("Breed Generation", type="primary"):
         _, text = capture_print(run_generation_from_ui, game)
