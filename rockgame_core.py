@@ -38,7 +38,7 @@ RANDOM_IMPORT_COST = 8
 REQUESTED_IMPORT_BASE_COST = 8
 REQUESTED_IMPORT_MULTIPLIER = 2.0
 
-CHILD_DEATH_CHANCE = 0.10
+CHILD_DEATH_CHANCE = 0.05
 CLUTCH_MEAN = 1.5
 CLUTCH_STD = 2.0
 MAX_CLUTCH_SIZE = None
@@ -93,22 +93,22 @@ POTION_SHOP = {
     "anti_craisen": {
         "name": "Anti-Craisen Potion",
         "cost": 5,
-        "description": "Later: reduce or reroll craisen offspring risk."
+        "description": "Reduce or reroll craisen offspring risk."
     },
     "mutation": {
         "name": "Mutation Potion",
-        "cost": 2,
-        "description": "Later: increase mutation chance for one breeding pair."
+        "cost": 5,
+        "description": "Increase mutation chance for one breeding pair."
     },
     "fertility": {
         "name": "Fertility Potion",
         "cost": 3,
-        "description": "Later: produce extra child from one pair."
+        "description": "Produce extra child from one pair."
     },
     "reroll": {
         "name": "Reroll Potion",
         "cost": 3,
-        "description": "Later: reroll clutch size from one pair."
+        "description": "Reroll clutch size from one pair."
     },
 }
 
@@ -736,9 +736,6 @@ def get_rock_phenotype(rock: Rock) -> Dict[str, str]:
 
     rock.rock_cost += 1 #THE ROCK EXISTS!
 
-    if rock.is_craisen == 1:
-      rock.rock_cost *= 0
-
     #print(rock.rock_cost)
     return phenotype
 
@@ -803,8 +800,11 @@ def check_craisen(rock):
             left = raw[:2]
             right = raw[2:4]
 
-            if left == right:
+            if left == right and random.random() < 0.5:
                 return True
+
+    if rock.is_craisen == 1:
+        rock.rock_cost *= 0
 
     return False
 
@@ -8294,7 +8294,7 @@ SPORE_PUFF_CHANCE = 0.25   # tune later; 25% per spore clone
 
 POTION_MUTATION_RATE = 0.12
 FERTILITY_EXTRA_CHILDREN = 1
-ANTI_CRAISEN_REROLLS = 3
+ANTI_CRAISEN_REROLLS = 2
 
 RANDOM_IMPORT_COST = 8
 CUSTOM_IMPORT_MULTIPLIER = 2.0
