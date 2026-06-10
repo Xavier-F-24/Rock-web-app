@@ -4071,7 +4071,7 @@ def draw_eyes(ctx):
     drawn_positions = []
 
     for ex, ey in eye_positions:
-        sclera_color = "white"
+        sclera_color = eye_color #"white"
 
         if eye_color_name == "callus":
             sclera_color = "tan"
