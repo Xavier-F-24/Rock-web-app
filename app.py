@@ -400,6 +400,8 @@ st.caption("Seven generations. Breed wisely. Sell well. Avoid craisen chaos.")
 
 game = get_game()
 
+
+
 top_left, top_mid, top_right = st.columns([1, 1, 1])
 
 with top_left:
@@ -421,6 +423,19 @@ with top_right:
 
 with st.sidebar:
     st.header("Game Status")
+
+    ensure_player_profile_state(game)
+
+    st.markdown("### Player Profile")
+
+    player_name_input = st.text_input(
+        "Player name",
+        value=getattr(game, "player_name", ""),
+        placeholder="Type your name..."
+    )
+
+    if player_name_input != getattr(game, "player_name", ""):
+        set_player_name(game, player_name_input)
 
     evaluate_all_rocks(game)
 
@@ -452,7 +467,7 @@ with st.sidebar:
     st.download_button(
         label="Download Save",
         data=game_to_json_string(game),
-        file_name=make_save_filename(game),
+        file_name=get_game_save_filename(game),
         mime="application/json"
     )
 
@@ -852,7 +867,7 @@ elif page == "💾 Save / Load":
     st.subheader("Save Game")
 
     save_json = game_to_json_string(game)
-    save_filename = make_save_filename(game)
+    save_filename = get_game_save_filename(game)
 
     st.download_button(
         label="Download Save JSON",

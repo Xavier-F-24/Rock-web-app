@@ -54,6 +54,9 @@ PAD_FRAC = 0.2
 
 @dataclass
 class GameState:
+    player_name: str = ""
+    cabal_curse_enabled: bool = False
+
     rocks: Dict[int, Rock] = field(default_factory=dict)
     next_id: int = 1
 
@@ -8272,6 +8275,111 @@ import random
 import numpy as np
 import math
 
+# ============================================================
+# PLAYER PROFILE / CABAL CURSE GROUNDWORK
+# ============================================================
+CURSED_PLAYER_NAMES = {"tristan", "t"}
+
+
+def normalize_player_name(name):
+    """
+    Normalize player names for save files and curse checks.
+    """
+    return str(name or "").strip().lower()
+
+
+def sanitize_player_name_for_file(name):
+    """
+    Make a safe player name for save filenames.
+    """
+    name = str(name or "").strip()
+
+    if name == "":
+        return "unnamed_player"
+
+    safe_chars = []
+
+    for ch in name:
+        if ch.isalnum():
+            safe_chars.append(ch.lower())
+        elif ch in [" ", "-", "_"]:
+            safe_chars.append("_")
+
+    safe = "".join(safe_chars)
+
+    while "__" in safe:
+        safe = safe.replace("__", "_")
+
+    safe = safe.strip("_")
+
+    if safe == "":
+        return "unnamed_player"
+
+    return safe
+
+
+def get_game_save_filename(game):
+    """
+    Build player-specific save filename.
+    """
+    player_slug = sanitize_player_name_for_file(
+        getattr(game, "player_name", "")
+    )
+
+    generation = int(getattr(game, "generation", 0))
+
+    return f"rocks_{player_slug}_gen{generation}.json"
+
+
+def ensure_player_profile_state(game):
+    """
+    Keep old saves compatible after adding player_name.
+    """
+    if not hasattr(game, "player_name") or game.player_name is None:
+        game.player_name = ""
+
+    if not hasattr(game, "cabal_curse_enabled") or game.cabal_curse_enabled is None:
+        game.cabal_curse_enabled = False
+
+    return game
+
+
+def set_player_name(game, player_name):
+    """
+    Store player name on the game.
+    """
+    ensure_player_profile_state(game)
+    game.player_name = str(player_name or "").strip()
+    return game
+
+
+def is_cabal_cursed(game):
+    """
+    Curse groundwork.
+
+    Currently only activates if:
+    - cabal_curse_enabled is manually True
+    OR
+    - normalized player name is in CURSED_PLAYER_NAMES
+
+    Since CURSED_PLAYER_NAMES is empty by default, nobody is targeted yet.
+    """
+    ensure_player_profile_state(game)
+
+    if bool(getattr(game, "cabal_curse_enabled", False)):
+        return True
+
+    name = normalize_player_name(getattr(game, "player_name", ""))
+
+    cursed_names = {
+        normalize_player_name(n)
+        for n in CURSED_PLAYER_NAMES
+    }
+
+    return name in cursed_names
+
+
+
 STARTER_GENDERS = {
     1: ("Male", "01"),
     2: ("Female", "00"),
@@ -8283,12 +8391,24 @@ DEFAULT_STARTING_MONEY = 10
 DEFAULT_MAX_GENERATION = 7
 DEFAULT_MAX_PAIRS_PER_GENERATION = 3
 
-CHILD_DEATH_CHANCE = 0.05   # change this later for balance
-CLUTCH_MEAN = 1.5
-CLUTCH_STD = 2.0
+if is_cabal_cursed:
+    CHILD_DEATH_CHANCE = 0.08 
+else:
+    CHILD_DEATH_CHANCE = 0.05 
+if is_cabal_cursed:
+    CLUTCH_MEAN = 1.1
+else:
+    CLUTCH_MEAN = 1.5
+if is_cabal_cursed:
+    CLUTCH_STD = 1.5
+else:
+    CLUTCH_STD = 2.0
 MAX_CLUTCH_SIZE = None      # set to e.g. 8 if you want to cap chaos
 SPORE_CLONE_COUNT = 3
-SPORE_PUFF_CHANCE = 0.25   # tune later; 25% per spore clone
+if is_cabal_cursed:
+    SPORE_PUFF_CHANCE = 0.35
+else:
+    SPORE_PUFF_CHANCE = 0.25
 
 #IMPORT_ROCK_COST = 10
 
@@ -8303,6 +8423,26 @@ IMPORT_ROCK_COST = RANDOM_IMPORT_COST
 
 REQUESTED_IMPORT_BASE_COST = 8
 REQUESTED_IMPORT_MULTIPLIER = 2.0
+
+
+
+
+
+
+
+# Later:
+# CURSED_PLAYER_NAMES = {"your_brothers_name_here"}
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -9186,6 +9326,8 @@ def create_new_game(
     evaluate_all_rocks(game)
 
     ensure_market_state(game)
+
+    ensure_player_profile_state(game)
 
     game.events.append("New game started with 4 starter rocks.")
 
@@ -11496,6 +11638,9 @@ def game_to_dict(game):
         "saved_at": datetime.now().isoformat(timespec="seconds"),
 
         "game": {
+            "player_name": getattr(game, "player_name", ""),
+            "cabal_curse_enabled": bool(getattr(game, "cabal_curse_enabled", False)),
+            "market_pod_used_generations": list(getattr(game, "market_pod_used_generations", [])),
             "generation": int(game.generation),
             "max_generation": int(game.max_generation),
             "money": int(game.money),
@@ -11543,6 +11688,13 @@ def game_from_dict(save_data):
         events=list(g.get("events", [])),
         game_over=bool(g.get("game_over", False))
     )
+
+    game.player_name = data.get("player_name", "")
+    game.cabal_curse_enabled = bool(data.get("cabal_curse_enabled", False))
+    game.market_pod_used_generations = data.get("market_pod_used_generations", [])
+
+    ensure_market_state(game)
+    ensure_player_profile_state(game)
 
     # Rebuild rocks
     for rock_data in g.get("rocks", []):
