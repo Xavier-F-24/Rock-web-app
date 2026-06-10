@@ -8475,8 +8475,8 @@ MARKET_POD_TIERS = {
         "price": 3,
         "min_parent_value": 1,
         "max_parent_value": int(m.ceil(2 + random.random() * 2)),
-        "min_count": 1,
-        "max_count": 3,
+        "min_count": 0,
+        "max_count": 2,
     },
 
     "medium": {
@@ -8486,7 +8486,7 @@ MARKET_POD_TIERS = {
         "min_parent_value": int(m.ceil(2 + random.random() * 2)),
         "max_parent_value": int(m.ceil(6 + random.random() * 3)),
         "min_count": 0,
-        "max_count": 3,
+        "max_count": 2,
     },
 
     "high": {
@@ -9022,15 +9022,6 @@ def buy_market_pod(game, offer_id):
     add_rock_to_game_with_new_id(game, parent_a)
     add_rock_to_game_with_new_id(game, parent_b)
 
-    #parent_a.used_as_parent = True
-    #parent_b.used_as_parent = True
-    #parent_a.market_guest = True
-    #parent_b.market_guest = True
-    #parent_a.owned = False
-    #parent_b.owned = False
-
-    print(f"Market parent A real id: #{parent_a.id}")
-    print(f"Market parent B real id: #{parent_b.id}")
 
     children = breed_guest_parent_pair_for_market(
         game,
