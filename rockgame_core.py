@@ -11682,9 +11682,9 @@ def game_from_dict(save_data):
         game_over=bool(g.get("game_over", False))
     )
 
-    game.player_name = data.get("player_name", "")
-    game.cabal_curse_enabled = bool(data.get("cabal_curse_enabled", False))
-    game.market_pod_used_generations = data.get("market_pod_used_generations", [])
+    #game.player_name = data.get("player_name", "")
+    #game.cabal_curse_enabled = bool(data.get("cabal_curse_enabled", False))
+    #game.market_pod_used_generations = data.get("market_pod_used_generations", [])
 
     ensure_market_state(game)
     ensure_player_profile_state(game)
