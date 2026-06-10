@@ -8426,28 +8426,6 @@ REQUESTED_IMPORT_MULTIPLIER = 2.0
 
 
 
-
-
-
-
-# Later:
-# CURSED_PLAYER_NAMES = {"your_brothers_name_here"}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def rebuild_used_as_parent_flags(game):
     """
     Rebuild used_as_parent flags from existing child parent links.
@@ -8608,13 +8586,28 @@ import math as m
 # BREEDING POD MARKET
 # ============================================================
 
+if is_cabal_cursed:
+    low_cost_ceil = int(m.ceil(2 + random.random() * 1.3))
+else:
+    low_cost_ceil = int(m.ceil(2 + random.random() * 2))
+
+if is_cabal_cursed:
+    med_cost_ceil = int(m.ceil(5 + random.random() * 2.3))
+else:
+    med_cost_ceil = int(m.ceil(6 + random.random() * 3))
+
+if is_cabal_cursed:
+    high_cost_floor = int(m.ceil(4 + random.random() * 2))
+else:
+    high_cost_floor = int(m.ceil(6 + random.random() * 4))
+
 MARKET_POD_TIERS = {
     "low": {
         "name": "Craigslist Gravel",
         "tagline": "Cheap, chaotic, and questionably damp.",
         "price": 3,
         "min_parent_value": 1,
-        "max_parent_value": int(m.ceil(2 + random.random() * 2)),
+        "max_parent_value": low_cost_ceil,
         "min_count": 0,
         "max_count": 2,
     },
@@ -8624,7 +8617,7 @@ MARKET_POD_TIERS = {
         "tagline": "Decent family lines. Probably has a LinkedIn.",
         "price": 6,
         "min_parent_value": int(m.ceil(2 + random.random() * 2)),
-        "max_parent_value": int(m.ceil(6 + random.random() * 3)),
+        "max_parent_value": med_cost_ceil,
         "min_count": 0,
         "max_count": 2,
     },
@@ -8633,7 +8626,7 @@ MARKET_POD_TIERS = {
         "name": "Boulder Elite",
         "tagline": "Pedigreed, polished, and financially insufferable.",
         "price": 10,
-        "min_parent_value": int(m.ceil(6 + random.random() * 4)),
+        "min_parent_value": high_cost_floor,
         "max_parent_value": 999,
         "min_count": 0,
         "max_count": 2,
