@@ -651,7 +651,72 @@ elif page == "💰 Market":
 
     st.divider()
 
-    with st.expander("🧾 Requested Rock Import", expanded=False):
+    st.subheader("Breeding Pod Market")
+
+    generate_market_pods_for_generation(game)
+
+    if game.pending_market_pod is not None:
+        pending = game.pending_market_pod
+
+        st.warning(
+            f"Pending pod: {pending['name']}. Choose one child to keep."
+        )
+
+        st.write("### Guest Parents")
+
+        parent_a = game.rocks[pending["parent_a_id"]]
+        parent_b = game.rocks[pending["parent_b_id"]]
+
+        cols = st.columns(2)
+
+        with cols[0]:
+            st.image(rock_to_image_uri_cached(game, parent_a), caption=f"Guest Parent A #{parent_a.id}")
+
+        with cols[1]:
+            st.image(rock_to_image_uri_cached(game, parent_b), caption=f"Guest Parent B #{parent_b.id}")
+
+        st.write("### Choose One Child")
+
+        children = pending["children"]
+
+        child_cols = st.columns(min(4, max(1, len(children))))
+
+        for i, child in enumerate(children):
+            with child_cols[i % len(child_cols)]:
+                st.image(rock_to_image_uri(child), caption=f"Candidate {i + 1} | ${child.sell_value}")
+
+                if st.button(f"Keep Candidate {i + 1}", key=f"keep_market_child_{i}"):
+                    _, text = capture_print(choose_market_pod_child, game, i)
+                    st.text(text)
+                    st.rerun()
+
+    else:
+        st.caption("Outside breeders refresh each generation. You buy the pod, they keep the leftovers. Brutal.")
+
+        for offer in game.market_pods:
+            if offer.get("used", False):
+                continue
+
+            tier = offer["tier"]
+
+            with st.container(border=True):
+                st.write(f"### {offer['name']}")
+                st.caption(offer["tagline"])
+                st.write(f"**Price:** ${offer['price']}")
+                st.write("Parents hidden until purchase.")
+                st.write("You may keep exactly one child from the clutch.")
+
+                if st.button(
+                    f"Buy {offer['name']} Pod - ${offer['price']}",
+                    key=f"buy_pod_{offer['offer_id']}"
+                ):
+                    _, text = capture_print(buy_market_pod, game, offer["offer_id"])
+                    st.text(text)
+                    st.rerun()
+
+    st.divider()
+
+    with st.expander("🧾 Requested Rock Import - NOW FOR LIL SHITTERS", expanded=False):
         st.write(
             "Check traits to force them. Unchecked traits are suppressed, "
             "but many can still carry hidden recessive alleles."

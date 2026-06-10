@@ -29,18 +29,6 @@ class Rock:
     parents: Optional[Tuple[int, int]] = None
     generation: int = 0
 
-@dataclass
-class GameState:
-    rocks: Dict[int, Rock] = field(default_factory=dict)
-    next_id: int = 1
-    generation: int = 0
-    max_generation: int = 7
-    money: int = 0
-    max_pairs_per_generation: int = 3
-    breeding_queue: list = field(default_factory=list)
-    potions: dict = field(default_factory=dict)
-    events: list = field(default_factory=list)
-    game_over: bool = False
 
 DEFAULT_STARTING_MONEY = 10
 DEFAULT_MAX_GENERATION = 7
@@ -63,6 +51,43 @@ FERTILITY_EXTRA_CHILDREN = 2
 ANTI_CRAISEN_REROLLS = 3
 
 PAD_FRAC = 0.2
+
+@dataclass
+class GameState:
+    rocks: Dict[int, Rock] = field(default_factory=dict)
+    next_id: int = 1
+
+    generation: int = 0
+    max_generation: int = DEFAULT_MAX_GENERATION
+
+    money: int = DEFAULT_STARTING_MONEY
+
+    max_pairs_per_generation: int = DEFAULT_MAX_PAIRS_PER_GENERATION
+    breeding_queue: List[Tuple[int, int]] = field(default_factory=list)
+
+    potions: Dict[str, int] = field(default_factory=dict)
+    events: List[str] = field(default_factory=list)
+
+    game_over: bool = False
+
+    market_pods: List[dict] = field(default_factory=list)
+    pending_market_pod: Optional[dict] = None
+
+"""
+@dataclass
+class GameState:
+    rocks: Dict[int, Rock] = field(default_factory=dict)
+    next_id: int = 1
+    generation: int = 0
+    max_generation: int = 7
+    money: int = 0
+    max_pairs_per_generation: int = 3
+    breeding_queue: list = field(default_factory=list)
+    potions: dict = field(default_factory=dict)
+    events: list = field(default_factory=list)
+    game_over: bool = False
+"""
+
 
 POTION_SHOP = {
     "anti_craisen": {
@@ -1022,6 +1047,46 @@ def get_visual_phenotype(rock):
 
     return v
 
+
+def ensure_rock_game_attributes(rock, imported=False, sold=False):
+    """
+    Adds gameplay attributes to a Rock object if they do not already exist.
+    """
+    if not hasattr(rock, "sold"):
+        rock.sold = sold
+
+    if not hasattr(rock, "imported"):
+        rock.imported = imported
+
+    if not hasattr(rock, "used_as_parent"):
+        rock.used_as_parent = False
+
+    if not hasattr(rock, "dead"):
+        rock.dead = False
+
+    if not hasattr(rock, "death_reason"):
+        rock.death_reason = None
+
+    if not hasattr(rock, "base_value"):
+        rock.base_value = 0
+
+    if not hasattr(rock, "sell_value"):
+        rock.sell_value = 0
+
+    if not hasattr(rock, "score_value"):
+        rock.score_value = 0
+
+    if not hasattr(rock, "is_craisen"):
+        rock.is_craisen = 0
+
+    if not hasattr(rock, "rock_cost"):
+        rock.rock_cost = 0
+
+    if not hasattr(rock, "gender"):
+        rock.gender = None
+
+    return rock
+
 def evaluate_rock_value(rock):
     """
     Evaluate rock value for gameplay.
@@ -1071,6 +1136,7 @@ def evaluate_rock_value(rock):
         rock.score_value = rock.base_value
 
     return rock.sell_value
+
 
 def rebuild_used_as_parent_flags(game):
     """
@@ -5352,8 +5418,8 @@ def draw_rock(rock, ax=None, show_genes=False, normalize_size=True):
     if ax is None:
         fig, ax = plt.subplots(figsize=(4, 4))
 
-    rng = np.random.default_rng(10_000 + rock.id)
-    py_rng = random.Random(20_000 + rock.id)
+    rng = np.random.default_rng(1_000_000 + rock.id)
+    py_rng = random.Random(200_000 + rock.id)
 
     v = get_visual_phenotype(rock)
 
@@ -6135,9 +6201,25 @@ def apply_reroll_to_clutch(clutch_size, potion_key):
 
 def get_rock(game, rock_id):
     """
-    Safe rock getter.
+    Safely get a rock by id.
+
+    Accepts:
+    - integer id
+    - numeric string id
+    - Rock object
     """
-    return game.rocks.get(int(rock_id), None)
+    if rock_id is None:
+        return None
+
+    if hasattr(rock_id, "id"):
+        rock_id = rock_id.id
+
+    try:
+        rock_id = int(rock_id)
+    except Exception:
+        return None
+
+    return game.rocks.get(rock_id, None)
 
 def get_parent_ids(rock):
     """
@@ -6914,8 +6996,8 @@ def validate_breeding_pair(
     game,
     parent_a_id,
     parent_b_id,
-    block_siblings=True,
-    block_parent_child=True,
+    block_siblings=False,
+    block_parent_child=False,
     require_opposite_gender=True,
     warn_related=True
 ):
@@ -7033,7 +7115,9 @@ def breed_child_for_game(
     parent_a_id,
     parent_b_id,
     mutation_rate=0.02,
-    child_name=None
+    child_name=None,
+    Not_importing = True,
+    negative_id = None
 ):
     """
     Breed one child from a valid parent pair.
@@ -7048,8 +7132,11 @@ def breed_child_for_game(
     parent_a = result["parent_a"]
     parent_b = result["parent_b"]
 
-    child_id = game.next_id
-    game.next_id += 1
+    if Not_importing == True:
+        child_id = game.next_id
+        game.next_id += 1
+    else:
+        child_id = negative_id
 
     child_genes = make_child_genome(
         parent_a,
@@ -7068,7 +7155,8 @@ def breed_child_for_game(
     ensure_rock_game_attributes(child, imported=False, sold=False)
     evaluate_rock_value(child)
 
-    game.rocks[child_id] = child
+    if Not_importing == True:
+        game.rocks[child_id] = child
 
     return child
 
@@ -7491,6 +7579,59 @@ def format_selected_phenotype_hover(rock):
 
     return "<br>".join(lines)
 
+
+
+def normalize_parent_pair_for_tree(parent_pair):
+    """
+    Convert a parent-pair-like value into a clean (p1, p2) tuple.
+
+    Returns None if the value is empty, malformed, or not exactly two ids.
+
+    Handles:
+        None
+        ()
+        []
+        (1, 2)
+        ["1", "2"]
+        {"a": 1, "b": 2}
+        Rock objects with .id
+    """
+    if parent_pair is None:
+        return None
+
+    if isinstance(parent_pair, dict):
+        raw_values = list(parent_pair.values())
+    elif isinstance(parent_pair, (list, tuple, set)):
+        raw_values = list(parent_pair)
+    else:
+        raw_values = [parent_pair]
+
+    cleaned = []
+
+    for value in raw_values:
+        if value is None:
+            continue
+
+        if hasattr(value, "id"):
+            value = value.id
+
+        try:
+            cleaned.append(int(value))
+        except Exception:
+            continue
+
+    if len(cleaned) != 2:
+        return None
+
+    p1, p2 = cleaned
+
+    if p1 == p2:
+        return None
+
+    return (p1, p2)
+
+
+
 def draw_game_tree(
     game,
     selected_ids=None,
@@ -7548,6 +7689,11 @@ def draw_game_tree(
 
     # Draw family lines.
     for parent_pair, child_ids in sorted(families.items()):
+        parent_pair = normalize_parent_pair_for_tree(parent_pair)
+
+        if parent_pair is None:
+            continue
+
         p1, p2 = parent_pair
 
         if p1 not in pos or p2 not in pos:
@@ -8158,112 +8304,9 @@ IMPORT_ROCK_COST = RANDOM_IMPORT_COST
 REQUESTED_IMPORT_BASE_COST = 8
 REQUESTED_IMPORT_MULTIPLIER = 2.0
 
-@dataclass
-class GameState:
-    rocks: Dict[int, Rock] = field(default_factory=dict)
-    next_id: int = 1
 
-    generation: int = 0
-    max_generation: int = DEFAULT_MAX_GENERATION
 
-    money: int = DEFAULT_STARTING_MONEY
 
-    max_pairs_per_generation: int = DEFAULT_MAX_PAIRS_PER_GENERATION
-    breeding_queue: List[Tuple[int, int]] = field(default_factory=list)
-
-    potions: Dict[str, int] = field(default_factory=dict)
-    events: List[str] = field(default_factory=list)
-
-    game_over: bool = False
-
-def ensure_rock_game_attributes(rock, imported=False, sold=False):
-    """
-    Adds gameplay attributes to a Rock object if they do not already exist.
-    """
-    if not hasattr(rock, "sold"):
-        rock.sold = sold
-
-    if not hasattr(rock, "imported"):
-        rock.imported = imported
-
-    if not hasattr(rock, "used_as_parent"):
-        rock.used_as_parent = False
-
-    if not hasattr(rock, "dead"):
-        rock.dead = False
-
-    if not hasattr(rock, "death_reason"):
-        rock.death_reason = None
-
-    if not hasattr(rock, "base_value"):
-        rock.base_value = 0
-
-    if not hasattr(rock, "sell_value"):
-        rock.sell_value = 0
-
-    if not hasattr(rock, "score_value"):
-        rock.score_value = 0
-
-    if not hasattr(rock, "is_craisen"):
-        rock.is_craisen = 0
-
-    if not hasattr(rock, "rock_cost"):
-        rock.rock_cost = 0
-
-    if not hasattr(rock, "gender"):
-        rock.gender = None
-
-    return rock
-
-def evaluate_rock_value(rock):
-    """
-    Evaluate rock value for gameplay.
-
-    Dead, craisen, sold, and bred-parent rocks are worth $0.
-    """
-    ensure_rock_game_attributes(rock)
-
-    rock.rock_cost = 0
-    rock.is_craisen = 0
-
-    try:
-        phenotype = get_rock_phenotype(rock)
-    except Exception as e:
-        phenotype = get_visual_phenotype(rock)
-        rock.rock_cost = 1
-        rock.is_craisen = 1 if phenotype.get("is_craisen", False) else 0
-        print(f"Value warning for rock #{rock.id}: {e}")
-
-    try:
-        visual = get_visual_phenotype(rock)
-        if visual.get("is_craisen", False):
-            rock.is_craisen = 1
-    except Exception:
-        pass
-
-    rock.base_value = max(0, int(getattr(rock, "rock_cost", 0)))
-
-    if getattr(rock, "dead", False):
-        rock.sell_value = 0
-        rock.score_value = 0
-
-    elif getattr(rock, "is_craisen", 0) == 1:
-        rock.sell_value = 0
-        rock.score_value = 0
-
-    elif getattr(rock, "sold", False):
-        rock.sell_value = 0
-        rock.score_value = 0
-
-    elif getattr(rock, "used_as_parent", False):
-        rock.sell_value = 0
-        rock.score_value = 0
-
-    else:
-        rock.sell_value = rock.base_value
-        rock.score_value = rock.base_value
-
-    return rock.sell_value
 
 def rebuild_used_as_parent_flags(game):
     """
@@ -8420,6 +8463,680 @@ def create_spore_clones(
 
     return clones, puffed_clones
 
+import math as m
+# ============================================================
+# BREEDING POD MARKET
+# ============================================================
+
+MARKET_POD_TIERS = {
+    "low": {
+        "name": "Craigslist Gravel",
+        "tagline": "Cheap, chaotic, and questionably damp.",
+        "price": 2,
+        "min_parent_value": 1,
+        "max_parent_value": int(m.ceil(2 + random.random() * 2)),
+        "min_count": 1,
+        "max_count": 3,
+    },
+
+    "medium": {
+        "name": "Respectable Gravel",
+        "tagline": "Decent family lines. Probably has a LinkedIn.",
+        "price": 6,
+        "min_parent_value": int(m.ceil(2 + random.random() * 2)),
+        "max_parent_value": int(m.ceil(6 + random.random() * 3)),
+        "min_count": 0,
+        "max_count": 3,
+    },
+
+    "high": {
+        "name": "Boulder Elite",
+        "tagline": "Pedigreed, polished, and financially insufferable.",
+        "price": 10,
+        "min_parent_value": int(m.ceil(6 + random.random() * 4)),
+        "max_parent_value": 999,
+        "min_count": 0,
+        "max_count": 2,
+    },
+}
+
+
+MARKET_GUEST_PARENT_SYMBOL = "NPC"
+
+def get_current_breedable_generation(game):
+    """
+    The generation currently available to the player for breeding.
+
+    Market children should enter this generation so they can be used
+    immediately like imported rocks.
+    """
+    return int(getattr(game, "generation", 0))
+
+
+def set_market_lineage_generations(game, parent_a, parent_b, child):
+    """
+    Place a kept market child in the current breedable generation.
+
+    Guest parents are lineage-only rocks. They are shown as the child's
+    parents, but they are not player-owned and cannot breed/sell.
+    """
+    current_gen = get_current_breedable_generation(game)
+
+    # The kept child is an import into the current breeding pool.
+    child.generation = current_gen
+
+    # Guest parents should appear as lineage parents.
+    # If we are past generation 0, put them one row above.
+    # If current_gen is 0, keep them at 0 to avoid negative generation rows.
+    parent_gen = max(0, current_gen - 1)
+
+    parent_a.generation = parent_gen
+    parent_b.generation = parent_gen
+
+    return parent_a, parent_b, child
+
+
+
+def force_rock_gender(rock, gender_name):
+    """
+    Force a rock to male or female.
+
+    Game convention:
+        female = 00
+        male = 01
+    """
+    gender_name = str(gender_name).lower().strip()
+
+    if gender_name in ["male", "m", "1"]:
+        rock.genes["gender"] = "01"
+        rock.gender = express_gender_from_gene("01")
+
+    elif gender_name in ["female", "f", "0"]:
+        rock.genes["gender"] = "00"
+        rock.gender = express_gender_from_gene("00")
+
+    else:
+        raise ValueError(f"Unknown gender_name: {gender_name}")
+
+    return rock
+
+
+def reset_rock_as_market_founder(rock):
+    """
+    Market guest parents should be clean outside-founder rocks.
+
+    They should not accidentally carry parent-child/sibling relationships.
+    They should also not have empty parent tuples that confuse the tree.
+    """
+    # Use None for founder lineage, not empty tuples.
+    rock.parents = None
+    rock.parent_ids = None
+    rock.parent_pair = None
+    rock.parent_id_pair = None
+
+    for attr in [
+        "parent_a_id",
+        "parent_b_id",
+        "parent1_id",
+        "parent2_id",
+        "mother_id",
+        "father_id",
+        "mom_id",
+        "dad_id",
+        "parent_a",
+        "parent_b",
+        "mother",
+        "father",
+    ]:
+        if hasattr(rock, attr):
+            setattr(rock, attr, None)
+
+    return rock
+
+
+
+
+def ensure_market_state(game):
+    """
+    Ensure game has market fields.
+    """
+    if not hasattr(game, "market_pods") or game.market_pods is None:
+        game.market_pods = []
+
+    if not hasattr(game, "pending_market_pod"):
+        game.pending_market_pod = None
+
+    return game
+
+
+def clear_market_state(game):
+    """
+    Clear current market pod offers and any unresolved pending pod.
+    """
+    game.market_pods = []
+    game.pending_market_pod = None
+    return game
+
+
+def sync_next_rock_id(game):
+    """
+    Ensure game.next_id is always above every positive rock id currently in game.rocks.
+    """
+    if not hasattr(game, "rocks") or game.rocks is None:
+        game.rocks = {}
+
+    if not hasattr(game, "next_id") or game.next_id is None:
+        game.next_id = 1
+
+    used_ids = []
+
+    for key, rock in game.rocks.items():
+        try:
+            used_ids.append(int(key))
+        except Exception:
+            pass
+
+        try:
+            used_ids.append(int(getattr(rock, "id", 0)))
+        except Exception:
+            pass
+
+    positive_used_ids = [rid for rid in used_ids if rid > 0]
+
+    if len(positive_used_ids) > 0:
+        game.next_id = max(int(game.next_id), max(positive_used_ids) + 1)
+
+    return game.next_id
+
+
+def reserve_rock_id(game):
+    """
+    Reserve and return the next real positive rock id.
+    """
+    sync_next_rock_id(game)
+
+    rid = int(game.next_id)
+    game.next_id += 1
+
+    return rid
+
+
+def assign_new_rock_id(game, rock):
+    """
+    Assign a real unique positive id to a rock.
+    """
+    rock.id = reserve_rock_id(game)
+    return rock.id
+
+
+def add_rock_to_game_with_new_id(game, rock):
+    """
+    Assign a new unique id and add the rock to game.rocks.
+    """
+    assign_new_rock_id(game, rock)
+    game.rocks[int(rock.id)] = rock
+    return rock
+
+def apply_requested_import_policy(rock, requested_values):
+    """
+    Apply requested-import logic to a random rock.
+
+    Checked genes:
+        force selected expression.
+
+    Dependency-safe:
+        eye_color ignored unless eyes requested.
+        hair_color ignored unless hair/facial_hair/brows requested.
+        hair_texture ignored unless hair/facial_hair requested.
+
+    Unchecked catalog genes:
+        suppress expression while preserving recessive carrier alleles where possible.
+    """
+    if requested_values is None:
+        requested_values = {}
+
+    # Backend safety: remove invalid dependent requests.
+    filtered_requested_values = {}
+
+    for gene_name, gene_value in requested_values.items():
+        if requested_dependency_satisfied_from_values(gene_name, requested_values):
+            filtered_requested_values[gene_name] = gene_value
+
+    requested_values = filtered_requested_values
+
+    actual_forced_values = {}
+
+    for gene_name in REQUEST_TRAIT_CATALOG.keys():
+        if gene_name not in rock.genes:
+            continue
+
+        if gene_name in requested_values:
+            actual_value = make_requested_gene_value(
+                gene_name,
+                requested_values[gene_name]
+            )
+
+            rock.genes[gene_name] = actual_value
+            actual_forced_values[gene_name] = actual_value
+
+        else:
+            rock.genes[gene_name] = suppress_gene_for_requested_import(
+                gene_name,
+                rock.genes[gene_name]
+            )
+
+    if "gender" in rock.genes:
+        rock.gender = express_gender_from_gene(rock.genes["gender"])
+
+    rock.requested_actual_forced_values = actual_forced_values
+
+    return rock
+
+
+def make_market_guest_parent_for_tier(game, tier_key, forced_gender=None, max_attempts=200):
+    """
+    Create a hidden guest parent for a market pod tier.
+
+    Tier controls general value, not exact traits.
+    forced_gender controls whether this guest parent is male/female.
+    """
+    tier = MARKET_POD_TIERS[tier_key]
+
+    best_rock = None
+    best_distance = float("inf")
+
+    for _ in range(max_attempts):
+        rock = make_random_rock(
+            rock_id=-1,
+            generation=getattr(game, "generation", 0)
+        )
+
+        reset_rock_as_market_founder(rock)
+
+        if forced_gender is not None:
+            force_rock_gender(rock, forced_gender)
+
+        evaluate_rock_value(rock)
+
+        value = getattr(rock, "sell_value", 0)
+
+        if tier["min_parent_value"] <= value <= tier["max_parent_value"]:
+            best_rock = rock
+            break
+
+        if value < tier["min_parent_value"]:
+            distance = tier["min_parent_value"] - value
+        elif value > tier["max_parent_value"]:
+            distance = value - tier["max_parent_value"]
+        else:
+            distance = 0
+
+        if distance < best_distance:
+            best_distance = distance
+            best_rock = rock
+
+    # Safety pass after choosing best fallback.
+    best_rock.id = -1
+    reset_rock_as_market_founder(best_rock)
+
+    if forced_gender is not None:
+        force_rock_gender(best_rock, forced_gender)
+
+    """
+    best_rock.market_guest = True
+    best_rock.owned = False
+    best_rock.used_as_parent = False
+    best_rock.sold = False
+    best_rock.imported = True
+    best_rock.market_tier = tier_key
+    best_rock.market_guest_note = tier["name"]
+    """
+
+    evaluate_rock_value(best_rock)
+
+    return best_rock
+
+
+def generate_market_pods_for_generation(game, force=False):
+    """
+    Generate random pod offers for the current generation.
+
+    Does not reveal parents in UI yet, but parents are pre-generated
+    and stored in the offer.
+    """
+    ensure_market_state(game)
+
+    if len(game.market_pods) > 0 and not force:
+        return game.market_pods
+
+    game.market_pods = []
+
+    generation = getattr(game, "generation", 0) - 1
+
+    for tier_key, tier in MARKET_POD_TIERS.items():
+        count = random.randint(tier["min_count"], tier["max_count"])
+
+        for i in range(count):
+            # Make every pod a valid male/female pair.
+            parent_a_gender = "male"
+            parent_b_gender = "female"
+
+            parent_a = make_market_guest_parent_for_tier(
+                game,
+                tier_key,
+                forced_gender=parent_a_gender
+            )
+
+            parent_b = make_market_guest_parent_for_tier(
+                game,
+                tier_key,
+                forced_gender=parent_b_gender
+            )   
+            """
+            print(
+                "Generated pod parents:",
+                parent_a.genes.get("gender"),
+                get_rock_gender_name(parent_a),
+                "+",
+                parent_b.genes.get("gender"),
+                get_rock_gender_name(parent_b),
+            )
+            """
+            offer = {
+                "offer_id": f"pod_g{generation}_{tier_key}_{i}",
+                "tier": tier_key,
+                "name": tier["name"],
+                "tagline": tier["tagline"],
+                "price": tier["price"],
+                "parent_a": parent_a,
+                "parent_b": parent_b,
+                "used": False,
+            }
+
+            game.market_pods.append(offer)
+
+    #print(f"{game.market_pods[0]['parent_a']} + {game.market_pods[0]['parent_b']}")
+
+    return game.market_pods
+
+def breed_guest_parent_pair_for_market(game, parent_a, parent_b):
+    """
+    Breed two guest parents and return children WITHOUT adding all children
+    permanently to the game.
+
+    IMPORTANT:
+    This function is the adapter between the market and your existing
+    breeding engine.
+    """
+
+    created_children = []
+    created_duplicates = []
+    dead_children = []
+    spore_events = []
+
+    old_generation = game.generation - 1
+
+    handle_mitosion, handle_sporing = True, True
+
+    mark_pair_as_used_as_parents(game, parent_a.id, parent_b.id)
+
+    clutch_size = roll_clutch_size()
+
+    #print(parent_a.id)
+    #print(parent_b.id)
+
+    for _ in range(clutch_size):
+            child = breed_child_for_game(
+                game,
+                parent_a.id,
+                parent_b.id,
+                Not_importing = False,
+                negative_id= -1 * (
+                        10000
+                        + parent_a.id * 1000
+                        + parent_b.id * 10
+                        + _
+                    )
+                #mutation_rate=pair_mutation_rate
+            )
+
+            # Temporary candidate id. It is NOT a real family-tree id yet.
+            
+
+            created_children.append(child)
+
+            died = maybe_kill_child(
+                child,
+                #death_chance=child_death_chance
+            )
+
+            evaluate_rock_value(child)
+
+            if died:
+                dead_children.append(child)
+                game.events.append(
+                    f"Child #{child.id} from #{parent_a} x #{parent_b} died after birth."
+                )
+                continue
+
+            game.events.append(
+                f"Generation {old_generation + 1}: bred #{parent_a} x #{parent_b} -> child #{child.id}."
+            )
+
+            try:
+                v = get_visual_phenotype(child)
+                splitting = v.get("splitting", "n/a")
+            except Exception:
+                splitting = "n/a"
+
+            if handle_mitosion and splitting == "mitosion":
+                clone = duplicate_rock_for_mitosion(game, child)
+                created_duplicates.append(clone)
+
+                game.events.append(
+                    f"Rock #{child.id} expressed mitosion and duplicated into #{clone.id}."
+                )
+
+            elif splitting == "spore" and handle_sporing:
+                clones, puffed_clones = create_spore_clones(
+                    game,
+                    child,
+                    clone_count=SPORE_CLONE_COUNT,
+                    puff_chance=SPORE_PUFF_CHANCE
+                )
+
+                spore_events.append({
+                    "source": child,
+                    "clones": clones,
+                    "puffed": puffed_clones
+                })
+
+                created_duplicates.extend(clones)
+
+                game.events.append(
+                    f"Rock #{child.id} expressed spore and produced {len(clones)} spore clones; "
+                    f"{len(puffed_clones)} puffed out."
+                )
+
+    
+    return created_children + created_duplicates
+
+def get_market_pod_offer(game, offer_id):
+    ensure_market_state(game)
+
+    for offer in game.market_pods:
+        if offer["offer_id"] == offer_id:
+            return offer
+
+    return None
+
+
+def buy_market_pod(game, offer_id):
+    """
+    Buy a market pod.
+
+    Reveals guest parents and generated children.
+    Does not finalize until player chooses one child.
+    """
+    ensure_market_state(game)
+
+    if game.pending_market_pod is not None:
+        print("You already have a pending market pod. Choose a child first.")
+        return False
+
+    offer = get_market_pod_offer(game, offer_id)
+
+    if offer is None:
+        print("Market pod not found.")
+        return False
+
+    if offer.get("used", False):
+        print("That market pod has already been used.")
+        return False
+
+    price = int(offer["price"])
+
+    if game.money < price:
+        print(f"Not enough money. Need ${price}, but you have ${game.money}.")
+        return False
+
+    game.money -= price
+    offer["used"] = True
+
+    parent_a = offer["parent_a"]
+    parent_b = offer["parent_b"]
+
+    #print(parent_a.gender)
+    #print(parent_b.gender)
+
+    # Assign real ids now that they are entering the family tree.
+    # Market parents become real only when the pod is bought.
+    reset_rock_as_market_founder(parent_a)
+    reset_rock_as_market_founder(parent_b)
+
+    # Temporary generation. The final parent display generation is set
+    # once the chosen child is known.
+    parent_a.generation = max(0, get_current_breedable_generation(game) - 1)
+    parent_b.generation = max(0, get_current_breedable_generation(game) - 1)
+
+    add_rock_to_game_with_new_id(game, parent_a)
+    add_rock_to_game_with_new_id(game, parent_b)
+
+    #parent_a.used_as_parent = True
+    #parent_b.used_as_parent = True
+    #parent_a.market_guest = True
+    #parent_b.market_guest = True
+    #parent_a.owned = False
+    #parent_b.owned = False
+
+    print(f"Market parent A real id: #{parent_a.id}")
+    print(f"Market parent B real id: #{parent_b.id}")
+
+    children = breed_guest_parent_pair_for_market(
+        game,
+        parent_a,
+        parent_b
+    )
+
+    # Children are not added to game.rocks yet.
+    # The player gets to keep exactly one.
+    for child in children:
+        child.parent_ids = (parent_a.id, parent_b.id)
+        child.parents = (parent_a.id, parent_b.id)
+        child.market_child_candidate = True
+        child.owned = False
+        child.imported = True
+        evaluate_rock_value(child)
+
+    game.pending_market_pod = {
+        "offer_id": offer_id,
+        "tier": offer["tier"],
+        "name": offer["name"],
+        "price": price,
+        "parent_a_id": parent_a.id,
+        "parent_b_id": parent_b.id,
+        "children": children,
+    }
+
+    print(f"You bought a {offer['name']} breeding pod for ${price}.")
+    print("The guest parents have entered the tree.")
+    print(f"They produced {len(children)} child candidate(s). Choose one to keep.")
+
+    return True
+
+
+def choose_market_pod_child(game, child_index):
+    """
+    Finalize pending market pod by keeping exactly one child.
+    """
+    ensure_market_state(game)
+
+    pending = game.pending_market_pod
+
+    if pending is None:
+        print("No pending market pod child selection.")
+        return False
+
+    children = pending.get("children", [])
+
+    if len(children) == 0:
+        print("This market pod produced no children.")
+        game.pending_market_pod = None
+        return False
+
+    child_index = int(child_index)
+
+    if child_index < 0 or child_index >= len(children):
+        print("Invalid child selection.")
+        return False
+
+    chosen_child = children[child_index]
+
+    del(children)
+    del(game.market_pods)
+
+    assign_new_rock_id(game, chosen_child)
+
+    chosen_child.owned = True
+    chosen_child.market_child_candidate = False
+    chosen_child.imported = True
+    chosen_child.market_origin = pending["name"]
+
+    # Make sure parent ids point to the guest parents.
+    chosen_child.parent_ids = (
+        int(pending["parent_a_id"]),
+        int(pending["parent_b_id"]),
+    )
+
+    chosen_child.parents = chosen_child.parent_ids
+    chosen_child.parent_pair = chosen_child.parent_ids
+    chosen_child.parent_id_pair = chosen_child.parent_ids
+
+    set_market_lineage_generations(
+        game,
+        game.rocks[int(pending["parent_a_id"])],
+        game.rocks[int(pending["parent_b_id"])],
+        chosen_child
+    )
+
+    game.rocks[chosen_child.id] = chosen_child
+
+    evaluate_rock_value(chosen_child)
+
+    game.pending_market_pod = None
+
+    print(
+        f"You kept #{chosen_child.id} {chosen_child.name} "
+        f"from the {pending['name']} pod."
+    )
+    print("The other children returned to the breeder. Ruthless gravel capitalism.")
+
+    return True
+
+
+
+
+
 def create_new_game(
     starting_money=DEFAULT_STARTING_MONEY,
     max_generation=DEFAULT_MAX_GENERATION,
@@ -8449,7 +9166,10 @@ def create_new_game(
         breeding_queue=[],
         potions={},
         events=[],
-        game_over=False
+        game_over=False,
+        market_pods = [],
+        pending_market_pod = None
+
     )
 
     for rid, (gender_name, gender_gene) in STARTER_GENDERS.items():
@@ -8473,6 +9193,8 @@ def create_new_game(
     game.next_id = max(game.rocks.keys()) + 1
 
     evaluate_all_rocks(game)
+
+    ensure_market_state(game)
 
     game.events.append("New game started with 4 starter rocks.")
 
@@ -8747,6 +9469,9 @@ def execute_breeding_generation(
     game.generation += 1
     game.breeding_queue = []
 
+    clear_market_state(game)
+    generate_market_pods_for_generation(game, force=True)
+
     evaluate_all_rocks(game)
 
     if game.generation >= game.max_generation:
@@ -8846,6 +9571,9 @@ def get_rock_status_symbol(rock):
 
     if getattr(rock, "used_as_parent", False):
         return "○"
+
+    if getattr(rock, "market_guest", False):
+        return(("NPC", "darkviolet"))
 
     return ""
 
@@ -10151,60 +10879,7 @@ def make_requested_gene_value(gene_name, selected_gene_value):
 
 
 
-def apply_requested_import_policy(rock, requested_values):
-    """
-    Apply requested-import logic to a random rock.
 
-    Checked genes:
-        force selected expression.
-
-    Dependency-safe:
-        eye_color ignored unless eyes requested.
-        hair_color ignored unless hair/facial_hair/brows requested.
-        hair_texture ignored unless hair/facial_hair requested.
-
-    Unchecked catalog genes:
-        suppress expression while preserving recessive carrier alleles where possible.
-    """
-    if requested_values is None:
-        requested_values = {}
-
-    # Backend safety: remove invalid dependent requests.
-    filtered_requested_values = {}
-
-    for gene_name, gene_value in requested_values.items():
-        if requested_dependency_satisfied_from_values(gene_name, requested_values):
-            filtered_requested_values[gene_name] = gene_value
-
-    requested_values = filtered_requested_values
-
-    actual_forced_values = {}
-
-    for gene_name in REQUEST_TRAIT_CATALOG.keys():
-        if gene_name not in rock.genes:
-            continue
-
-        if gene_name in requested_values:
-            actual_value = make_requested_gene_value(
-                gene_name,
-                requested_values[gene_name]
-            )
-
-            rock.genes[gene_name] = actual_value
-            actual_forced_values[gene_name] = actual_value
-
-        else:
-            rock.genes[gene_name] = suppress_gene_for_requested_import(
-                gene_name,
-                rock.genes[gene_name]
-            )
-
-    if "gender" in rock.genes:
-        rock.gender = express_gender_from_gene(rock.genes["gender"])
-
-    rock.requested_actual_forced_values = actual_forced_values
-
-    return rock
 
 def calculate_requested_import_cost(rock):
     """
@@ -11021,6 +11696,7 @@ def preview_breeding_pair(game, parent_a_id, parent_b_id):
     print("====================================")
 
     return result
+
 
 
 

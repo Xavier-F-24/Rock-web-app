@@ -1,0 +1,2125 @@
+[1mdiff --git a/app.py b/app.py[m
+[1mindex 0d759e8d..c60c5d46 100644[m
+[1m--- a/app.py[m
+[1m+++ b/app.py[m
+[36m@@ -282,6 +282,115 @@[m [mdef render_available_breeders_gallery(game, selected_ids=None, max_cols=4):[m
+                     selected=(rock.id in selected_ids)[m
+                 )[m
+ [m
+[32m+[m[32mdef render_queue_removal_controls(game):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Streamlit UI for removing selected queued breeding pairs.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    if len(game.breeding_queue) == 0:[m
+[32m+[m[32m        st.info("No breeding pairs currently queued.")[m
+[32m+[m[32m        return[m
+[32m+[m
+[32m+[m[32m    with st.expander("Remove queued breeding pair(s)", expanded=False):[m
+[32m+[m[32m        st.write("Select the pair(s) you want to remove from the queue.")[m
+[32m+[m
+[32m+[m[32m        selected_indices = [][m
+[32m+[m
+[32m+[m[32m        for i, entry in enumerate(game.breeding_queue):[m
+[32m+[m[32m            a, b = get_queue_entry_pair(entry)[m
+[32m+[m[32m            potion_key = get_queue_entry_potion(entry)[m
+[32m+[m
+[32m+[m[32m            rock_a = get_rock(game, a)[m
+[32m+[m[32m            rock_b = get_rock(game, b)[m
+[32m+[m
+[32m+[m[32m            name_a = rock_a.name if rock_a is not None else "missing"[m
+[32m+[m[32m            name_b = rock_b.name if rock_b is not None else "missing"[m
+[32m+[m
+[32m+[m[32m            potion_text = get_potion_name(potion_key)[m
+[32m+[m
+[32m+[m[32m            label = ([m
+[32m+[m[32m                f"Remove Pair {i + 1}: "[m
+[32m+[m[32m                f"#{a} {name_a} × #{b} {name_b} "[m
+[32m+[m[32m                f"| Potion: {potion_text}"[m
+[32m+[m[32m            )[m
+[32m+[m
+[32m+[m[32m            checked = st.checkbox([m
+[32m+[m[32m                label,[m
+[32m+[m[32m                key=f"remove_queue_pair_{game.generation}_{i}_{a}_{b}_{potion_key}"[m
+[32m+[m[32m            )[m
+[32m+[m
+[32m+[m[32m            if checked:[m
+[32m+[m[32m                selected_indices.append(i)[m
+[32m+[m
+[32m+[m[32m        c1, c2 = st.columns(2)[m
+[32m+[m
+[32m+[m[32m        with c1:[m
+[32m+[m[32m            if st.button([m
+[32m+[m[32m                "Remove Selected Pair(s)",[m
+[32m+[m[32m                disabled=len(selected_indices) == 0[m
+[32m+[m[32m            ):[m
+[32m+[m[32m                removed_count, text = capture_print([m
+[32m+[m[32m                    remove_selected_pairs_from_breeding_queue,[m
+[32m+[m[32m                    game,[m
+[32m+[m[32m                    selected_indices[m
+[32m+[m[32m                )[m
+[32m+[m
+[32m+[m[32m                st.text(text)[m
+[32m+[m[32m                st.success(f"Removed {removed_count} queued pair(s).")[m
+[32m+[m[32m                st.rerun()[m
+[32m+[m
+[32m+[m[32m        with c2:[m
+[32m+[m[32m            if st.button("Clear All Queued Pair(s)"):[m
+[32m+[m[32m                _, text = capture_print(clear_breeding_queue, game)[m
+[32m+[m[32m                st.text(text)[m
+[32m+[m[32m                st.rerun()[m
+[32m+[m
+[32m+[m[32mdef requested_dependency_ok_streamlit(gene_name):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Streamlit-side dependency logic.[m
+[32m+[m
+[32m+[m[32m    Eye Color requires Eyes.[m
+[32m+[m[32m    Hair Color requires Hair OR Facial Hair OR Brows.[m
+[32m+[m[32m    Hair Texture requires Hair OR Facial Hair.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    if gene_name == "eye_color":[m
+[32m+[m[32m        eyes_checked = st.session_state.get("req_eyes_check", False)[m
+[32m+[m[32m        eyes_value = st.session_state.get("req_eyes_value", "00")[m
+[32m+[m[32m        return eyes_checked and eyes_value != "00"[m
+[32m+[m
+[32m+[m[32m    if gene_name == "hair_color":[m
+[32m+[m[32m        hair_checked = st.session_state.get("req_hair_check", False)[m
+[32m+[m[32m        hair_value = st.session_state.get("req_hair_value", "00")[m
+[32m+[m
+[32m+[m[32m        facial_checked = st.session_state.get("req_facial_hair_check", False)[m
+[32m+[m[32m        facial_value = st.session_state.get("req_facial_hair_value", "00")[m
+[32m+[m
+[32m+[m[32m        brows_checked = st.session_state.get("req_brows_check", False)[m
+[32m+[m[32m        brows_value = st.session_state.get("req_brows_value", "00")[m
+[32m+[m
+[32m+[m[32m        return ([m
+[32m+[m[32m            (hair_checked and hair_value != "00")[m
+[32m+[m[32m            or (facial_checked and facial_value != "00")[m
+[32m+[m[32m            or (brows_checked and brows_value != "00")[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    if gene_name == "hair_texture":[m
+[32m+[m[32m        hair_checked = st.session_state.get("req_hair_check", False)[m
+[32m+[m[32m        hair_value = st.session_state.get("req_hair_value", "00")[m
+[32m+[m
+[32m+[m[32m        facial_checked = st.session_state.get("req_facial_hair_check", False)[m
+[32m+[m[32m        facial_value = st.session_state.get("req_facial_hair_value", "00")[m
+[32m+[m
+[32m+[m[32m        brows_checked = st.session_state.get("req_brows_check", False)[m
+[32m+[m[32m        brows_value = st.session_state.get("req_brows_value", "00")[m
+[32m+[m
+[32m+[m[32m        return ([m
+[32m+[m[32m            (hair_checked and hair_value != "00")[m
+[32m+[m[32m            or (facial_checked and facial_value != "00")[m
+[32m+[m[32m            or (brows_checked and brows_value != "00")[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    return True[m
+[32m+[m
+ # -----------------------------[m
+ # Header[m
+ # -----------------------------[m
+[36m@@ -418,7 +527,12 @@[m [melif page == "🧬 Breeding":[m
+         format_func=lambda x: potion_labels.get(x, "No potion")[m
+     )[m
+ [m
+[31m-    b1, b2, b3 = st.columns(3)[m
+[32m+[m[32m    if parent_a is not None and parent_b is not None and parent_a != parent_b:[m
+[32m+[m[32m        st.info(format_relatedness_report(game, parent_a, parent_b))[m
+[32m+[m
+[32m+[m[32m    st.divider()[m
+[32m+[m
+[32m+[m[32m    b1, b2 = st.columns(2)[m
+ [m
+     with b1:[m
+         if st.button("Preview Pair"):[m
+[36m@@ -437,23 +551,26 @@[m [melif page == "🧬 Breeding":[m
+             st.text(text)[m
+             st.rerun()[m
+ [m
+[31m-    with b3:[m
+[31m-        if st.button("Clear Queue"):[m
+[31m-            _, text = capture_print(clear_breeding_queue, game)[m
+[31m-            st.text(text)[m
+[31m-            st.rerun()[m
+[31m-[m
+     st.divider()[m
+ [m
+     st.subheader("Current Breeding Queue")[m
+     _, queue_text = capture_print(show_breeding_queue, game)[m
+     st.text(queue_text)[m
+ [m
+[32m+[m[32m    render_queue_removal_controls(game)[m
+[32m+[m
+     show_breeding_tree = st.checkbox([m
+         "Show queue tree on breeding page",[m
+         value=True[m
+     )[m
+ [m
+[32m+[m[32m    st.divider()[m
+[32m+[m
+[32m+[m[32m    if st.button("Breed Generation", type="primary"):[m
+[32m+[m[32m        _, text = capture_print(run_generation_from_ui, game)[m
+[32m+[m[32m        st.text(text)[m
+[32m+[m[32m        st.rerun()[m
+[32m+[m
+     selected_breeding_ids = [][m
+ [m
+     if parent_a is not None:[m
+[36m@@ -462,6 +579,8 @@[m [melif page == "🧬 Breeding":[m
+     if parent_b is not None:[m
+         selected_breeding_ids.append(parent_b)[m
+ [m
+[32m+[m[41m    [m
+[32m+[m
+     with st.expander("Available Breeding Rocks", expanded=True):[m
+         render_available_breeders_gallery([m
+             game,[m
+[36m@@ -469,6 +588,8 @@[m [melif page == "🧬 Breeding":[m
+             max_cols=4[m
+         )[m
+ [m
+[32m+[m[32m    st.divider()[m
+[32m+[m
+     if show_breeding_tree:[m
+         fig = draw_game_tree([m
+             game,[m
+[36m@@ -488,12 +609,7 @@[m [melif page == "🧬 Breeding":[m
+             }[m
+         )[m
+ [m
+[31m-    st.divider()[m
+[31m-[m
+[31m-    if st.button("Breed Generation", type="primary"):[m
+[31m-        _, text = capture_print(run_generation_from_ui, game)[m
+[31m-        st.text(text)[m
+[31m-        st.rerun()[m
+[32m+[m[41m    [m
+ [m
+ [m
+ # -----------------------------[m
+[36m@@ -542,7 +658,8 @@[m [melif page == "💰 Market":[m
+         )[m
+ [m
+         st.caption([m
+[31m-            "Eye Color requires Eyes. Hair Color and Hair Texture require Hair."[m
+[32m+[m[32m            "Eye Color requires Eyes. Hair Color requires Hair, Facial Hair, or Brows. "[m
+[32m+[m[32m            "Hair Texture requires Hair or Facial Hair."[m
+         )[m
+ [m
+         req_cols = st.columns(2)[m
+[36m@@ -588,9 +705,10 @@[m [melif page == "💰 Market":[m
+                 if disabled:[m
+                     if gene_name == "eye_color":[m
+                         st.caption("Requires Eyes.")[m
+[31m-                    elif gene_name in ["hair_color", "hair_texture"]:[m
+[31m-                        st.caption("Requires Hair.")[m
+[31m-[m
+[32m+[m[32m                    elif gene_name == "hair_color":[m
+[32m+[m[32m                        st.caption("Requires Hair, Facial Hair, or Brows.")[m
+[32m+[m[32m                    elif gene_name == "hair_texture":[m
+[32m+[m[32m                        st.caption("Requires Hair or Facial Hair, or Brows.")[m
+         reroll_if_craisen = st.checkbox([m
+             "Reroll requested import if craisen",[m
+             value=True,[m
+[1mdiff --git a/dev_test.ipynb b/dev_test.ipynb[m
+[1mindex 7f8eef5a..9ce7c66e 100644[m
+[1m--- a/dev_test.ipynb[m
+[1m+++ b/dev_test.ipynb[m
+[36m@@ -8029,6 +8029,172 @@[m
+     "print(is_rock_queued_for_breeding(game, 1))\n",[m
+     "print(get_queue_labels_by_rock(game))"[m
+    ][m
+[32m+[m[32m  },[m
+[32m+[m[32m  {[m
+[32m+[m[32m   "cell_type": "code",[m
+[32m+[m[32m   "execution_count": 1,[m
+[32m+[m[32m   "id": "6c23ca48",[m
+[32m+[m[32m   "metadata": {},[m
+[32m+[m[32m   "outputs": [[m
+[32m+[m[32m    {[m
+[32m+[m[32m     "name": "stdout",[m
+[32m+[m[32m     "output_type": "stream",[m
+[32m+[m[32m     "text": [[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "eye_color\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "11 -> ['17', '11', '18', '12', '17', '18', '16', '17', '17', '13', '11', '18']\n",[m
+[32m+[m[32m      "22 -> ['22', '28', '27', '26', '26', '26', '26', '25', '26', '26', '27', '25']\n",[m
+[32m+[m[32m      "33 -> ['36', '36', '38', '36', '38', '38', '37', '38', '38', '34', '33', '37']\n",[m
+[32m+[m[32m      "44 -> ['45', '46', '47', '48', '45', '48', '46', '48', '45', '44', '48', '47']\n",[m
+[32m+[m[32m      "55 -> ['58', '57', '56', '55', '58', '57', '57', '58', '56', '55', '57', '57']\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "color\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "00 -> ['04', '05', '04', '03', '03', '03', '06', '03', '02', '06', '02', '00']\n",[m
+[32m+[m[32m      "11 -> ['12', '15', '15', '14', '12', '11', '15', '11', '12', '13', '11', '11']\n",[m
+[32m+[m[32m      "01 -> ['01', '10', '10', '10', '01', '01', '01', '10', '10', '10', '10', '10']\n",[m
+[32m+[m[32m      "22 -> ['24', '24', '24', '22', '24', '22', '25', '24', '24', '23', '22', '24']\n",[m
+[32m+[m[32m      "33 -> ['33', '36', '36', '33', '36', '33', '33', '33', '33', '33', '36', '33']\n",[m
+[32m+[m[32m      "34 -> ['43', '43', '34', '43', '43', '34', '43', '43', '43', '43', '34', '43']\n",[m
+[32m+[m[32m      "66 -> ['66', '66', '66', '66', '66', '66', '66', '66', '66', '66', '66', '66']\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "hair_color\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "00 -> ['00', '06', '02', '04', '04', '03', '05', '06', '03', '04', '06', '06']\n",[m
+[32m+[m[32m      "11 -> ['14', '11', '12', '13', '14', '14', '11', '11', '11', '12', '13', '13']\n",[m
+[32m+[m[32m      "01 -> ['10', '01', '10', '01', '01', '01', '10', '10', '01', '01', '01', '10']\n",[m
+[32m+[m[32m      "22 -> ['24', '23', '26', '23', '24', '24', '23', '26', '24', '24', '24', '24']\n",[m
+[32m+[m[32m      "44 -> ['44', '45', '44', '44', '44', '46', '44', '44', '46', '44', '46', '45']\n",[m
+[32m+[m[32m      "66 -> ['66', '66', '66', '66', '66', '66', '66', '66', '66', '66', '66', '66']\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "hair\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "00 -> ['00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00']\n",[m
+[32m+[m[32m      "01 -> ['01', '01', '01', '01', '01', '01', '01', '10', '01', '01', '01', '01']\n",[m
+[32m+[m[32m      "11 -> ['11', '11', '11', '11', '11', '11', '11', '11', '11', '11', '11', '11']\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "eyes\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "00 -> ['00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00']\n",[m
+[32m+[m[32m      "01 -> ['10', '10', '10', '10', '01', '01', '10', '10', '01', '01', '01', '01']\n",[m
+[32m+[m[32m      "11 -> ['11', '11', '11', '11', '11', '11', '11', '11', '11', '11', '11', '11']\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "arms\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "00 -> ['00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00']\n",[m
+[32m+[m[32m      "01 -> ['01', '01', '10', '10', '01', '01', '01', '01', '10', '10', '01', '10']\n",[m
+[32m+[m[32m      "02 -> ['02', '20', '20', '20', '02', '02', '02', '20', '02', '02', '20', '20']\n",[m
+[32m+[m[32m      "12 -> ['21', '21', '12', '21', '12', '21', '21', '12', '21', '12', '21', '21']\n",[m
+[32m+[m[32m      "22 -> ['22', '22', '22', '22', '22', '22', '22', '22', '22', '22', '22', '22']\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "shape\n",[m
+[32m+[m[32m      "====================================\n",[m
+[32m+[m[32m      "00 -> ['02', '02', '03', '01', '02', '02', '01', '00', '04', '04', '01', '03']\n",[m
+[32m+[m[32m      "11 -> ['11', '11', '14', '11', '13', '12', '12', '12', '13', '11', '14', '11']\n",[m
+[32m+[m[32m      "22 -> ['23', '23', '24', '24', '24', '22', '23', '24', '23', '23', '22', '22']\n",[m
+[32m+[m[32m      "33 -> ['34', '33', '33', '33', '33', '34', '34', '33', '34', '33', '34', '33']\n",[m
+[32m+[m[32m      "44 -> ['44', '44', '44', '44', '44', '44', '44', '44', '44', '44', '44', '44']\n"[m
+[32m+[m[32m     ][m
+[32m+[m[32m    }[m
+[32m+[m[32m   ],[m
+[32m+[m[32m   "source": [[m
+[32m+[m[32m    "from rockgame_core import *\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "def test_requested_gene_rolls():\n",[m
+[32m+[m[32m    "    tests = {\n",[m
+[32m+[m[32m    "        \"eye_color\": [\"11\", \"22\", \"33\", \"44\", \"55\"],\n",[m
+[32m+[m[32m    "        \"color\": [\"00\", \"11\", \"01\", \"22\", \"33\", \"34\", \"66\"],\n",[m
+[32m+[m[32m    "        \"hair_color\": [\"00\", \"11\", \"01\", \"22\", \"44\", \"66\"],\n",[m
+[32m+[m[32m    "        \"hair\": [\"00\", \"01\", \"11\"],\n",[m
+[32m+[m[32m    "        \"eyes\": [\"00\", \"01\", \"11\"],\n",[m
+[32m+[m[32m    "        \"arms\": [\"00\", \"01\", \"02\", \"12\", \"22\"],\n",[m
+[32m+[m[32m    "        \"shape\": [\"00\", \"11\", \"22\", \"33\", \"44\"],\n",[m
+[32m+[m[32m    "    }\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "    for gene_name, selected_values in tests.items():\n",[m
+[32m+[m[32m    "        print(\"====================================\")\n",[m
+[32m+[m[32m    "        print(gene_name)\n",[m
+[32m+[m[32m    "        print(\"====================================\")\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "        for selected in selected_values:\n",[m
+[32m+[m[32m    "            rolls = [\n",[m
+[32m+[m[32m    "                make_requested_gene_value(gene_name, selected)\n",[m
+[32m+[m[32m    "                for _ in range(12)\n",[m
+[32m+[m[32m    "            ]\n",[m
+[32m+[m[32m    "            print(selected, \"->\", rolls)\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "test_requested_gene_rolls()"[m
+[32m+[m[32m   ][m
+[32m+[m[32m  },[m
+[32m+[m[32m  {[m
+[32m+[m[32m   "cell_type": "code",[m
+[32m+[m[32m   "execution_count": null,[m
+[32m+[m[32m   "id": "52f07754",[m
+[32m+[m[32m   "metadata": {},[m
+[32m+[m[32m   "outputs": [[m
+[32m+[m[32m    {[m
+[32m+[m[32m     "data": {[m
+[32m+[m[32m      "image/png": "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",[m
+[32m+[m[32m      "text/plain": [[m
+[32m+[m[32m       "<Figure size 500x500 with 1 Axes>"[m
+[32m+[m[32m      ][m
+[32m+[m[32m     },[m
+[32m+[m[32m     "metadata": {},[m
+[32m+[m[32m     "output_type": "display_data"[m
+[32m+[m[32m    },[m
+[32m+[m[32m    {[m
+[32m+[m[32m     "data": {[m
+[32m+[m[32m      "text/plain": [[m
+[32m+[m[32m       "(<Figure size 500x500 with 1 Axes>,\n",[m
+[32m+[m[32m       " array([<Axes: title={'center': 'Feldite #9001\\nGen 0'}>], dtype=object))"[m
+[32m+[m[32m      ][m
+[32m+[m[32m     },[m
+[32m+[m[32m     "execution_count": 3,[m
+[32m+[m[32m     "metadata": {},[m
+[32m+[m[32m     "output_type": "execute_result"[m
+[32m+[m[32m    }[m
+[32m+[m[32m   ],[m
+[32m+[m[32m   "source": [[m
+[32m+[m[32m    "from rockgame_core import *\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "base = make_random_rock(9001)\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "base.genes[\"hair\"] = \"11\"\n",[m
+[32m+[m[32m    "base.genes[\"hair_texture\"] = \"11\"\n",[m
+[32m+[m[32m    "base.genes[\"hair_color\"] = \"22\"\n",[m
+[32m+[m[32m    "base.genes[\"gender\"] = \"01\"\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "base.genes[\"facial_hair\"] = \"22\"\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "show_rocks(\n",[m
+[32m+[m[32m    "    {base.id: base},\n",[m
+[32m+[m[32m    "    cols=1,\n",[m
+[32m+[m[32m    "    figsize_per_rock=5,\n",[m
+[32m+[m[32m    "    show_traits=True,\n",[m
+[32m+[m[32m    "    normalize_size=False,\n",[m
+[32m+[m[32m    "    title=\"Curly Hair Overlay Test\"\n",[m
+[32m+[m[32m    ")"[m
+[32m+[m[32m   ][m
+[32m+[m[32m  },[m
+[32m+[m[32m  {[m
+[32m+[m[32m   "cell_type": "code",[m
+[32m+[m[32m   "execution_count": null,[m
+[32m+[m[32m   "id": "545863c5",[m
+[32m+[m[32m   "metadata": {},[m
+[32m+[m[32m   "outputs": [],[m
+[32m+[m[32m   "source": [[m
+[32m+[m[32m    "from rockgame_core import *\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "game = create_new_game(seed=42)\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "add_pair_to_breeding_queue(game, 1, 2)\n",[m
+[32m+[m[32m    "add_pair_to_breeding_queue(game, 3, 4)\n",[m
+[32m+[m[32m    "run_generation_from_ui(game)\n",[m
+[32m+[m[32m    "\n",[m
+[32m+[m[32m    "format_relatedness_report(game, 5, 6)"[m
+[32m+[m[32m   ][m
+   }[m
+  ],[m
+  "metadata": {[m
+[1mdiff --git a/rockgame_core.py b/rockgame_core.py[m
+[1mindex 71b13070..ef471e0c 100644[m
+[1m--- a/rockgame_core.py[m
+[1m+++ b/rockgame_core.py[m
+[36m@@ -16,6 +16,7 @@[m [mfrom matplotlib.path import Path[m
+ [m
+ from matplotlib.path import Path[m
+ from matplotlib.patches import PathPatch[m
+[32m+[m[32mimport matplotlib.colors as mcolors[m
+ [m
+ import hashlib[m
+ import plotly.express as px[m
+[36m@@ -2432,6 +2433,124 @@[m [mdef get_render_hair_color(ctx):[m
+         ctx.v.get("hair_color_alleles", [ctx.v.get("hair_color", "black")])[m
+     )[m
+ [m
+[32m+[m[32mdef draw_curly_overlay_in_box([m
+[32m+[m[32m    ctx,[m
+[32m+[m[32m    x_min,[m
+[32m+[m[32m    x_max,[m
+[32m+[m[32m    y_min,[m
+[32m+[m[32m    y_max,[m
+[32m+[m[32m    hair_color,[m
+[32m+[m[32m    n_curls=10,[m
+[32m+[m[32m    curl_scale=0.10,[m
+[32m+[m[32m    zorder=60,[m
+[32m+[m[32m    salt="head_curls"[m
+[32m+[m[32m):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Draw randomized semicircle curl marks inside an approximate hair region.[m
+[32m+[m
+[32m+[m[32m    The region is a simple bounding box, but the arcs are decorative and[m
+[32m+[m[32m    read well over both head hair and facial hair.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    if x_max <= x_min or y_max <= y_min:[m
+[32m+[m[32m        return [][m
+[32m+[m
+[32m+[m[32m    rng = deterministic_rng_for_rock(ctx.rock, salt=salt)[m
+[32m+[m
+[32m+[m[32m    light = adjust_color_brightness(hair_color, 1.45)[m
+[32m+[m[32m    dark = adjust_color_brightness(hair_color, 0.65)[m
+[32m+[m
+[32m+[m[32m    curls = [][m
+[32m+[m
+[32m+[m[32m    box_w = x_max - x_min[m
+[32m+[m[32m    box_h = y_max - y_min[m
+[32m+[m
+[32m+[m[32m    for i in range(n_curls):[m
+[32m+[m[32m        x = rng.uniform(x_min + 0.08 * box_w, x_max - 0.08 * box_w)[m
+[32m+[m[32m        y = rng.uniform(y_min + 0.15 * box_h, y_max - 0.10 * box_h)[m
+[32m+[m
+[32m+[m[32m        size = rng.uniform(0.65, 1.15) * curl_scale * ctx.unit[m
+[32m+[m
+[32m+[m[32m        # Alternate light/dark so curls show on many colors.[m
+[32m+[m[32m        color = light if i % 2 == 0 else dark[m
+[32m+[m
+[32m+[m[32m        # Mostly semicircles, slightly rotated.[m
+[32m+[m[32m        angle = rng.uniform(-25, 25)[m
+[32m+[m
+[32m+[m[32m        # Randomize arc direction a bit.[m
+[32m+[m[32m        if rng.random() < 0.5:[m
+[32m+[m[32m            theta1, theta2 = 0, 180[m
+[32m+[m[32m        else:[m
+[32m+[m[32m            theta1, theta2 = 180, 360[m
+[32m+[m
+[32m+[m[32m        arc = draw_curl_arc([m
+[32m+[m[32m            ctx.ax,[m
+[32m+[m[32m            x=x,[m
+[32m+[m[32m            y=y,[m
+[32m+[m[32m            w=size,[m
+[32m+[m[32m            h=0.72 * size,[m
+[32m+[m[32m            color=color,[m
+[32m+[m[32m            angle=angle,[m
+[32m+[m[32m            theta1=theta1,[m
+[32m+[m[32m            theta2=theta2,[m
+[32m+[m[32m            linewidth=max(0.8, 1.05 * ctx.unit),[m
+[32m+[m[32m            alpha=0.9,[m
+[32m+[m[32m            zorder=zorder[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m        curls.append(arc)[m
+[32m+[m
+[32m+[m[32m    return curls[m
+[32m+[m
+[32m+[m[32mdef draw_head_hair_curls(ctx, hair_color, layout, hair_type):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Add curl marks over head hair if hair_texture is curly.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    if not rock_texture_is_curly(ctx):[m
+[32m+[m[32m        return [][m
+[32m+[m
+[32m+[m[32m    head_left = layout["head_left"][m
+[32m+[m[32m    head_right = layout["head_right"][m
+[32m+[m[32m    head_y = layout["head_y"][m
+[32m+[m[32m    top_y = layout["top_y"][m
+[32m+[m[32m    cx = layout["cx"][m
+[32m+[m[32m    head_span = layout["head_span"][m
+[32m+[m
+[32m+[m[32m    # Approximate curl region depending on hairstyle.[m
+[32m+[m[32m    if hair_type == "hair":[m
+[32m+[m[32m        x_min = head_left + 0.03 * head_span[m
+[32m+[m[32m        x_max = head_right - 0.03 * head_span[m
+[32m+[m[32m        y_min = head_y - 0.10 * ctx.unit[m
+[32m+[m[32m        y_max = top_y + 0.25 * ctx.unit[m
+[32m+[m[32m        n_curls = 8[m
+[32m+[m
+[32m+[m[32m    elif hair_type == "double hair":[m
+[32m+[m[32m        x_min = head_left - 0.20 * head_span[m
+[32m+[m[32m        x_max = head_right + 0.20 * head_span[m
+[32m+[m[32m        y_min = head_y - 0.18 * ctx.unit[m
+[32m+[m[32m        y_max = top_y + 0.30 * ctx.unit[m
+[32m+[m[32m        n_curls = 13[m
+[32m+[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        x_min = cx - 0.40 * head_span[m
+[32m+[m[32m        x_max = cx + 0.40 * head_span[m
+[32m+[m[32m        y_min = head_y - 0.10 * ctx.unit[m
+[32m+[m[32m        y_max = top_y + 0.25 * ctx.unit[m
+[32m+[m[32m        n_curls = 8[m
+[32m+[m
+[32m+[m[32m    return draw_curly_overlay_in_box([m
+[32m+[m[32m        ctx,[m
+[32m+[m[32m        x_min=x_min,[m
+[32m+[m[32m        x_max=x_max,[m
+[32m+[m[32m        y_min=y_min,[m
+[32m+[m[32m        y_max=y_max,[m
+[32m+[m[32m        hair_color=hair_color,[m
+[32m+[m[32m        n_curls=n_curls,[m
+[32m+[m[32m        curl_scale=0.095,[m
+[32m+[m[32m        zorder=72,[m
+[32m+[m[32m        salt=f"head_curls_{hair_type}"[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m
+ def draw_hair(ctx, rock, v):[m
+     """[m
+     Draw canned hairstyles inspired by the sketch.[m
+[36m@@ -2587,6 +2706,15 @@[m [mdef draw_hair(ctx, rock, v):[m
+         ctx.ax.add_patch(lock)[m
+         pieces.append(lock)[m
+ [m
+[32m+[m[32m        pieces.extend([m
+[32m+[m[32m            draw_head_hair_curls([m
+[32m+[m[32m                ctx,[m
+[32m+[m[32m                hair_color=hair_color,[m
+[32m+[m[32m                layout=layout,[m
+[32m+[m[32m                hair_type=hair_type[m
+[32m+[m[32m            )[m
+[32m+[m[32m        )[m
+[32m+[m
+         return pieces[m
+ [m
+     # --------------------------------------------------[m
+[36m@@ -2645,6 +2773,15 @@[m [mdef draw_hair(ctx, rock, v):[m
+         ctx.ax.add_patch(right_lock)[m
+         pieces.extend([left_lock, right_lock])[m
+ [m
+[32m+[m[32m        pieces.extend([m
+[32m+[m[32m            draw_head_hair_curls([m
+[32m+[m[32m                ctx,[m
+[32m+[m[32m                hair_color=hair_color,[m
+[32m+[m[32m                layout=layout,[m
+[32m+[m[32m                hair_type=hair_type[m
+[32m+[m[32m            )[m
+[32m+[m[32m        )[m
+[32m+[m
+         return pieces[m
+ [m
+     # --------------------------------------------------[m
+[36m@@ -2659,6 +2796,15 @@[m [mdef draw_hair(ctx, rock, v):[m
+         )[m
+         pieces.append(cap)[m
+ [m
+[32m+[m[32m        pieces.extend([m
+[32m+[m[32m            draw_head_hair_curls([m
+[32m+[m[32m                ctx,[m
+[32m+[m[32m                hair_color=hair_color,[m
+[32m+[m[32m                layout=layout,[m
+[32m+[m[32m                hair_type=hair_type[m
+[32m+[m[32m            )[m
+[32m+[m[32m        )[m
+[32m+[m
+         return pieces[m
+ [m
+     # --------------------------------------------------[m
+[36m@@ -2693,6 +2839,15 @@[m [mdef draw_hair(ctx, rock, v):[m
+         ctx.ax.add_patch(spike)[m
+         pieces.append(spike)[m
+ [m
+[32m+[m[32m        pieces.extend([m
+[32m+[m[32m            draw_head_hair_curls([m
+[32m+[m[32m                ctx,[m
+[32m+[m[32m                hair_color=hair_color,[m
+[32m+[m[32m                layout=layout,[m
+[32m+[m[32m                hair_type=hair_type[m
+[32m+[m[32m            )[m
+[32m+[m[32m        )[m
+[32m+[m
+         return pieces[m
+ [m
+     return pieces[m
+[36m@@ -3010,6 +3165,92 @@[m [mdef mix_colors(c1, c2, t=0.5):[m
+     c2 = np.array(c2, dtype=float)[m
+     return tuple(np.clip((1 - t) * c1 + t * c2, 0, 1))[m
+ [m
+[32m+[m
+[32m+[m[32mdef adjust_color_brightness(color, factor=1.2):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Lighten/darken a matplotlib color.[m
+[32m+[m
+[32m+[m[32m    factor > 1 lightens[m
+[32m+[m[32m    factor < 1 darkens[m
+[32m+[m[32m    """[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        rgb = np.array(mcolors.to_rgb(color))[m
+[32m+[m[32m    except Exception:[m
+[32m+[m[32m        rgb = np.array([0.1, 0.1, 0.1])[m
+[32m+[m
+[32m+[m[32m    if factor >= 1:[m
+[32m+[m[32m        rgb = rgb + (1 - rgb) * (factor - 1)[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        rgb = rgb * factor[m
+[32m+[m
+[32m+[m[32m    return tuple(np.clip(rgb, 0, 1))[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef rock_texture_is_curly(ctx):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    True if this rock expresses curly hair texture.[m
+[32m+[m
+[32m+[m[32m    Supports phenotype strings and direct gene fallback.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    texture = str(ctx.v.get("hair_texture", "n/a")).lower()[m
+[32m+[m
+[32m+[m[32m    if "curly" in texture:[m
+[32m+[m[32m        return True[m
+[32m+[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        gene = str(ctx.rock.genes.get("hair_texture", "00"))[m
+[32m+[m[32m        return gene == "11"[m
+[32m+[m[32m    except Exception:[m
+[32m+[m[32m        return False[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef deterministic_rng_for_rock(rock, salt="curl"):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Deterministic random generator so curls do not jump around every redraw.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    seed_text = f"{getattr(rock, 'id', 0)}_{salt}_{str(getattr(rock, 'genes', {}))}"[m
+[32m+[m[32m    seed = abs(hash(seed_text)) % (2**32)[m
+[32m+[m[32m    return random.Random(seed)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef draw_curl_arc([m
+[32m+[m[32m    ax,[m
+[32m+[m[32m    x,[m
+[32m+[m[32m    y,[m
+[32m+[m[32m    w,[m
+[32m+[m[32m    h,[m
+[32m+[m[32m    color,[m
+[32m+[m[32m    angle=0,[m
+[32m+[m[32m    theta1=0,[m
+[32m+[m[32m    theta2=180,[m
+[32m+[m[32m    linewidth=1.25,[m
+[32m+[m[32m    alpha=0.9,[m
+[32m+[m[32m    zorder=50[m
+[32m+[m[32m):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Draw one curl arc.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    arc = Arc([m
+[32m+[m[32m        (x, y),[m
+[32m+[m[32m        width=w,[m
+[32m+[m[32m        height=h,[m
+[32m+[m[32m        angle=angle,[m
+[32m+[m[32m        theta1=theta1,[m
+[32m+[m[32m        theta2=theta2,[m
+[32m+[m[32m        color=color,[m
+[32m+[m[32m        linewidth=linewidth,[m
+[32m+[m[32m        alpha=alpha,[m
+[32m+[m[32m        zorder=zorder[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    ax.add_patch(arc)[m
+[32m+[m
+[32m+[m[32m    return arc[m
+[32m+[m
+[32m+[m
+[32m+[m
+[32m+[m
+[32m+[m
+ def get_wrinkle_color(body_color):[m
+     """[m
+     Adaptive wrinkle color:[m
+[36m@@ -4647,6 +4888,75 @@[m [mdef get_facial_hair_layout(ctx, drawn_eye_positions=None, nose_info=None, mouth_[m
+         }[m
+     }[m
+ [m
+[32m+[m
+[32m+[m[32mdef draw_facial_hair_curls([m
+[32m+[m[32m    ctx,[m
+[32m+[m[32m    hair_color,[m
+[32m+[m[32m    mouth_cx,[m
+[32m+[m[32m    mouth_cy,[m
+[32m+[m[32m    mouth_w,[m
+[32m+[m[32m    mouth_h,[m
+[32m+[m[32m    fh_type,[m
+[32m+[m[32m    zorder=62[m
+[32m+[m[32m):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Add curl marks over facial hair if hair_texture is curly.[m
+[32m+[m
+[32m+[m[32m    Works best for beard/goatee/curly styles.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    if not rock_texture_is_curly(ctx):[m
+[32m+[m[32m        return [][m
+[32m+[m
+[32m+[m[32m    if fh_type in ["n/a", "peach_fuzz"]:[m
+[32m+[m[32m        return [][m
+[32m+[m
+[32m+[m[32m    # Small facial hair styles get fewer curls.[m
+[32m+[m[32m    if fh_type in ["beard"]:[m
+[32m+[m[32m        x_min = mouth_cx - 0.75 * mouth_w[m
+[32m+[m[32m        x_max = mouth_cx + 0.75 * mouth_w[m
+[32m+[m[32m        y_min = mouth_cy - 2.05 * mouth_h[m
+[32m+[m[32m        y_max = mouth_cy + 0.15 * mouth_h[m
+[32m+[m[32m        n_curls = 9[m
+[32m+[m[32m        curl_scale = 0.05[m
+[32m+[m
+[32m+[m[32m    elif fh_type in ["goatee"]:[m
+[32m+[m[32m        x_min = mouth_cx - 0.62 * mouth_w[m
+[32m+[m[32m        x_max = mouth_cx + 0.62 * mouth_w[m
+[32m+[m[32m        y_min = mouth_cy - 1.20 * mouth_h[m
+[32m+[m[32m        y_max = mouth_cy + 0.10 * mouth_h[m
+[32m+[m[32m        n_curls = 6[m
+[32m+[m[32m        curl_scale = 0.05[m
+[32m+[m
+[32m+[m[32m    elif fh_type in ["curly_mustache"]:[m
+[32m+[m[32m        x_min = mouth_cx - 0.65 * mouth_w[m
+[32m+[m[32m        x_max = mouth_cx + 0.65 * mouth_w[m
+[32m+[m[32m        y_min = mouth_cy - 0.15 * mouth_h[m
+[32m+[m[32m        y_max = mouth_cy + 0.35 * mouth_h[m
+[32m+[m[32m        n_curls = 5[m
+[32m+[m[32m        curl_scale = 0.05[m
+[32m+[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        x_min = mouth_cx - 0.50 * mouth_w[m
+[32m+[m[32m        x_max = mouth_cx + 0.50 * mouth_w[m
+[32m+[m[32m        y_min = mouth_cy - 0.65 * mouth_h[m
+[32m+[m[32m        y_max = mouth_cy + 0.15 * mouth_h[m
+[32m+[m[32m        n_curls = 4[m
+[32m+[m[32m        curl_scale = 0.05[m
+[32m+[m
+[32m+[m[32m    return draw_curly_overlay_in_box([m
+[32m+[m[32m        ctx,[m
+[32m+[m[32m        x_min=x_min,[m
+[32m+[m[32m        x_max=x_max,[m
+[32m+[m[32m        y_min=y_min,[m
+[32m+[m[32m        y_max=y_max,[m
+[32m+[m[32m        hair_color=hair_color,[m
+[32m+[m[32m        n_curls=n_curls,[m
+[32m+[m[32m        curl_scale=curl_scale,[m
+[32m+[m[32m        zorder=zorder,[m
+[32m+[m[32m        salt=f"facial_curls_{fh_type}"[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m
+ def draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mouth_info=None):[m
+     """[m
+     Draw facial-hair styles:[m
+[36m@@ -4756,6 +5066,17 @@[m [mdef draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou[m
+                     solid_capstyle="round"[m
+                 )[m
+ [m
+[32m+[m[32m        draw_facial_hair_curls([m
+[32m+[m[32m            ctx,[m
+[32m+[m[32m            hair_color=hair_color,[m
+[32m+[m[32m            mouth_cx=mouth_cx,[m
+[32m+[m[32m            mouth_cy=mouth_cy,[m
+[32m+[m[32m            mouth_w=mouth_w,[m
+[32m+[m[32m            mouth_h=mouth_h,[m
+[32m+[m[32m            fh_type=fh_type,[m
+[32m+[m[32m            zorder=z + 3[m
+[32m+[m[32m        )[m
+[32m+[m
+         return layout[m
+ [m
+     # --------------------------------------------------[m
+[36m@@ -4795,6 +5116,17 @@[m [mdef draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou[m
+         )[m
+         ctx.ax.add_patch(goatee)[m
+ [m
+[32m+[m[32m        draw_facial_hair_curls([m
+[32m+[m[32m            ctx,[m
+[32m+[m[32m            hair_color=hair_color,[m
+[32m+[m[32m            mouth_cx=mouth_cx,[m
+[32m+[m[32m            mouth_cy=mouth_cy,[m
+[32m+[m[32m            mouth_w=mouth_w,[m
+[32m+[m[32m            mouth_h=mouth_h,[m
+[32m+[m[32m            fh_type=fh_type,[m
+[32m+[m[32m            zorder=z + 3[m
+[32m+[m[32m        )[m
+[32m+[m
+         return layout[m
+ [m
+     # --------------------------------------------------[m
+[36m@@ -4837,6 +5169,17 @@[m [mdef draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou[m
+         )[m
+         ctx.ax.add_patch(beard)[m
+ [m
+[32m+[m[32m        draw_facial_hair_curls([m
+[32m+[m[32m            ctx,[m
+[32m+[m[32m            hair_color=hair_color,[m
+[32m+[m[32m            mouth_cx=mouth_cx,[m
+[32m+[m[32m            mouth_cy=mouth_cy,[m
+[32m+[m[32m            mouth_w=mouth_w,[m
+[32m+[m[32m            mouth_h=mouth_h,[m
+[32m+[m[32m            fh_type=fh_type,[m
+[32m+[m[32m            zorder=z + 3[m
+[32m+[m[32m        )[m
+[32m+[m
+         return layout[m
+     # --------------------------------------------------[m
+     # 3) PEDO — two small marks[m
+[36m@@ -4855,6 +5198,18 @@[m [mdef draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou[m
+                 zorder=z[m
+             )[m
+             ctx.ax.add_patch(dot)[m
+[32m+[m
+[32m+[m[32m        draw_facial_hair_curls([m
+[32m+[m[32m            ctx,[m
+[32m+[m[32m            hair_color=hair_color,[m
+[32m+[m[32m            mouth_cx=mouth_cx,[m
+[32m+[m[32m            mouth_cy=mouth_cy,[m
+[32m+[m[32m            mouth_w=mouth_w,[m
+[32m+[m[32m            mouth_h=mouth_h,[m
+[32m+[m[32m            fh_type=fh_type,[m
+[32m+[m[32m            zorder=z + 3[m
+[32m+[m[32m        )[m
+[32m+[m
+         return layout[m
+ [m
+     # --------------------------------------------------[m
+[36m@@ -4902,6 +5257,17 @@[m [mdef draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou[m
+             ctx.ax.add_patch(curl)[m
+             """[m
+ [m
+[32m+[m[32m        draw_facial_hair_curls([m
+[32m+[m[32m            ctx,[m
+[32m+[m[32m            hair_color=hair_color,[m
+[32m+[m[32m            mouth_cx=mouth_cx,[m
+[32m+[m[32m            mouth_cy=mouth_cy,[m
+[32m+[m[32m            mouth_w=mouth_w,[m
+[32m+[m[32m            mouth_h=mouth_h,[m
+[32m+[m[32m            fh_type=fh_type,[m
+[32m+[m[32m            zorder=z + 3[m
+[32m+[m[32m        )[m
+[32m+[m
+         return layout[m
+ [m
+     # --------------------------------------------------[m
+[36m@@ -4925,6 +5291,18 @@[m [mdef draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou[m
+             joinstyle="round"[m
+         )[m
+         ctx.ax.add_patch(patch)[m
+[32m+[m
+[32m+[m[32m        draw_facial_hair_curls([m
+[32m+[m[32m            ctx,[m
+[32m+[m[32m            hair_color=hair_color,[m
+[32m+[m[32m            mouth_cx=mouth_cx,[m
+[32m+[m[32m            mouth_cy=mouth_cy,[m
+[32m+[m[32m            mouth_w=mouth_w,[m
+[32m+[m[32m            mouth_h=mouth_h,[m
+[32m+[m[32m            fh_type=fh_type,[m
+[32m+[m[32m            zorder=z + 3[m
+[32m+[m[32m        )[m
+[32m+[m
+         return layout[m
+ [m
+     # --------------------------------------------------[m
+[36m@@ -4949,6 +5327,18 @@[m [mdef draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou[m
+             joinstyle="round"[m
+         )[m
+         ctx.ax.add_patch(goatee)[m
+[32m+[m
+[32m+[m[32m        draw_facial_hair_curls([m
+[32m+[m[32m            ctx,[m
+[32m+[m[32m            hair_color=hair_color,[m
+[32m+[m[32m            mouth_cx=mouth_cx,[m
+[32m+[m[32m            mouth_cy=mouth_cy,[m
+[32m+[m[32m            mouth_w=mouth_w,[m
+[32m+[m[32m            mouth_h=mouth_h,[m
+[32m+[m[32m            fh_type=fh_type,[m
+[32m+[m[32m            zorder=z + 3[m
+[32m+[m[32m        )[m
+[32m+[m
+         return layout[m
+ [m
+     return layout[m
+[36m@@ -5934,7 +6324,478 @@[m [mdef is_rock_craisen(rock):[m
+     except Exception:[m
+         pass[m
+ [m
+[31m-    return bool(getattr(rock, "is_craisen", 0) == 1)[m
+[32m+[m[32m    return bool(getattr(rock, "is_craisen", 0) == 1)[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# RELATEDNESS / INBREEDING HELPERS[m
+[32m+[m[32m# ============================================================[m
+[32m+[m
+[32m+[m[32mDISTANT_RELATIONSHIP_R_THRESHOLD = 1.0 / 32.0[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _safe_int_id(value):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Convert rock id-like values into int ids.[m
+[32m+[m
+[32m+[m[32m    Supports:[m
+[32m+[m[32m    - int[m
+[32m+[m[32m    - numeric string[m
+[32m+[m[32m    - Rock object with .id[m
+[32m+[m[32m    """[m
+[32m+[m[32m    if value is None:[m
+[32m+[m[32m        return None[m
+[32m+[m
+[32m+[m[32m    if hasattr(value, "id"):[m
+[32m+[m[32m        value = getattr(value, "id")[m
+[32m+[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        return int(value)[m
+[32m+[m[32m    except Exception:[m
+[32m+[m[32m        return None[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef get_rock_by_id_safe(game, rock_id):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Safely fetch a rock from game.rocks.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    rock_id = _safe_int_id(rock_id)[m
+[32m+[m
+[32m+[m[32m    if rock_id is None:[m
+[32m+[m[32m        return None[m
+[32m+[m
+[32m+[m[32m    if game is None or not hasattr(game, "rocks"):[m
+[32m+[m[32m        return None[m
+[32m+[m
+[32m+[m[32m    if rock_id in game.rocks:[m
+[32m+[m[32m        return game.rocks[rock_id][m
+[32m+[m
+[32m+[m[32m    if str(rock_id) in game.rocks:[m
+[32m+[m[32m        return game.rocks[str(rock_id)][m
+[32m+[m
+[32m+[m[32m    return None[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef get_parent_ids_for_relationship(game, rock_id):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Robustly find parent ids for a rock.[m
+[32m+[m
+[32m+[m[32m    This supports several possible data models:[m
+[32m+[m[32m    - rock.parents[m
+[32m+[m[32m    - rock.parent_ids[m
+[32m+[m[32m    - rock.parent_pair[m
+[32m+[m[32m    - rock.parent_a_id / rock.parent_b_id[m
+[32m+[m[32m    - rock.mother_id / rock.father_id[m
+[32m+[m[32m    """[m
+[32m+[m[32m    rock = get_rock_by_id_safe(game, rock_id)[m
+[32m+[m
+[32m+[m[32m    if rock is None:[m
+[32m+[m[32m        return [][m
+[32m+[m
+[32m+[m[32m    # Common single attributes that may hold tuple/list/set/dict.[m
+[32m+[m[32m    container_attrs = [[m
+[32m+[m[32m        "parent_ids",[m
+[32m+[m[32m        "parents",[m
+[32m+[m[32m        "parent_pair",[m
+[32m+[m[32m        "parent_id_pair",[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m[32m    for attr in container_attrs:[m
+[32m+[m[32m        if not hasattr(rock, attr):[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        value = getattr(rock, attr)[m
+[32m+[m
+[32m+[m[32m        if callable(value):[m
+[32m+[m[32m            value = value()[m
+[32m+[m
+[32m+[m[32m        if value is None:[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        if isinstance(value, dict):[m
+[32m+[m[32m            raw_values = list(value.values())[m
+[32m+[m[32m        elif isinstance(value, (list, tuple, set)):[m
+[32m+[m[32m            raw_values = list(value)[m
+[32m+[m[32m        else:[m
+[32m+[m[32m            raw_values = [value][m
+[32m+[m
+[32m+[m[32m        cleaned = [][m
+[32m+[m
+[32m+[m[32m        for raw in raw_values:[m
+[32m+[m[32m            parent_id = _safe_int_id(raw)[m
+[32m+[m[32m            if parent_id is not None:[m
+[32m+[m[32m                cleaned.append(parent_id)[m
+[32m+[m
+[32m+[m[32m        if len(cleaned) > 0:[m
+[32m+[m[32m            return list(dict.fromkeys(cleaned))[m
+[32m+[m
+[32m+[m[32m    # Common paired attributes.[m
+[32m+[m[32m    paired_attrs = [[m
+[32m+[m[32m        ("parent_a_id", "parent_b_id"),[m
+[32m+[m[32m        ("parent1_id", "parent2_id"),[m
+[32m+[m[32m        ("mother_id", "father_id"),[m
+[32m+[m[32m        ("mom_id", "dad_id"),[m
+[32m+[m[32m        ("parent_a", "parent_b"),[m
+[32m+[m[32m        ("mother", "father"),[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m[32m    cleaned = [][m
+[32m+[m
+[32m+[m[32m    for attr_a, attr_b in paired_attrs:[m
+[32m+[m[32m        for attr in [attr_a, attr_b]:[m
+[32m+[m[32m            if not hasattr(rock, attr):[m
+[32m+[m[32m                continue[m
+[32m+[m
+[32m+[m[32m            parent_id = _safe_int_id(getattr(rock, attr))[m
+[32m+[m
+[32m+[m[32m            if parent_id is not None:[m
+[32m+[m[32m                cleaned.append(parent_id)[m
+[32m+[m
+[32m+[m[32m        if len(cleaned) > 0:[m
+[32m+[m[32m            return list(dict.fromkeys(cleaned))[m
+[32m+[m
+[32m+[m[32m    return [][m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef get_ancestor_path_distances(game, rock_id, include_self=True, max_depth=12):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Return a dictionary:[m
+[32m+[m
+[32m+[m[32m        ancestor_id -> [distance_1, distance_2, ...][m
+[32m+[m
+[32m+[m[32m    Distance:[m
+[32m+[m[32m        self = 0[m
+[32m+[m[32m        parent = 1[m
+[32m+[m[32m        grandparent = 2[m
+[32m+[m[32m        great-grandparent = 3[m
+[32m+[m
+[32m+[m[32m    Multiple distances are kept because inbred pedigrees may have multiple[m
+[32m+[m[32m    paths to the same ancestor.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    rock_id = _safe_int_id(rock_id)[m
+[32m+[m
+[32m+[m[32m    if rock_id is None:[m
+[32m+[m[32m        return {}[m
+[32m+[m
+[32m+[m[32m    distances = {}[m
+[32m+[m
+[32m+[m[32m    stack = [[m
+[32m+[m[32m        (rock_id, 0, {rock_id})[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m[32m    while len(stack) > 0:[m
+[32m+[m[32m        current_id, depth, path_seen = stack.pop()[m
+[32m+[m
+[32m+[m[32m        if depth > max_depth:[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        if include_self or depth > 0:[m
+[32m+[m[32m            distances.setdefault(current_id, []).append(depth)[m
+[32m+[m
+[32m+[m[32m        if depth == max_depth:[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        parent_ids = get_parent_ids_for_relationship(game, current_id)[m
+[32m+[m
+[32m+[m[32m        for parent_id in parent_ids:[m
+[32m+[m[32m            parent_id = _safe_int_id(parent_id)[m
+[32m+[m
+[32m+[m[32m            if parent_id is None:[m
+[32m+[m[32m                continue[m
+[32m+[m
+[32m+[m[32m            # Prevent accidental loops from bad saved data.[m
+[32m+[m[32m            if parent_id in path_seen:[m
+[32m+[m[32m                continue[m
+[32m+[m
+[32m+[m[32m            next_seen = set(path_seen)[m
+[32m+[m[32m            next_seen.add(parent_id)[m
+[32m+[m
+[32m+[m[32m            stack.append([m
+[32m+[m[32m                (parent_id, depth + 1, next_seen)[m
+[32m+[m[32m            )[m
+[32m+[m
+[32m+[m[32m    return distances[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef calculate_relatedness_r(game, rock_a_id, rock_b_id, max_depth=12):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Calculate coefficient of relationship R between two rocks.[m
+[32m+[m
+[32m+[m[32m    Formula:[m
+[32m+[m[32m        R = sum over shared ancestors of (1/2)^(distance_a + distance_b)[m
+[32m+[m
+[32m+[m[32m    Examples:[m
+[32m+[m[32m        parent-child: 1/2[m
+[32m+[m[32m        full siblings: 1/2[m
+[32m+[m[32m        half siblings: 1/4[m
+[32m+[m[32m        uncle/niece: 1/4[m
+[32m+[m[32m        first cousins: 1/8[m
+[32m+[m
+[32m+[m[32m    Returns:[m
+[32m+[m[32m        r, contributions[m
+[32m+[m
+[32m+[m[32m    contributions:[m
+[32m+[m[32m        dict ancestor_id -> contribution amount[m
+[32m+[m[32m    """[m
+[32m+[m[32m    rock_a_id = _safe_int_id(rock_a_id)[m
+[32m+[m[32m    rock_b_id = _safe_int_id(rock_b_id)[m
+[32m+[m
+[32m+[m[32m    if rock_a_id is None or rock_b_id is None:[m
+[32m+[m[32m        return 0.0, {}[m
+[32m+[m
+[32m+[m[32m    if rock_a_id == rock_b_id:[m
+[32m+[m[32m        return 1.0, {rock_a_id: 1.0}[m
+[32m+[m
+[32m+[m[32m    ancestors_a = get_ancestor_path_distances([m
+[32m+[m[32m        game,[m
+[32m+[m[32m        rock_a_id,[m
+[32m+[m[32m        include_self=True,[m
+[32m+[m[32m        max_depth=max_depth[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    ancestors_b = get_ancestor_path_distances([m
+[32m+[m[32m        game,[m
+[32m+[m[32m        rock_b_id,[m
+[32m+[m[32m        include_self=True,[m
+[32m+[m[32m        max_depth=max_depth[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    shared_ancestors = set(ancestors_a.keys()) & set(ancestors_b.keys())[m
+[32m+[m
+[32m+[m[32m    r = 0.0[m
+[32m+[m[32m    contributions = {}[m
+[32m+[m
+[32m+[m[32m    for ancestor_id in shared_ancestors:[m
+[32m+[m[32m        subtotal = 0.0[m
+[32m+[m
+[32m+[m[32m        for distance_a in ancestors_a[ancestor_id]:[m
+[32m+[m[32m            for distance_b in ancestors_b[ancestor_id]:[m
+[32m+[m[32m                subtotal += 0.5 ** (distance_a + distance_b)[m
+[32m+[m
+[32m+[m[32m        if subtotal > 0:[m
+[32m+[m[32m            contributions[ancestor_id] = subtotal[m
+[32m+[m[32m            r += subtotal[m
+[32m+[m
+[32m+[m[32m    # Keep weird pedigrees from producing silly display values.[m
+[32m+[m[32m    r = min(r, 1.0)[m
+[32m+[m
+[32m+[m[32m    return r, contributions[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef ordinal_word(n):[m
+[32m+[m[32m    words = {[m
+[32m+[m[32m        1: "first",[m
+[32m+[m[32m        2: "second",[m
+[32m+[m[32m        3: "third",[m
+[32m+[m[32m        4: "fourth",[m
+[32m+[m[32m        5: "fifth",[m
+[32m+[m[32m        6: "sixth",[m
+[32m+[m[32m        7: "seventh",[m
+[32m+[m[32m        8: "eighth",[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    return words.get(int(n), f"{n}th")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef removal_word(n):[m
+[32m+[m[32m    words = {[m
+[32m+[m[32m        1: "once removed",[m
+[32m+[m[32m        2: "twice removed",[m
+[32m+[m[32m        3: "three times removed",[m
+[32m+[m[32m        4: "four times removed",[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    return words.get(int(n), f"{n} times removed")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef great_prefix(count):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    count = 0 -> ''[m
+[32m+[m[32m    count = 1 -> 'great-'[m
+[32m+[m[32m    count = 2 -> '2x-great-'[m
+[32m+[m[32m    """[m
+[32m+[m[32m    count = int(count)[m
+[32m+[m
+[32m+[m[32m    if count <= 0:[m
+[32m+[m[32m        return ""[m
+[32m+[m
+[32m+[m[32m    if count == 1:[m
+[32m+[m[32m        return "great-"[m
+[32m+[m
+[32m+[m[32m    return f"{count}x-great-"[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef describe_equivalent_relationship_from_r(r):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Describe approximate relationship class from R.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    if r <= 0:[m
+[32m+[m[32m        return "unrelated / no known shared ancestor"[m
+[32m+[m
+[32m+[m[32m    if r >= 0.49:[m
+[32m+[m[32m        return "parent-child / full-sibling level"[m
+[32m+[m
+[32m+[m[32m    if r >= 0.249:[m
+[32m+[m[32m        return "half-sibling / aunt-uncle-niece-nephew / grandparent-grandchild level"[m
+[32m+[m
+[32m+[m[32m    if r >= 0.124:[m
+[32m+[m[32m        return "first-cousin level"[m
+[32m+[m
+[32m+[m[32m    if r >= 0.061:[m
+[32m+[m[32m        return "first-cousin-once-removed / great-aunt-uncle level"[m
+[32m+[m
+[32m+[m[32m    if r >= 0.031:[m
+[32m+[m[32m        return "second-cousin level"[m
+[32m+[m
+[32m+[m[32m    return "distant relation"[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef describe_actual_relationship(game, rock_a_id, rock_b_id, max_depth=12):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Describe the closest actual relationship pattern between two rocks.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    rock_a_id = _safe_int_id(rock_a_id)[m
+[32m+[m[32m    rock_b_id = _safe_int_id(rock_b_id)[m
+[32m+[m
+[32m+[m[32m    if rock_a_id is None or rock_b_id is None:[m
+[32m+[m[32m        return "unknown"[m
+[32m+[m
+[32m+[m[32m    if rock_a_id == rock_b_id:[m
+[32m+[m[32m        return "same rock"[m
+[32m+[m
+[32m+[m[32m    ancestors_a = get_ancestor_path_distances([m
+[32m+[m[32m        game,[m
+[32m+[m[32m        rock_a_id,[m
+[32m+[m[32m        include_self=True,[m
+[32m+[m[32m        max_depth=max_depth[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    ancestors_b = get_ancestor_path_distances([m
+[32m+[m[32m        game,[m
+[32m+[m[32m        rock_b_id,[m
+[32m+[m[32m        include_self=True,[m
+[32m+[m[32m        max_depth=max_depth[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    # Direct ancestor cases.[m
+[32m+[m[32m    if rock_a_id in ancestors_b:[m
+[32m+[m[32m        distance = min(ancestors_b[rock_a_id])[m
+[32m+[m
+[32m+[m[32m        if distance == 1:[m
+[32m+[m[32m            return "parent and child"[m
+[32m+[m
+[32m+[m[32m        if distance == 2:[m
+[32m+[m[32m            return "grandparent and grandchild"[m
+[32m+[m
+[32m+[m[32m        return f"{great_prefix(distance - 2)}grandparent and {great_prefix(distance - 2)}grandchild"[m
+[32m+[m
+[32m+[m[32m    if rock_b_id in ancestors_a:[m
+[32m+[m[32m        distance = min(ancestors_a[rock_b_id])[m
+[32m+[m
+[32m+[m[32m        if distance == 1:[m
+[32m+[m[32m            return "parent and child"[m
+[32m+[m
+[32m+[m[32m        if distance == 2:[m
+[32m+[m[32m            return "grandparent and grandchild"[m
+[32m+[m
+[32m+[m[32m        return f"{great_prefix(distance - 2)}grandparent and {great_prefix(distance - 2)}grandchild"[m
+[32m+[m
+[32m+[m[32m    shared_ancestors = set(ancestors_a.keys()) & set(ancestors_b.keys())[m
+[32m+[m
+[32m+[m[32m    if len(shared_ancestors) == 0:[m
+[32m+[m[32m        return "unrelated / no known shared ancestor"[m
+[32m+[m
+[32m+[m[32m    # Find closest shared-ancestor path pair.[m
+[32m+[m[32m    best = None[m
+[32m+[m
+[32m+[m[32m    for ancestor_id in shared_ancestors:[m
+[32m+[m[32m        for distance_a in ancestors_a[ancestor_id]:[m
+[32m+[m[32m            for distance_b in ancestors_b[ancestor_id]:[m
+[32m+[m[32m                if distance_a == 0 or distance_b == 0:[m
+[32m+[m[32m                    continue[m
+[32m+[m
+[32m+[m[32m                score = distance_a + distance_b[m
+[32m+[m
+[32m+[m[32m                if best is None or score < best[0]:[m
+[32m+[m[32m                    best = (score, distance_a, distance_b, ancestor_id)[m
+[32m+[m
+[32m+[m[32m    if best is None:[m
+[32m+[m[32m        return "unknown relation"[m
+[32m+[m
+[32m+[m[32m    _, distance_a, distance_b, _ = best[m
+[32m+[m
+[32m+[m[32m    min_d = min(distance_a, distance_b)[m
+[32m+[m[32m    max_d = max(distance_a, distance_b)[m
+[32m+[m
+[32m+[m[32m    # Siblings.[m
+[32m+[m[32m    if distance_a == 1 and distance_b == 1:[m
+[32m+[m[32m        common_parent_count = 0[m
+[32m+[m
+[32m+[m[32m        for ancestor_id in shared_ancestors:[m
+[32m+[m[32m            if 1 in ancestors_a[ancestor_id] and 1 in ancestors_b[ancestor_id]:[m
+[32m+[m[32m                common_parent_count += 1[m
+[32m+[m
+[32m+[m[32m        if common_parent_count >= 2:[m
+[32m+[m[32m            return "full siblings"[m
+[32m+[m
+[32m+[m[32m        return "half siblings"[m
+[32m+[m
+[32m+[m[32m    # Aunt/uncle style relation.[m
+[32m+[m[32m    if min_d == 1:[m
+[32m+[m[32m        great_count = max_d - 2[m
+[32m+[m
+[32m+[m[32m        if great_count <= 0:[m
+[32m+[m[32m            return "aunt/uncle and niece/nephew"[m
+[32m+[m
+[32m+[m[32m        return ([m
+[32m+[m[32m            f"{great_prefix(great_count)}aunt/uncle and "[m
+[32m+[m[32m            f"{great_prefix(great_count)}niece/nephew"[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    # Cousin relation.[m
+[32m+[m[32m    cousin_degree = min_d - 1[m
+[32m+[m[32m    removals = abs(distance_a - distance_b)[m
+[32m+[m
+[32m+[m[32m    cousin_text = f"{ordinal_word(cousin_degree)} cousins"[m
+[32m+[m
+[32m+[m[32m    if removals > 0:[m
+[32m+[m[32m        cousin_text += f" {removal_word(removals)}"[m
+[32m+[m
+[32m+[m[32m    return cousin_text[m
+[32m+[m
+[32m+[m[32mdef format_relatedness_report(game, rock_a_id, rock_b_id, max_depth=12):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Human-readable relatedness report for breeding preview.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    r, contributions = calculate_relatedness_r([m
+[32m+[m[32m        game,[m
+[32m+[m[32m        rock_a_id,[m
+[32m+[m[32m        rock_b_id,[m
+[32m+[m[32m        max_depth=max_depth[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    f_child = r / 2.0[m
+[32m+[m
+[32m+[m[32m    equivalent = describe_equivalent_relationship_from_r(r)[m
+[32m+[m[32m    actual = describe_actual_relationship([m
+[32m+[m[32m        game,[m
+[32m+[m[32m        rock_a_id,[m
+[32m+[m[32m        rock_b_id,[m
+[32m+[m[32m        max_depth=max_depth[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    if r > 0 and r < DISTANT_RELATIONSHIP_R_THRESHOLD:[m
+[32m+[m[32m        actual = "distant"[m
+[32m+[m
+[32m+[m[32m    return ([m
+[32m+[m[32m        f"R = {r:.4f} | estimated child F = {f_child:.4f}\n"[m
+[32m+[m[32m        f"Equivalent: {equivalent}\n"[m
+[32m+[m[32m        f"Actual: {actual}"[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m
+[32m+[m
+[32m+[m
+ [m
+ def is_rock_breedable(rock):[m
+     """[m
+[36m@@ -6458,6 +7319,33 @@[m [mdef get_queue_entry_potion(entry):[m
+ [m
+     return labels[m
+ [m
+[32m+[m[32mdef remove_selected_pairs_from_breeding_queue(game, pair_indices):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Remove selected queued breeding pairs by index.[m
+[32m+[m
+[32m+[m[32m    Important:[m
+[32m+[m[32m    remove from highest index to lowest index so earlier removals[m
+[32m+[m[32m    do not shift later indexes.[m
+[32m+[m
+[32m+[m[32m    Uses remove_pair_from_breeding_queue(), so attached potions are refunded.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    if pair_indices is None:[m
+[32m+[m[32m        return 0[m
+[32m+[m
+[32m+[m[32m    cleaned_indices = sorted([m
+[32m+[m[32m        set(int(i) for i in pair_indices),[m
+[32m+[m[32m        reverse=True[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    removed_count = 0[m
+[32m+[m
+[32m+[m[32m    for i in cleaned_indices:[m
+[32m+[m[32m        if 0 <= i < len(game.breeding_queue):[m
+[32m+[m[32m            if remove_pair_from_breeding_queue(game, i):[m
+[32m+[m[32m                removed_count += 1[m
+[32m+[m
+[32m+[m[32m    return removed_count[m
+[32m+[m
+ POTION_SHOP = {[m
+     "anti_craisen": {[m
+         "name": "Anti-Craisen Potion",[m
+[36m@@ -7089,7 +7977,7 @@[m [mdef add_pair_to_breeding_queue(game, parent_a_id, parent_b_id, potion_key=None):[m
+         potion_text = f" using {get_potion_name(potion_key)}"[m
+ [m
+     game.events.append([m
+[31m-        f"Added breeding pair #{parent_a_id} x #{parent_b_id}{potion_text}."[m
+[32m+[m[32m        f"Added breeding pair #{parent_a_id} x #{parent_b_id}{potion_text}. \n {format_relatedness_report(game, parent_a_id, parent_b_id)} "[m
+     )[m
+ [m
+     print([m
+[36m@@ -7253,7 +8141,7 @@[m [mCHILD_DEATH_CHANCE = 0.05   # change this later for balance[m
+ CLUTCH_MEAN = 1.5[m
+ CLUTCH_STD = 2.0[m
+ MAX_CLUTCH_SIZE = None      # set to e.g. 8 if you want to cap chaos[m
+[31m-SPORE_CLONE_COUNT = 4[m
+[32m+[m[32mSPORE_CLONE_COUNT = 3[m
+ SPORE_PUFF_CHANCE = 0.25   # tune later; 25% per spore clone[m
+ [m
+ #IMPORT_ROCK_COST = 10[m
+[36m@@ -8503,27 +9391,104 @@[m [mCOLOR_IF_UNCHECKED = {[m
+ [m
+ REQUEST_TRAIT_DEPENDENCIES = {[m
+     "eye_color": {[m
+[31m-        "parent": "eyes",[m
+[31m-        "parent_label": "Eyes",[m
+[31m-        "blocked_parent_values": {"00"},   # No Eyes[m
+[31m-        "message": "Requires Eyes"[m
+[32m+[m[32m        "mode": "any",[m
+[32m+[m[32m        "parents": [[m
+[32m+[m[32m            {[m
+[32m+[m[32m                "gene": "eyes",[m
+[32m+[m[32m                "label": "Eyes",[m
+[32m+[m[32m                "blocked_values": {"00"},[m
+[32m+[m[32m            }[m
+[32m+[m[32m        ],[m
+[32m+[m[32m        "message": "Requires Eyes",[m
+     },[m
+ [m
+     "hair_color": {[m
+[31m-        "parent": "hair",[m
+[31m-        "parent_label": "Hair",[m
+[31m-        "blocked_parent_values": {"00"},   # No Hair[m
+[31m-        "message": "Requires Hair"[m
+[32m+[m[32m        "mode": "any",[m
+[32m+[m[32m        "parents": [[m
+[32m+[m[32m            {[m
+[32m+[m[32m                "gene": "hair",[m
+[32m+[m[32m                "label": "Hair",[m
+[32m+[m[32m                "blocked_values": {"00"},[m
+[32m+[m[32m            },[m
+[32m+[m[32m            {[m
+[32m+[m[32m                "gene": "facial_hair",[m
+[32m+[m[32m                "label": "Facial Hair",[m
+[32m+[m[32m                "blocked_values": {"00"},[m
+[32m+[m[32m            },[m
+[32m+[m[32m            {[m
+[32m+[m[32m                "gene": "brows",[m
+[32m+[m[32m                "label": "Brows",[m
+[32m+[m[32m                "blocked_values": {"00"},[m
+[32m+[m[32m            },[m
+[32m+[m[32m        ],[m
+[32m+[m[32m        "message": "Requires Hair, Facial Hair, or Brows",[m
+     },[m
+ [m
+     "hair_texture": {[m
+[31m-        "parent": "hair",[m
+[31m-        "parent_label": "Hair",[m
+[31m-        "blocked_parent_values": {"00"},   # No Hair[m
+[31m-        "message": "Requires Hair"[m
+[32m+[m[32m        "mode": "any",[m
+[32m+[m[32m        "parents": [[m
+[32m+[m[32m            {[m
+[32m+[m[32m                "gene": "hair",[m
+[32m+[m[32m                "label": "Hair",[m
+[32m+[m[32m                "blocked_values": {"00"},[m
+[32m+[m[32m            },[m
+[32m+[m[32m            {[m
+[32m+[m[32m                "gene": "facial_hair",[m
+[32m+[m[32m                "label": "Facial Hair",[m
+[32m+[m[32m                "blocked_values": {"00"},[m
+[32m+[m[32m            },[m
+[32m+[m[32m            {[m
+[32m+[m[32m                "gene": "brows",[m
+[32m+[m[32m                "label": "Brows",[m
+[32m+[m[32m                "blocked_values": {"00"},[m
+[32m+[m[32m            },[m
+[32m+[m[32m        ],[m
+[32m+[m[32m        "message": "Requires Hair or Facial Hair",[m
+     },[m
+ }[m
+ [m
+[32m+[m[32mdef requested_dependency_satisfied_from_values(gene_name, requested_values):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Backend dependency check using requested_values dictionary.[m
+[32m+[m
+[32m+[m[32m    Used by requested import logic and can also support UI logic.[m
+[32m+[m
+[32m+[m[32m    Examples:[m
+[32m+[m[32m    - eye_color requires eyes[m
+[32m+[m[32m    - hair_color requires hair OR facial_hair OR brows[m
+[32m+[m[32m    - hair_texture requires hair OR facial_hair[m
+[32m+[m[32m    """[m
+[32m+[m[32m    dependency = REQUEST_TRAIT_DEPENDENCIES.get(gene_name, None)[m
+[32m+[m
+[32m+[m[32m    if dependency is None:[m
+[32m+[m[32m        return True[m
+[32m+[m
+[32m+[m[32m    mode = dependency.get("mode", "any")[m
+[32m+[m[32m    parent_rules = dependency.get("parents", [])[m
+[32m+[m
+[32m+[m[32m    checks = [][m
+[32m+[m
+[32m+[m[32m    for rule in parent_rules:[m
+[32m+[m[32m        parent_gene = rule["gene"][m
+[32m+[m[32m        blocked_values = set(str(v) for v in rule.get("blocked_values", set()))[m
+[32m+[m
+[32m+[m[32m        if parent_gene not in requested_values:[m
+[32m+[m[32m            checks.append(False)[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        parent_value = str(requested_values[parent_gene])[m
+[32m+[m
+[32m+[m[32m        if parent_value in blocked_values:[m
+[32m+[m[32m            checks.append(False)[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        checks.append(True)[m
+[32m+[m
+[32m+[m[32m    if mode == "all":[m
+[32m+[m[32m        return all(checks)[m
+[32m+[m
+[32m+[m[32m    return any(checks)[m
+[32m+[m
+ def requested_trait_dependency_satisfied(gene_name, request_widgets):[m
+     """[m
+     Return True if this gene's dependency is satisfied.[m
+[36m@@ -8651,7 +9616,6 @@[m [mdef apply_import_gene_overrides(rock, gene_overrides=None, force_gender=None):[m
+ [m
+     return rock[m
+ [m
+[31m-[m
+ def calculate_custom_import_cost(rock):[m
+     """[m
+     Custom import cost:[m
+[36m@@ -8821,35 +9785,425 @@[m [mdef build_requested_gene_overrides_from_widgets(request_widgets):[m
+ [m
+     return requested_values[m
+ [m
+[32m+[m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# REQUESTED IMPORT: HIDDEN RECESSIVE ROLL RULES[m
+[32m+[m[32m# ============================================================[m
+[32m+[m
+[32m+[m[32mdef get_max_requested_trait_level(gene_name):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Find the highest nonzero allele level listed in REQUEST_TRAIT_CATALOG[m
+[32m+[m[32m    for a given trait.[m
+[32m+[m
+[32m+[m[32m    Example:[m
+[32m+[m[32m        eye_color options include 00, 11, 22, 33, 44, 55[m
+[32m+[m[32m        -> max_level = 5[m
+[32m+[m[32m    """[m
+[32m+[m[32m    if gene_name not in REQUEST_TRAIT_CATALOG:[m
+[32m+[m[32m        return None[m
+[32m+[m
+[32m+[m[32m    max_level = 0[m
+[32m+[m
+[32m+[m[32m    for gene_value in REQUEST_TRAIT_CATALOG[gene_name]["options"].values():[m
+[32m+[m[32m        gene_value = str(gene_value)[m
+[32m+[m
+[32m+[m[32m        for ch in gene_value:[m
+[32m+[m[32m            if ch.isdigit():[m
+[32m+[m[32m                max_level = max(max_level, int(ch))[m
+[32m+[m
+[32m+[m[32m    return max_level[m
+[32m+[m
+[32m+[m
+[32m+[m[32mREQUEST_RECESSIVE_ROLL_TRAITS = {[m
+[32m+[m[32m    "eye_color": {[m
+[32m+[m[32m        "max_level": get_max_requested_trait_level("eye_color")[m
+[32m+[m[32m    },[m
+[32m+[m
+[32m+[m[32m    "hair_color": {[m
+[32m+[m[32m        "max_level": get_max_requested_trait_level("hair_color"),[m
+[32m+[m[32m        "exact_values": {"00", "01", "11"}  # white and silver stay exact[m
+[32m+[m[32m    },[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef requested_dependency_satisfied_from_values(gene_name, requested_values):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Backend dependency check using requested_values dictionary.[m
+[32m+[m
+[32m+[m[32m    Examples:[m
+[32m+[m[32m    - eye_color requires eyes[m
+[32m+[m[32m    - hair_color requires hair OR facial_hair OR brows[m
+[32m+[m[32m    - hair_texture requires hair OR facial_hair[m
+[32m+[m[32m    """[m
+[32m+[m[32m    dependency = REQUEST_TRAIT_DEPENDENCIES.get(gene_name, None)[m
+[32m+[m
+[32m+[m[32m    if dependency is None:[m
+[32m+[m[32m        return True[m
+[32m+[m
+[32m+[m[32m    mode = dependency.get("mode", "any")[m
+[32m+[m[32m    parent_rules = dependency.get("parents", [])[m
+[32m+[m
+[32m+[m[32m    checks = [][m
+[32m+[m
+[32m+[m[32m    for rule in parent_rules:[m
+[32m+[m[32m        parent_gene = rule["gene"][m
+[32m+[m[32m        blocked_values = set(str(v) for v in rule.get("blocked_values", set()))[m
+[32m+[m
+[32m+[m[32m        if parent_gene not in requested_values:[m
+[32m+[m[32m            checks.append(False)[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        parent_value = str(requested_values[parent_gene])[m
+[32m+[m
+[32m+[m[32m        if parent_value in blocked_values:[m
+[32m+[m[32m            checks.append(False)[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        checks.append(True)[m
+[32m+[m
+[32m+[m[32m    if mode == "all":[m
+[32m+[m[32m        return all(checks)[m
+[32m+[m
+[32m+[m[32m    return any(checks)[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# REQUESTED IMPORT: HIDDEN RECESSIVE GENOTYPE ROLL RULES[m
+[32m+[m[32m# ============================================================[m
+[32m+[m
+[32m+[m[32mdef get_catalog_alleles(gene_name, include_zero=False):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Extract allele characters from REQUEST_TRAIT_CATALOG.[m
+[32m+[m
+[32m+[m[32m    Example:[m
+[32m+[m[32m        eye_color values 00, 11, 22, 33, 44, 55[m
+[32m+[m[32m        -> ["1", "2", "3", "4", "5"] if include_zero=False[m
+[32m+[m[32m    """[m
+[32m+[m[32m    alleles = set()[m
+[32m+[m
+[32m+[m[32m    if gene_name not in REQUEST_TRAIT_CATALOG:[m
+[32m+[m[32m        return [][m
+[32m+[m
+[32m+[m[32m    for gene_value in REQUEST_TRAIT_CATALOG[gene_name]["options"].values():[m
+[32m+[m[32m        gene_value = str(gene_value)[m
+[32m+[m
+[32m+[m[32m        for ch in gene_value:[m
+[32m+[m[32m            if not ch.isdigit():[m
+[32m+[m[32m                continue[m
+[32m+[m
+[32m+[m[32m            if ch == "0" and not include_zero:[m
+[32m+[m[32m                continue[m
+[32m+[m
+[32m+[m[32m            alleles.add(ch)[m
+[32m+[m
+[32m+[m[32m    return sorted(alleles, key=lambda x: int(x))[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef build_ladder_roll_rules(gene_name, include_zero=False, zero_is_no_trait=True):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Build hidden-recessive rules for simple dominance-ladder traits.[m
+[32m+[m
+[32m+[m[32m    If allele order is:[m
+[32m+[m[32m        1 > 2 > 3 > 4 > 5[m
+[32m+[m
+[32m+[m[32m    Then:[m
+[32m+[m[32m        11 -> 11, 12, 13, 14, 15[m
+[32m+[m[32m        22 -> 22, 23, 24, 25[m
+[32m+[m[32m        55 -> 55[m
+[32m+[m
+[32m+[m[32m    zero_is_no_trait=True means:[m
+[32m+[m[32m        00 stays exactly 00.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    alleles = get_catalog_alleles(gene_name, include_zero=include_zero)[m
+[32m+[m
+[32m+[m[32m    rules = {}[m
+[32m+[m
+[32m+[m[32m    if zero_is_no_trait:[m
+[32m+[m[32m        rules["00"] = ["00"][m
+[32m+[m
+[32m+[m[32m    for i, allele in enumerate(alleles):[m
+[32m+[m[32m        if allele == "0" and zero_is_no_trait:[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        selected_gene = f"{allele}{allele}"[m
+[32m+[m[32m        hidden_options = alleles[i:][m
+[32m+[m
+[32m+[m[32m        rules[selected_gene] = [[m
+[32m+[m[32m            f"{allele}{hidden}"[m
+[32m+[m[32m            for hidden in hidden_options[m
+[32m+[m[32m        ][m
+[32m+[m
+[32m+[m[32m    return rules[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef symmetric_values(values):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Add reversed versions of two-allele values.[m
+[32m+[m
+[32m+[m[32m    Example:[m
+[32m+[m[32m        ["34"] -> ["34", "43"][m
+[32m+[m[32m    """[m
+[32m+[m[32m    out = set()[m
+[32m+[m
+[32m+[m[32m    for value in values:[m
+[32m+[m[32m        value = str(value)[m
+[32m+[m[32m        out.add(value)[m
+[32m+[m
+[32m+[m[32m        if len(value) == 2:[m
+[32m+[m[32m            out.add(value[::-1])[m
+[32m+[m
+[32m+[m[32m    return sorted(out)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mBODY_COLOR_ROLL_RULES = {[m
+[32m+[m[32m    # white = black codominance gives silver, so white cannot hide black[m
+[32m+[m[32m    "00": ["00", "02", "03", "04", "05", "06"],[m
+[32m+[m
+[32m+[m[32m    # black cannot hide white or it becomes silver[m
+[32m+[m[32m    "11": ["11", "12", "13", "14", "15", "16"],[m
+[32m+[m
+[32m+[m[32m    # silver must be white + black[m
+[32m+[m[32m    "01": ["01", "10"],[m
+[32m+[m
+[32m+[m[32m    # brown dominates red/yellow/blue/patchwork[m
+[32m+[m[32m    "22": ["22", "23", "24", "25", "26"],[m
+[32m+[m
+[32m+[m[32m    # red/yellow/blue mix with each other, so they can only hide patchwork[m
+[32m+[m[32m    "33": ["33", "36"],  # red[m
+[32m+[m[32m    "44": ["44", "46"],  # yellow[m
+[32m+[m[32m    "55": ["55", "56"],  # blue[m
+[32m+[m
+[32m+[m[32m    # mixed colors must stay mixed[m
+[32m+[m[32m    "34": ["34", "43"],  # orange[m
+[32m+[m[32m    "35": ["35", "53"],  # purple[m
+[32m+[m[32m    "45": ["45", "54"],  # green[m
+[32m+[m
+[32m+[m[32m    # patchwork is recessive[m
+[32m+[m[32m    "66": ["66"],[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m
+[32m+[m[32mHAIR_COLOR_ROLL_RULES = {[m
+[32m+[m[32m    # white = black codominance gives silver, so white cannot hide black[m
+[32m+[m[32m    "00": ["00", "02", "03", "04", "05", "06"],[m
+[32m+[m
+[32m+[m[32m    # black cannot hide white or it becomes silver[m
+[32m+[m[32m    "11": ["11", "12", "13", "14", "15", "16"],[m
+[32m+[m
+[32m+[m[32m    # silver must be white + black[m
+[32m+[m[32m    "01": ["01", "10"],[m
+[32m+[m
+[32m+[m[32m    # other hair colors behave like a recessive ladder beneath white/black[m
+[32m+[m[32m    "22": ["22", "23", "24", "25", "26"],  # brown[m
+[32m+[m[32m    "33": ["33", "34", "35", "36"],        # blonde[m
+[32m+[m[32m    "44": ["44", "45", "46"],              # red[m
+[32m+[m[32m    "55": ["55", "56"],                    # pink[m
+[32m+[m[32m    "66": ["66"],                          # blue[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mDOSAGE_ROLL_RULES = {[m
+[32m+[m[32m    # one active allele vs two active alleles matters[m
+[32m+[m[32m    "eyes": {[m
+[32m+[m[32m        "00": ["00"],[m
+[32m+[m[32m        "01": ["01", "10"],[m
+[32m+[m[32m        "11": ["11"],[m
+[32m+[m[32m    },[m
+[32m+[m
+[32m+[m[32m    "hair": {[m
+[32m+[m[32m        "00": ["00"],[m
+[32m+[m[32m        "01": ["01", "10"],[m
+[32m+[m[32m        "11": ["11"],[m
+[32m+[m[32m    },[m
+[32m+[m
+[32m+[m[32m    "fuzz": {[m
+[32m+[m[32m        "00": ["00"],[m
+[32m+[m[32m        "01": ["01", "10"],[m
+[32m+[m[32m        "11": ["11"],[m
+[32m+[m[32m    },[m
+[32m+[m
+[32m+[m[32m    # arms are codominant-ish combinations[m
+[32m+[m[32m    "arms": {[m
+[32m+[m[32m        "00": ["00"],[m
+[32m+[m[32m        "01": ["01", "10"],[m
+[32m+[m[32m        "11": ["11"],[m
+[32m+[m[32m        "02": ["02", "20"],[m
+[32m+[m[32m        "12": ["12", "21"],[m
+[32m+[m[32m        "22": ["22"],[m
+[32m+[m[32m    },[m
+[32m+[m
+[32m+[m[32m    # splitting must stay exact, otherwise mitosion/spore changes[m
+[32m+[m[32m    "splitting": {[m
+[32m+[m[32m        "00": ["00"],[m
+[32m+[m[32m        "11": ["11"],[m
+[32m+[m[32m        "22": ["22"],[m
+[32m+[m[32m    },[m
+[32m+[m
+[32m+[m[32m    # gender should stay exact[m
+[32m+[m[32m    "gender": {[m
+[32m+[m[32m        "00": ["00"],[m
+[32m+[m[32m        "01": ["01", "10"],[m
+[32m+[m[32m    },[m
+[32m+[m
+[32m+[m[32m    # texture is currently exact[m
+[32m+[m[32m    "hair_texture": {[m
+[32m+[m[32m        "00": ["00"],[m
+[32m+[m[32m        "11": ["11"],[m
+[32m+[m[32m    },[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mREQUEST_GENOTYPE_ROLL_RULES = {}[m
+[32m+[m
+[32m+[m[32m# -----------------------------[m
+[32m+[m[32m# Shape/size are always visible traits.[m
+[32m+[m[32m# 00 is not "none" here, so 00 can hide higher/recessive levels.[m
+[32m+[m[32m# -----------------------------[m
+[32m+[m[32mREQUEST_GENOTYPE_ROLL_RULES["shape"] = build_ladder_roll_rules([m
+[32m+[m[32m    "shape",[m
+[32m+[m[32m    include_zero=True,[m
+[32m+[m[32m    zero_is_no_trait=False[m
+[32m+[m[32m)[m
+[32m+[m
+[32m+[m[32mREQUEST_GENOTYPE_ROLL_RULES["size"] = build_ladder_roll_rules([m
+[32m+[m[32m    "size",[m
+[32m+[m[32m    include_zero=True,[m
+[32m+[m[32m    zero_is_no_trait=False[m
+[32m+[m[32m)[m
+[32m+[m
+[32m+[m[32m# -----------------------------[m
+[32m+[m[32m# Special colors[m
+[32m+[m[32m# -----------------------------[m
+[32m+[m[32mREQUEST_GENOTYPE_ROLL_RULES["color"] = BODY_COLOR_ROLL_RULES[m
+[32m+[m[32mREQUEST_GENOTYPE_ROLL_RULES["hair_color"] = HAIR_COLOR_ROLL_RULES[m
+[32m+[m
+[32m+[m[32m# -----------------------------[m
+[32m+[m[32m# Simple dominance-ladder traits.[m
+[32m+[m[32m# 00 means none/no trait, so 00 stays exact.[m
+[32m+[m[32m# -----------------------------[m
+[32m+[m[32mfor gene_name in [[m
+[32m+[m[32m    "eye_color",[m
+[32m+[m[32m    "brows",[m
+[32m+[m[32m    "mouths",[m
+[32m+[m[32m    "noses",[m
+[32m+[m[32m    "crowns",[m
+[32m+[m[32m    "ears",[m
+[32m+[m[32m    "facial_hair",[m
+[32m+[m[32m]:[m
+[32m+[m[32m    if gene_name in REQUEST_TRAIT_CATALOG:[m
+[32m+[m[32m        REQUEST_GENOTYPE_ROLL_RULES[gene_name] = build_ladder_roll_rules([m
+[32m+[m[32m            gene_name,[m
+[32m+[m[32m            include_zero=False,[m
+[32m+[m[32m            zero_is_no_trait=True[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m# -----------------------------[m
+[32m+[m[32m# Binary exact traits.[m
+[32m+[m[32m# If requested, they stay exact for now.[m
+[32m+[m[32m# -----------------------------[m
+[32m+[m[32mfor gene_name in [[m
+[32m+[m[32m    "wings",[m
+[32m+[m[32m    "halos",[m
+[32m+[m[32m    "horns",[m
+[32m+[m[32m    "wrinkles",[m
+[32m+[m[32m    "freckles",[m
+[32m+[m[32m    "stones",[m
+[32m+[m[32m    "tails",[m
+[32m+[m[32m]:[m
+[32m+[m[32m    REQUEST_GENOTYPE_ROLL_RULES[gene_name] = {[m
+[32m+[m[32m        "00": ["00"],[m
+[32m+[m[32m        "11": ["11"],[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m# -----------------------------[m
+[32m+[m[32m# Dosage/codominant/special traits.[m
+[32m+[m[32m# -----------------------------[m
+[32m+[m[32mfor gene_name, rules in DOSAGE_ROLL_RULES.items():[m
+[32m+[m[32m    REQUEST_GENOTYPE_ROLL_RULES[gene_name] = rules[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# Backward-compatible alias if any old code references this name.[m
+[32m+[m[32mREQUEST_RECESSIVE_ROLL_TRAITS = REQUEST_GENOTYPE_ROLL_RULES[m
+[32m+[m
+[32m+[m[32mdef make_requested_gene_value(gene_name, selected_gene_value):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Convert a requested dropdown value into the actual imported gene.[m
+[32m+[m
+[32m+[m[32m    Uses REQUEST_GENOTYPE_ROLL_RULES when available.[m
+[32m+[m
+[32m+[m[32m    Example:[m
+[32m+[m[32m        eye_color requested 22 -> randomly 22, 23, 24, or 25[m
+[32m+[m[32m        eye_color requested 55 -> 55[m
+[32m+[m[32m        hair requested 01 -> 01 or 10[m
+[32m+[m[32m        body orange requested 34 -> 34 or 43[m
+[32m+[m[32m    """[m
+[32m+[m[32m    selected_gene_value = str(selected_gene_value)[m
+[32m+[m
+[32m+[m[32m    rules = REQUEST_GENOTYPE_ROLL_RULES.get(gene_name, None)[m
+[32m+[m
+[32m+[m[32m    if rules is None:[m
+[32m+[m[32m        return selected_gene_value[m
+[32m+[m
+[32m+[m[32m    possible_values = rules.get(selected_gene_value, None)[m
+[32m+[m
+[32m+[m[32m    if not possible_values:[m
+[32m+[m[32m        return selected_gene_value[m
+[32m+[m
+[32m+[m[32m    return random.choice(possible_values)[m
+[32m+[m
+[32m+[m
+[32m+[m
+ def apply_requested_import_policy(rock, requested_values):[m
+     """[m
+     Apply requested-import logic to a random rock.[m
+ [m
+     Checked genes:[m
+[31m-        force selected gene value[m
+[32m+[m[32m        force selected expression.[m
+[32m+[m
+[32m+[m[32m    Dependency-safe:[m
+[32m+[m[32m        eye_color ignored unless eyes requested.[m
+[32m+[m[32m        hair_color ignored unless hair/facial_hair/brows requested.[m
+[32m+[m[32m        hair_texture ignored unless hair/facial_hair requested.[m
+ [m
+     Unchecked catalog genes:[m
+[31m-        suppress expression while preserving recessive carrier alleles where possible[m
+[32m+[m[32m        suppress expression while preserving recessive carrier alleles where possible.[m
+     """[m
+     if requested_values is None:[m
+         requested_values = {}[m
+ [m
+[32m+[m[32m    # Backend safety: remove invalid dependent requests.[m
+[32m+[m[32m    filtered_requested_values = {}[m
+[32m+[m
+[32m+[m[32m    for gene_name, gene_value in requested_values.items():[m
+[32m+[m[32m        if requested_dependency_satisfied_from_values(gene_name, requested_values):[m
+[32m+[m[32m            filtered_requested_values[gene_name] = gene_value[m
+[32m+[m
+[32m+[m[32m    requested_values = filtered_requested_values[m
+[32m+[m
+[32m+[m[32m    actual_forced_values = {}[m
+[32m+[m
+     for gene_name in REQUEST_TRAIT_CATALOG.keys():[m
+         if gene_name not in rock.genes:[m
+             continue[m
+ [m
+         if gene_name in requested_values:[m
+[31m-            rock.genes[gene_name] = str(requested_values[gene_name])[m
+[32m+[m[32m            actual_value = make_requested_gene_value([m
+[32m+[m[32m                gene_name,[m
+[32m+[m[32m                requested_values[gene_name][m
+[32m+[m[32m            )[m
+[32m+[m
+[32m+[m[32m            rock.genes[gene_name] = actual_value[m
+[32m+[m[32m            actual_forced_values[gene_name] = actual_value[m
+[32m+[m
+         else:[m
+             rock.genes[gene_name] = suppress_gene_for_requested_import([m
+                 gene_name,[m
+                 rock.genes[gene_name][m
+             )[m
+ [m
+[31m-    # Sync gender field if gender was affected.[m
+     if "gender" in rock.genes:[m
+         rock.gender = express_gender_from_gene(rock.genes["gender"])[m
+ [m
+[32m+[m[32m    rock.requested_actual_forced_values = actual_forced_values[m
+[32m+[m
+     return rock[m
+ [m
+ def calculate_requested_import_cost(rock):[m
+[36m@@ -9170,7 +10524,6 @@[m [mdef make_requested_import_builder(game, on_refresh=None):[m
+ [m
+     return ui[m
+ [m
+[31m-[m
+ def import_random_rock(game, cost=RANDOM_IMPORT_COST, force_gender=None):[m
+     """[m
+     Buy/import a fully random rock for a flat cost.[m
+[36m@@ -9220,7 +10573,6 @@[m [mdef import_random_rock(game, cost=RANDOM_IMPORT_COST, force_gender=None):[m
+ [m
+     return rock[m
+ [m
+[31m-[m
+ def show_game_rocks(game, cols=4, figsize_per_rock=4, include_sold=False):[m
+     """[m
+     Show current game rocks.[m
+[36m@@ -9255,7 +10607,6 @@[m [mdef show_potion_shop():[m
+ [m
+     print("====================================")[m
+ [m
+[31m-[m
+ def show_inventory(game):[m
+     print("====================================")[m
+     print("INVENTORY")[m
+[36m@@ -9271,7 +10622,6 @@[m [mdef show_inventory(game):[m
+ [m
+     print("====================================")[m
+ [m
+[31m-[m
+ def buy_potion(game, potion_key):[m
+     if potion_key not in POTION_SHOP:[m
+         print(f"Unknown potion: {potion_key}")[m
+[36m@@ -9334,7 +10684,6 @@[m [mdef show_rock_money_table(game, include_sold=False):[m
+ [m
+     print("================================================================================")[m
+ [m
+[31m-[m
+ # ============================================================[m
+ # SAVE / LOAD SYSTEM[m
+ # ============================================================[m
+[36m@@ -9342,10 +10691,8 @@[m [mdef show_rock_money_table(game, include_sold=False):[m
+ import json[m
+ from datetime import datetime[m
+ [m
+[31m-[m
+ SAVE_VERSION = "0.1.0"[m
+ [m
+[31m-[m
+ def rock_to_dict(rock):[m
+     """[m
+     Convert a Rock object into a JSON-safe dictionary.[m
+[36m@@ -9386,7 +10733,6 @@[m [mdef rock_to_dict(rock):[m
+         "gender": getattr(rock, "gender", None),[m
+     }[m
+ [m
+[31m-[m
+ def rock_from_dict(data):[m
+     """[m
+     Rebuild a Rock object from saved dictionary data.[m
+[36m@@ -9433,7 +10779,6 @@[m [mdef rock_from_dict(data):[m
+ [m
+     return rock[m
+ [m
+[31m-[m
+ def serialize_breeding_queue_entry(entry):[m
+     """[m
+     Convert breeding queue entry to JSON-safe format.[m
+[36m@@ -9458,7 +10803,6 @@[m [mdef serialize_breeding_queue_entry(entry):[m
+         "potion": None[m
+     }[m
+ [m
+[31m-[m
+ def deserialize_breeding_queue_entry(data):[m
+     """[m
+     Rebuild breeding queue entry from JSON-safe format.[m
+[36m@@ -9475,7 +10819,6 @@[m [mdef deserialize_breeding_queue_entry(data):[m
+         "potion": potion[m
+     }[m
+ [m
+[31m-[m
+ def game_to_dict(game):[m
+     """[m
+     Convert full GameState into a JSON-safe dictionary.[m
+[36m@@ -9511,7 +10854,6 @@[m [mdef game_to_dict(game):[m
+ [m
+     return save_data[m
+ [m
+[31m-[m
+ def game_from_dict(save_data):[m
+     """[m
+     Rebuild GameState from a saved dictionary.[m
+[36m@@ -9562,7 +10904,6 @@[m [mdef game_from_dict(save_data):[m
+ [m
+     return game[m
+ [m
+[31m-[m
+ def game_to_json_string(game, indent=2):[m
+     """[m
+     Convert game to pretty JSON string.[m
+[36m@@ -9573,7 +10914,6 @@[m [mdef game_to_json_string(game, indent=2):[m
+         sort_keys=False[m
+     )[m
+ [m
+[31m-[m
+ def game_from_json_string(json_string):[m
+     """[m
+     Load game from JSON string.[m
+[36m@@ -9581,7 +10921,6 @@[m [mdef game_from_json_string(json_string):[m
+     save_data = json.loads(json_string)[m
+     return game_from_dict(save_data)[m
+ [m
+[31m-[m
+ def save_game_json(game, filepath):[m
+     """[m
+     Save game to a JSON file path.[m
+[36m@@ -9592,7 +10931,6 @@[m [mdef save_game_json(game, filepath):[m
+ [m
+     return filepath[m
+ [m
+[31m-[m
+ def load_game_json(filepath):[m
+     """[m
+     Load game from a JSON file path.[m
+[36m@@ -9603,7 +10941,6 @@[m [mdef load_game_json(filepath):[m
+ [m
+     return game_from_json_string(json_string)[m
+ [m
+[31m-[m
+ def make_save_filename(game):[m
+     """[m
+     Create a friendly save filename.[m
+[36m@@ -9641,7 +10978,6 @@[m [mdef describe_rock_for_breeding(rock):[m
+         f"{parent_text}"[m
+     )[m
+ [m
+[31m-[m
+ def preview_breeding_pair(game, parent_a_id, parent_b_id):[m
+     """[m
+     Print a readable breeding-pair validation report.[m
