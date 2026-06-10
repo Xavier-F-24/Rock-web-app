@@ -8472,7 +8472,7 @@ MARKET_POD_TIERS = {
     "low": {
         "name": "Craigslist Gravel",
         "tagline": "Cheap, chaotic, and questionably damp.",
-        "price": 2,
+        "price": 3,
         "min_parent_value": 1,
         "max_parent_value": int(m.ceil(2 + random.random() * 2)),
         "min_count": 1,
