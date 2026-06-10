@@ -16,6 +16,7 @@ from matplotlib.path import Path
 
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch
+import matplotlib.colors as mcolors
 
 import hashlib
 import plotly.express as px
@@ -2432,6 +2433,124 @@ def get_render_hair_color(ctx):
         ctx.v.get("hair_color_alleles", [ctx.v.get("hair_color", "black")])
     )
 
+def draw_curly_overlay_in_box(
+    ctx,
+    x_min,
+    x_max,
+    y_min,
+    y_max,
+    hair_color,
+    n_curls=10,
+    curl_scale=0.10,
+    zorder=60,
+    salt="head_curls"
+):
+    """
+    Draw randomized semicircle curl marks inside an approximate hair region.
+
+    The region is a simple bounding box, but the arcs are decorative and
+    read well over both head hair and facial hair.
+    """
+    if x_max <= x_min or y_max <= y_min:
+        return []
+
+    rng = deterministic_rng_for_rock(ctx.rock, salt=salt)
+
+    light = adjust_color_brightness(hair_color, 1.45)
+    dark = adjust_color_brightness(hair_color, 0.65)
+
+    curls = []
+
+    box_w = x_max - x_min
+    box_h = y_max - y_min
+
+    for i in range(n_curls):
+        x = rng.uniform(x_min + 0.08 * box_w, x_max - 0.08 * box_w)
+        y = rng.uniform(y_min + 0.15 * box_h, y_max - 0.10 * box_h)
+
+        size = rng.uniform(0.65, 1.15) * curl_scale * ctx.unit
+
+        # Alternate light/dark so curls show on many colors.
+        color = light if i % 2 == 0 else dark
+
+        # Mostly semicircles, slightly rotated.
+        angle = rng.uniform(-25, 25)
+
+        # Randomize arc direction a bit.
+        if rng.random() < 0.5:
+            theta1, theta2 = 0, 180
+        else:
+            theta1, theta2 = 180, 360
+
+        arc = draw_curl_arc(
+            ctx.ax,
+            x=x,
+            y=y,
+            w=size,
+            h=0.72 * size,
+            color=color,
+            angle=angle,
+            theta1=theta1,
+            theta2=theta2,
+            linewidth=max(0.8, 1.05 * ctx.unit),
+            alpha=0.9,
+            zorder=zorder
+        )
+
+        curls.append(arc)
+
+    return curls
+
+def draw_head_hair_curls(ctx, hair_color, layout, hair_type):
+    """
+    Add curl marks over head hair if hair_texture is curly.
+    """
+    if not rock_texture_is_curly(ctx):
+        return []
+
+    head_left = layout["head_left"]
+    head_right = layout["head_right"]
+    head_y = layout["head_y"]
+    top_y = layout["top_y"]
+    cx = layout["cx"]
+    head_span = layout["head_span"]
+
+    # Approximate curl region depending on hairstyle.
+    if hair_type == "hair":
+        x_min = head_left + 0.03 * head_span
+        x_max = head_right - 0.03 * head_span
+        y_min = head_y - 0.10 * ctx.unit
+        y_max = top_y + 0.25 * ctx.unit
+        n_curls = 8
+
+    elif hair_type == "double hair":
+        x_min = head_left - 0.20 * head_span
+        x_max = head_right + 0.20 * head_span
+        y_min = head_y - 0.18 * ctx.unit
+        y_max = top_y + 0.30 * ctx.unit
+        n_curls = 13
+
+    else:
+        x_min = cx - 0.40 * head_span
+        x_max = cx + 0.40 * head_span
+        y_min = head_y - 0.10 * ctx.unit
+        y_max = top_y + 0.25 * ctx.unit
+        n_curls = 8
+
+    return draw_curly_overlay_in_box(
+        ctx,
+        x_min=x_min,
+        x_max=x_max,
+        y_min=y_min,
+        y_max=y_max,
+        hair_color=hair_color,
+        n_curls=n_curls,
+        curl_scale=0.095,
+        zorder=72,
+        salt=f"head_curls_{hair_type}"
+    )
+
+
 def draw_hair(ctx, rock, v):
     """
     Draw canned hairstyles inspired by the sketch.
@@ -2587,6 +2706,15 @@ def draw_hair(ctx, rock, v):
         ctx.ax.add_patch(lock)
         pieces.append(lock)
 
+        pieces.extend(
+            draw_head_hair_curls(
+                ctx,
+                hair_color=hair_color,
+                layout=layout,
+                hair_type=hair_type
+            )
+        )
+
         return pieces
 
     # --------------------------------------------------
@@ -2645,6 +2773,15 @@ def draw_hair(ctx, rock, v):
         ctx.ax.add_patch(right_lock)
         pieces.extend([left_lock, right_lock])
 
+        pieces.extend(
+            draw_head_hair_curls(
+                ctx,
+                hair_color=hair_color,
+                layout=layout,
+                hair_type=hair_type
+            )
+        )
+
         return pieces
 
     # --------------------------------------------------
@@ -2658,6 +2795,15 @@ def draw_hair(ctx, rock, v):
             zorder=z
         )
         pieces.append(cap)
+
+        pieces.extend(
+            draw_head_hair_curls(
+                ctx,
+                hair_color=hair_color,
+                layout=layout,
+                hair_type=hair_type
+            )
+        )
 
         return pieces
 
@@ -2692,6 +2838,15 @@ def draw_hair(ctx, rock, v):
         )
         ctx.ax.add_patch(spike)
         pieces.append(spike)
+
+        pieces.extend(
+            draw_head_hair_curls(
+                ctx,
+                hair_color=hair_color,
+                layout=layout,
+                hair_type=hair_type
+            )
+        )
 
         return pieces
 
@@ -3009,6 +3164,92 @@ def mix_colors(c1, c2, t=0.5):
     c1 = np.array(c1, dtype=float)
     c2 = np.array(c2, dtype=float)
     return tuple(np.clip((1 - t) * c1 + t * c2, 0, 1))
+
+
+def adjust_color_brightness(color, factor=1.2):
+    """
+    Lighten/darken a matplotlib color.
+
+    factor > 1 lightens
+    factor < 1 darkens
+    """
+    try:
+        rgb = np.array(mcolors.to_rgb(color))
+    except Exception:
+        rgb = np.array([0.1, 0.1, 0.1])
+
+    if factor >= 1:
+        rgb = rgb + (1 - rgb) * (factor - 1)
+    else:
+        rgb = rgb * factor
+
+    return tuple(np.clip(rgb, 0, 1))
+
+
+def rock_texture_is_curly(ctx):
+    """
+    True if this rock expresses curly hair texture.
+
+    Supports phenotype strings and direct gene fallback.
+    """
+    texture = str(ctx.v.get("hair_texture", "n/a")).lower()
+
+    if "curly" in texture:
+        return True
+
+    try:
+        gene = str(ctx.rock.genes.get("hair_texture", "00"))
+        return gene == "11"
+    except Exception:
+        return False
+
+
+def deterministic_rng_for_rock(rock, salt="curl"):
+    """
+    Deterministic random generator so curls do not jump around every redraw.
+    """
+    seed_text = f"{getattr(rock, 'id', 0)}_{salt}_{str(getattr(rock, 'genes', {}))}"
+    seed = abs(hash(seed_text)) % (2**32)
+    return random.Random(seed)
+
+
+def draw_curl_arc(
+    ax,
+    x,
+    y,
+    w,
+    h,
+    color,
+    angle=0,
+    theta1=0,
+    theta2=180,
+    linewidth=1.25,
+    alpha=0.9,
+    zorder=50
+):
+    """
+    Draw one curl arc.
+    """
+    arc = Arc(
+        (x, y),
+        width=w,
+        height=h,
+        angle=angle,
+        theta1=theta1,
+        theta2=theta2,
+        color=color,
+        linewidth=linewidth,
+        alpha=alpha,
+        zorder=zorder
+    )
+
+    ax.add_patch(arc)
+
+    return arc
+
+
+
+
 
 def get_wrinkle_color(body_color):
     """
@@ -4647,6 +4888,75 @@ def get_facial_hair_layout(ctx, drawn_eye_positions=None, nose_info=None, mouth_
         }
     }
 
+
+def draw_facial_hair_curls(
+    ctx,
+    hair_color,
+    mouth_cx,
+    mouth_cy,
+    mouth_w,
+    mouth_h,
+    fh_type,
+    zorder=62
+):
+    """
+    Add curl marks over facial hair if hair_texture is curly.
+
+    Works best for beard/goatee/curly styles.
+    """
+    if not rock_texture_is_curly(ctx):
+        return []
+
+    if fh_type in ["n/a", "peach_fuzz"]:
+        return []
+
+    # Small facial hair styles get fewer curls.
+    if fh_type in ["beard"]:
+        x_min = mouth_cx - 0.75 * mouth_w
+        x_max = mouth_cx + 0.75 * mouth_w
+        y_min = mouth_cy - 2.05 * mouth_h
+        y_max = mouth_cy + 0.15 * mouth_h
+        n_curls = 9
+        curl_scale = 0.05
+
+    elif fh_type in ["goatee"]:
+        x_min = mouth_cx - 0.62 * mouth_w
+        x_max = mouth_cx + 0.62 * mouth_w
+        y_min = mouth_cy - 1.20 * mouth_h
+        y_max = mouth_cy + 0.10 * mouth_h
+        n_curls = 6
+        curl_scale = 0.05
+
+    elif fh_type in ["curly_mustache"]:
+        x_min = mouth_cx - 0.65 * mouth_w
+        x_max = mouth_cx + 0.65 * mouth_w
+        y_min = mouth_cy - 0.15 * mouth_h
+        y_max = mouth_cy + 0.35 * mouth_h
+        n_curls = 5
+        curl_scale = 0.05
+
+    else:
+        x_min = mouth_cx - 0.50 * mouth_w
+        x_max = mouth_cx + 0.50 * mouth_w
+        y_min = mouth_cy - 0.65 * mouth_h
+        y_max = mouth_cy + 0.15 * mouth_h
+        n_curls = 4
+        curl_scale = 0.05
+
+    return draw_curly_overlay_in_box(
+        ctx,
+        x_min=x_min,
+        x_max=x_max,
+        y_min=y_min,
+        y_max=y_max,
+        hair_color=hair_color,
+        n_curls=n_curls,
+        curl_scale=curl_scale,
+        zorder=zorder,
+        salt=f"facial_curls_{fh_type}"
+    )
+
+
 def draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mouth_info=None):
     """
     Draw facial-hair styles:
@@ -4756,6 +5066,17 @@ def draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou
                     solid_capstyle="round"
                 )
 
+        draw_facial_hair_curls(
+            ctx,
+            hair_color=hair_color,
+            mouth_cx=mouth_cx,
+            mouth_cy=mouth_cy,
+            mouth_w=mouth_w,
+            mouth_h=mouth_h,
+            fh_type=fh_type,
+            zorder=z + 3
+        )
+
         return layout
 
     # --------------------------------------------------
@@ -4794,6 +5115,17 @@ def draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou
             joinstyle="round"
         )
         ctx.ax.add_patch(goatee)
+
+        draw_facial_hair_curls(
+            ctx,
+            hair_color=hair_color,
+            mouth_cx=mouth_cx,
+            mouth_cy=mouth_cy,
+            mouth_w=mouth_w,
+            mouth_h=mouth_h,
+            fh_type=fh_type,
+            zorder=z + 3
+        )
 
         return layout
 
@@ -4837,6 +5169,17 @@ def draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou
         )
         ctx.ax.add_patch(beard)
 
+        draw_facial_hair_curls(
+            ctx,
+            hair_color=hair_color,
+            mouth_cx=mouth_cx,
+            mouth_cy=mouth_cy,
+            mouth_w=mouth_w,
+            mouth_h=mouth_h,
+            fh_type=fh_type,
+            zorder=z + 3
+        )
+
         return layout
     # --------------------------------------------------
     # 3) PEDO — two small marks
@@ -4855,6 +5198,18 @@ def draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou
                 zorder=z
             )
             ctx.ax.add_patch(dot)
+
+        draw_facial_hair_curls(
+            ctx,
+            hair_color=hair_color,
+            mouth_cx=mouth_cx,
+            mouth_cy=mouth_cy,
+            mouth_w=mouth_w,
+            mouth_h=mouth_h,
+            fh_type=fh_type,
+            zorder=z + 3
+        )
+
         return layout
 
     # --------------------------------------------------
@@ -4902,6 +5257,17 @@ def draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou
             ctx.ax.add_patch(curl)
             """
 
+        draw_facial_hair_curls(
+            ctx,
+            hair_color=hair_color,
+            mouth_cx=mouth_cx,
+            mouth_cy=mouth_cy,
+            mouth_w=mouth_w,
+            mouth_h=mouth_h,
+            fh_type=fh_type,
+            zorder=z + 3
+        )
+
         return layout
 
     # --------------------------------------------------
@@ -4925,6 +5291,18 @@ def draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou
             joinstyle="round"
         )
         ctx.ax.add_patch(patch)
+
+        draw_facial_hair_curls(
+            ctx,
+            hair_color=hair_color,
+            mouth_cx=mouth_cx,
+            mouth_cy=mouth_cy,
+            mouth_w=mouth_w,
+            mouth_h=mouth_h,
+            fh_type=fh_type,
+            zorder=z + 3
+        )
+
         return layout
 
     # --------------------------------------------------
@@ -4949,6 +5327,18 @@ def draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou
             joinstyle="round"
         )
         ctx.ax.add_patch(goatee)
+
+        draw_facial_hair_curls(
+            ctx,
+            hair_color=hair_color,
+            mouth_cx=mouth_cx,
+            mouth_cy=mouth_cy,
+            mouth_w=mouth_w,
+            mouth_h=mouth_h,
+            fh_type=fh_type,
+            zorder=z + 3
+        )
+
         return layout
 
     return layout
@@ -5936,6 +6326,477 @@ def is_rock_craisen(rock):
 
     return bool(getattr(rock, "is_craisen", 0) == 1)
 
+
+# ============================================================
+# RELATEDNESS / INBREEDING HELPERS
+# ============================================================
+
+DISTANT_RELATIONSHIP_R_THRESHOLD = 1.0 / 32.0
+
+
+def _safe_int_id(value):
+    """
+    Convert rock id-like values into int ids.
+
+    Supports:
+    - int
+    - numeric string
+    - Rock object with .id
+    """
+    if value is None:
+        return None
+
+    if hasattr(value, "id"):
+        value = getattr(value, "id")
+
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def get_rock_by_id_safe(game, rock_id):
+    """
+    Safely fetch a rock from game.rocks.
+    """
+    rock_id = _safe_int_id(rock_id)
+
+    if rock_id is None:
+        return None
+
+    if game is None or not hasattr(game, "rocks"):
+        return None
+
+    if rock_id in game.rocks:
+        return game.rocks[rock_id]
+
+    if str(rock_id) in game.rocks:
+        return game.rocks[str(rock_id)]
+
+    return None
+
+
+def get_parent_ids_for_relationship(game, rock_id):
+    """
+    Robustly find parent ids for a rock.
+
+    This supports several possible data models:
+    - rock.parents
+    - rock.parent_ids
+    - rock.parent_pair
+    - rock.parent_a_id / rock.parent_b_id
+    - rock.mother_id / rock.father_id
+    """
+    rock = get_rock_by_id_safe(game, rock_id)
+
+    if rock is None:
+        return []
+
+    # Common single attributes that may hold tuple/list/set/dict.
+    container_attrs = [
+        "parent_ids",
+        "parents",
+        "parent_pair",
+        "parent_id_pair",
+    ]
+
+    for attr in container_attrs:
+        if not hasattr(rock, attr):
+            continue
+
+        value = getattr(rock, attr)
+
+        if callable(value):
+            value = value()
+
+        if value is None:
+            continue
+
+        if isinstance(value, dict):
+            raw_values = list(value.values())
+        elif isinstance(value, (list, tuple, set)):
+            raw_values = list(value)
+        else:
+            raw_values = [value]
+
+        cleaned = []
+
+        for raw in raw_values:
+            parent_id = _safe_int_id(raw)
+            if parent_id is not None:
+                cleaned.append(parent_id)
+
+        if len(cleaned) > 0:
+            return list(dict.fromkeys(cleaned))
+
+    # Common paired attributes.
+    paired_attrs = [
+        ("parent_a_id", "parent_b_id"),
+        ("parent1_id", "parent2_id"),
+        ("mother_id", "father_id"),
+        ("mom_id", "dad_id"),
+        ("parent_a", "parent_b"),
+        ("mother", "father"),
+    ]
+
+    cleaned = []
+
+    for attr_a, attr_b in paired_attrs:
+        for attr in [attr_a, attr_b]:
+            if not hasattr(rock, attr):
+                continue
+
+            parent_id = _safe_int_id(getattr(rock, attr))
+
+            if parent_id is not None:
+                cleaned.append(parent_id)
+
+        if len(cleaned) > 0:
+            return list(dict.fromkeys(cleaned))
+
+    return []
+
+
+def get_ancestor_path_distances(game, rock_id, include_self=True, max_depth=12):
+    """
+    Return a dictionary:
+
+        ancestor_id -> [distance_1, distance_2, ...]
+
+    Distance:
+        self = 0
+        parent = 1
+        grandparent = 2
+        great-grandparent = 3
+
+    Multiple distances are kept because inbred pedigrees may have multiple
+    paths to the same ancestor.
+    """
+    rock_id = _safe_int_id(rock_id)
+
+    if rock_id is None:
+        return {}
+
+    distances = {}
+
+    stack = [
+        (rock_id, 0, {rock_id})
+    ]
+
+    while len(stack) > 0:
+        current_id, depth, path_seen = stack.pop()
+
+        if depth > max_depth:
+            continue
+
+        if include_self or depth > 0:
+            distances.setdefault(current_id, []).append(depth)
+
+        if depth == max_depth:
+            continue
+
+        parent_ids = get_parent_ids_for_relationship(game, current_id)
+
+        for parent_id in parent_ids:
+            parent_id = _safe_int_id(parent_id)
+
+            if parent_id is None:
+                continue
+
+            # Prevent accidental loops from bad saved data.
+            if parent_id in path_seen:
+                continue
+
+            next_seen = set(path_seen)
+            next_seen.add(parent_id)
+
+            stack.append(
+                (parent_id, depth + 1, next_seen)
+            )
+
+    return distances
+
+
+def calculate_relatedness_r(game, rock_a_id, rock_b_id, max_depth=12):
+    """
+    Calculate coefficient of relationship R between two rocks.
+
+    Formula:
+        R = sum over shared ancestors of (1/2)^(distance_a + distance_b)
+
+    Examples:
+        parent-child: 1/2
+        full siblings: 1/2
+        half siblings: 1/4
+        uncle/niece: 1/4
+        first cousins: 1/8
+
+    Returns:
+        r, contributions
+
+    contributions:
+        dict ancestor_id -> contribution amount
+    """
+    rock_a_id = _safe_int_id(rock_a_id)
+    rock_b_id = _safe_int_id(rock_b_id)
+
+    if rock_a_id is None or rock_b_id is None:
+        return 0.0, {}
+
+    if rock_a_id == rock_b_id:
+        return 1.0, {rock_a_id: 1.0}
+
+    ancestors_a = get_ancestor_path_distances(
+        game,
+        rock_a_id,
+        include_self=True,
+        max_depth=max_depth
+    )
+
+    ancestors_b = get_ancestor_path_distances(
+        game,
+        rock_b_id,
+        include_self=True,
+        max_depth=max_depth
+    )
+
+    shared_ancestors = set(ancestors_a.keys()) & set(ancestors_b.keys())
+
+    r = 0.0
+    contributions = {}
+
+    for ancestor_id in shared_ancestors:
+        subtotal = 0.0
+
+        for distance_a in ancestors_a[ancestor_id]:
+            for distance_b in ancestors_b[ancestor_id]:
+                subtotal += 0.5 ** (distance_a + distance_b)
+
+        if subtotal > 0:
+            contributions[ancestor_id] = subtotal
+            r += subtotal
+
+    # Keep weird pedigrees from producing silly display values.
+    r = min(r, 1.0)
+
+    return r, contributions
+
+
+def ordinal_word(n):
+    words = {
+        1: "first",
+        2: "second",
+        3: "third",
+        4: "fourth",
+        5: "fifth",
+        6: "sixth",
+        7: "seventh",
+        8: "eighth",
+    }
+
+    return words.get(int(n), f"{n}th")
+
+
+def removal_word(n):
+    words = {
+        1: "once removed",
+        2: "twice removed",
+        3: "three times removed",
+        4: "four times removed",
+    }
+
+    return words.get(int(n), f"{n} times removed")
+
+
+def great_prefix(count):
+    """
+    count = 0 -> ''
+    count = 1 -> 'great-'
+    count = 2 -> '2x-great-'
+    """
+    count = int(count)
+
+    if count <= 0:
+        return ""
+
+    if count == 1:
+        return "great-"
+
+    return f"{count}x-great-"
+
+
+def describe_equivalent_relationship_from_r(r):
+    """
+    Describe approximate relationship class from R.
+    """
+    if r <= 0:
+        return "unrelated / no known shared ancestor"
+
+    if r >= 0.49:
+        return "parent-child / full-sibling level"
+
+    if r >= 0.249:
+        return "half-sibling / aunt-uncle-niece-nephew / grandparent-grandchild level"
+
+    if r >= 0.124:
+        return "first-cousin level"
+
+    if r >= 0.061:
+        return "first-cousin-once-removed / great-aunt-uncle level"
+
+    if r >= 0.031:
+        return "second-cousin level"
+
+    return "distant relation"
+
+
+def describe_actual_relationship(game, rock_a_id, rock_b_id, max_depth=12):
+    """
+    Describe the closest actual relationship pattern between two rocks.
+    """
+    rock_a_id = _safe_int_id(rock_a_id)
+    rock_b_id = _safe_int_id(rock_b_id)
+
+    if rock_a_id is None or rock_b_id is None:
+        return "unknown"
+
+    if rock_a_id == rock_b_id:
+        return "same rock"
+
+    ancestors_a = get_ancestor_path_distances(
+        game,
+        rock_a_id,
+        include_self=True,
+        max_depth=max_depth
+    )
+
+    ancestors_b = get_ancestor_path_distances(
+        game,
+        rock_b_id,
+        include_self=True,
+        max_depth=max_depth
+    )
+
+    # Direct ancestor cases.
+    if rock_a_id in ancestors_b:
+        distance = min(ancestors_b[rock_a_id])
+
+        if distance == 1:
+            return "parent and child"
+
+        if distance == 2:
+            return "grandparent and grandchild"
+
+        return f"{great_prefix(distance - 2)}grandparent and {great_prefix(distance - 2)}grandchild"
+
+    if rock_b_id in ancestors_a:
+        distance = min(ancestors_a[rock_b_id])
+
+        if distance == 1:
+            return "parent and child"
+
+        if distance == 2:
+            return "grandparent and grandchild"
+
+        return f"{great_prefix(distance - 2)}grandparent and {great_prefix(distance - 2)}grandchild"
+
+    shared_ancestors = set(ancestors_a.keys()) & set(ancestors_b.keys())
+
+    if len(shared_ancestors) == 0:
+        return "unrelated / no known shared ancestor"
+
+    # Find closest shared-ancestor path pair.
+    best = None
+
+    for ancestor_id in shared_ancestors:
+        for distance_a in ancestors_a[ancestor_id]:
+            for distance_b in ancestors_b[ancestor_id]:
+                if distance_a == 0 or distance_b == 0:
+                    continue
+
+                score = distance_a + distance_b
+
+                if best is None or score < best[0]:
+                    best = (score, distance_a, distance_b, ancestor_id)
+
+    if best is None:
+        return "unknown relation"
+
+    _, distance_a, distance_b, _ = best
+
+    min_d = min(distance_a, distance_b)
+    max_d = max(distance_a, distance_b)
+
+    # Siblings.
+    if distance_a == 1 and distance_b == 1:
+        common_parent_count = 0
+
+        for ancestor_id in shared_ancestors:
+            if 1 in ancestors_a[ancestor_id] and 1 in ancestors_b[ancestor_id]:
+                common_parent_count += 1
+
+        if common_parent_count >= 2:
+            return "full siblings"
+
+        return "half siblings"
+
+    # Aunt/uncle style relation.
+    if min_d == 1:
+        great_count = max_d - 2
+
+        if great_count <= 0:
+            return "aunt/uncle and niece/nephew"
+
+        return (
+            f"{great_prefix(great_count)}aunt/uncle and "
+            f"{great_prefix(great_count)}niece/nephew"
+        )
+
+    # Cousin relation.
+    cousin_degree = min_d - 1
+    removals = abs(distance_a - distance_b)
+
+    cousin_text = f"{ordinal_word(cousin_degree)} cousins"
+
+    if removals > 0:
+        cousin_text += f" {removal_word(removals)}"
+
+    return cousin_text
+
+def format_relatedness_report(game, rock_a_id, rock_b_id, max_depth=12):
+    """
+    Human-readable relatedness report for breeding preview.
+    """
+    r, contributions = calculate_relatedness_r(
+        game,
+        rock_a_id,
+        rock_b_id,
+        max_depth=max_depth
+    )
+
+    f_child = r / 2.0
+
+    equivalent = describe_equivalent_relationship_from_r(r)
+    actual = describe_actual_relationship(
+        game,
+        rock_a_id,
+        rock_b_id,
+        max_depth=max_depth
+    )
+
+    if r > 0 and r < DISTANT_RELATIONSHIP_R_THRESHOLD:
+        actual = "distant"
+
+    return (
+        f"R = {r:.4f} | estimated child F = {f_child:.4f}\n"
+        f"Equivalent: {equivalent}\n"
+        f"Actual: {actual}"
+    )
+
+
+
+
+
 def is_rock_breedable(rock):
     """
     Basic single-rock breedability.
@@ -6457,6 +7318,33 @@ def get_queue_entry_potion(entry):
         labels.setdefault(int(b), []).append(label)
 
     return labels
+
+def remove_selected_pairs_from_breeding_queue(game, pair_indices):
+    """
+    Remove selected queued breeding pairs by index.
+
+    Important:
+    remove from highest index to lowest index so earlier removals
+    do not shift later indexes.
+
+    Uses remove_pair_from_breeding_queue(), so attached potions are refunded.
+    """
+    if pair_indices is None:
+        return 0
+
+    cleaned_indices = sorted(
+        set(int(i) for i in pair_indices),
+        reverse=True
+    )
+
+    removed_count = 0
+
+    for i in cleaned_indices:
+        if 0 <= i < len(game.breeding_queue):
+            if remove_pair_from_breeding_queue(game, i):
+                removed_count += 1
+
+    return removed_count
 
 POTION_SHOP = {
     "anti_craisen": {
@@ -7089,7 +7977,7 @@ def add_pair_to_breeding_queue(game, parent_a_id, parent_b_id, potion_key=None):
         potion_text = f" using {get_potion_name(potion_key)}"
 
     game.events.append(
-        f"Added breeding pair #{parent_a_id} x #{parent_b_id}{potion_text}."
+        f"Added breeding pair #{parent_a_id} x #{parent_b_id}{potion_text}. \n {format_relatedness_report(game, parent_a_id, parent_b_id)} "
     )
 
     print(
@@ -7253,7 +8141,7 @@ CHILD_DEATH_CHANCE = 0.05   # change this later for balance
 CLUTCH_MEAN = 1.5
 CLUTCH_STD = 2.0
 MAX_CLUTCH_SIZE = None      # set to e.g. 8 if you want to cap chaos
-SPORE_CLONE_COUNT = 4
+SPORE_CLONE_COUNT = 3
 SPORE_PUFF_CHANCE = 0.25   # tune later; 25% per spore clone
 
 #IMPORT_ROCK_COST = 10
@@ -8503,26 +9391,103 @@ COLOR_IF_UNCHECKED = {
 
 REQUEST_TRAIT_DEPENDENCIES = {
     "eye_color": {
-        "parent": "eyes",
-        "parent_label": "Eyes",
-        "blocked_parent_values": {"00"},   # No Eyes
-        "message": "Requires Eyes"
+        "mode": "any",
+        "parents": [
+            {
+                "gene": "eyes",
+                "label": "Eyes",
+                "blocked_values": {"00"},
+            }
+        ],
+        "message": "Requires Eyes",
     },
 
     "hair_color": {
-        "parent": "hair",
-        "parent_label": "Hair",
-        "blocked_parent_values": {"00"},   # No Hair
-        "message": "Requires Hair"
+        "mode": "any",
+        "parents": [
+            {
+                "gene": "hair",
+                "label": "Hair",
+                "blocked_values": {"00"},
+            },
+            {
+                "gene": "facial_hair",
+                "label": "Facial Hair",
+                "blocked_values": {"00"},
+            },
+            {
+                "gene": "brows",
+                "label": "Brows",
+                "blocked_values": {"00"},
+            },
+        ],
+        "message": "Requires Hair, Facial Hair, or Brows",
     },
 
     "hair_texture": {
-        "parent": "hair",
-        "parent_label": "Hair",
-        "blocked_parent_values": {"00"},   # No Hair
-        "message": "Requires Hair"
+        "mode": "any",
+        "parents": [
+            {
+                "gene": "hair",
+                "label": "Hair",
+                "blocked_values": {"00"},
+            },
+            {
+                "gene": "facial_hair",
+                "label": "Facial Hair",
+                "blocked_values": {"00"},
+            },
+            {
+                "gene": "brows",
+                "label": "Brows",
+                "blocked_values": {"00"},
+            },
+        ],
+        "message": "Requires Hair or Facial Hair",
     },
 }
+
+def requested_dependency_satisfied_from_values(gene_name, requested_values):
+    """
+    Backend dependency check using requested_values dictionary.
+
+    Used by requested import logic and can also support UI logic.
+
+    Examples:
+    - eye_color requires eyes
+    - hair_color requires hair OR facial_hair OR brows
+    - hair_texture requires hair OR facial_hair
+    """
+    dependency = REQUEST_TRAIT_DEPENDENCIES.get(gene_name, None)
+
+    if dependency is None:
+        return True
+
+    mode = dependency.get("mode", "any")
+    parent_rules = dependency.get("parents", [])
+
+    checks = []
+
+    for rule in parent_rules:
+        parent_gene = rule["gene"]
+        blocked_values = set(str(v) for v in rule.get("blocked_values", set()))
+
+        if parent_gene not in requested_values:
+            checks.append(False)
+            continue
+
+        parent_value = str(requested_values[parent_gene])
+
+        if parent_value in blocked_values:
+            checks.append(False)
+            continue
+
+        checks.append(True)
+
+    if mode == "all":
+        return all(checks)
+
+    return any(checks)
 
 def requested_trait_dependency_satisfied(gene_name, request_widgets):
     """
@@ -8650,7 +9615,6 @@ def apply_import_gene_overrides(rock, gene_overrides=None, force_gender=None):
         rock.gender = 0
 
     return rock
-
 
 def calculate_custom_import_cost(rock):
     """
@@ -8821,34 +9785,424 @@ def build_requested_gene_overrides_from_widgets(request_widgets):
 
     return requested_values
 
+
+# ============================================================
+# REQUESTED IMPORT: HIDDEN RECESSIVE ROLL RULES
+# ============================================================
+
+def get_max_requested_trait_level(gene_name):
+    """
+    Find the highest nonzero allele level listed in REQUEST_TRAIT_CATALOG
+    for a given trait.
+
+    Example:
+        eye_color options include 00, 11, 22, 33, 44, 55
+        -> max_level = 5
+    """
+    if gene_name not in REQUEST_TRAIT_CATALOG:
+        return None
+
+    max_level = 0
+
+    for gene_value in REQUEST_TRAIT_CATALOG[gene_name]["options"].values():
+        gene_value = str(gene_value)
+
+        for ch in gene_value:
+            if ch.isdigit():
+                max_level = max(max_level, int(ch))
+
+    return max_level
+
+
+REQUEST_RECESSIVE_ROLL_TRAITS = {
+    "eye_color": {
+        "max_level": get_max_requested_trait_level("eye_color")
+    },
+
+    "hair_color": {
+        "max_level": get_max_requested_trait_level("hair_color"),
+        "exact_values": {"00", "01", "11"}  # white and silver stay exact
+    },
+}
+
+
+def requested_dependency_satisfied_from_values(gene_name, requested_values):
+    """
+    Backend dependency check using requested_values dictionary.
+
+    Examples:
+    - eye_color requires eyes
+    - hair_color requires hair OR facial_hair OR brows
+    - hair_texture requires hair OR facial_hair
+    """
+    dependency = REQUEST_TRAIT_DEPENDENCIES.get(gene_name, None)
+
+    if dependency is None:
+        return True
+
+    mode = dependency.get("mode", "any")
+    parent_rules = dependency.get("parents", [])
+
+    checks = []
+
+    for rule in parent_rules:
+        parent_gene = rule["gene"]
+        blocked_values = set(str(v) for v in rule.get("blocked_values", set()))
+
+        if parent_gene not in requested_values:
+            checks.append(False)
+            continue
+
+        parent_value = str(requested_values[parent_gene])
+
+        if parent_value in blocked_values:
+            checks.append(False)
+            continue
+
+        checks.append(True)
+
+    if mode == "all":
+        return all(checks)
+
+    return any(checks)
+
+
+# ============================================================
+# REQUESTED IMPORT: HIDDEN RECESSIVE GENOTYPE ROLL RULES
+# ============================================================
+
+def get_catalog_alleles(gene_name, include_zero=False):
+    """
+    Extract allele characters from REQUEST_TRAIT_CATALOG.
+
+    Example:
+        eye_color values 00, 11, 22, 33, 44, 55
+        -> ["1", "2", "3", "4", "5"] if include_zero=False
+    """
+    alleles = set()
+
+    if gene_name not in REQUEST_TRAIT_CATALOG:
+        return []
+
+    for gene_value in REQUEST_TRAIT_CATALOG[gene_name]["options"].values():
+        gene_value = str(gene_value)
+
+        for ch in gene_value:
+            if not ch.isdigit():
+                continue
+
+            if ch == "0" and not include_zero:
+                continue
+
+            alleles.add(ch)
+
+    return sorted(alleles, key=lambda x: int(x))
+
+
+def build_ladder_roll_rules(gene_name, include_zero=False, zero_is_no_trait=True):
+    """
+    Build hidden-recessive rules for simple dominance-ladder traits.
+
+    If allele order is:
+        1 > 2 > 3 > 4 > 5
+
+    Then:
+        11 -> 11, 12, 13, 14, 15
+        22 -> 22, 23, 24, 25
+        55 -> 55
+
+    zero_is_no_trait=True means:
+        00 stays exactly 00.
+    """
+    alleles = get_catalog_alleles(gene_name, include_zero=include_zero)
+
+    rules = {}
+
+    if zero_is_no_trait:
+        rules["00"] = ["00"]
+
+    for i, allele in enumerate(alleles):
+        if allele == "0" and zero_is_no_trait:
+            continue
+
+        selected_gene = f"{allele}{allele}"
+        hidden_options = alleles[i:]
+
+        rules[selected_gene] = [
+            f"{allele}{hidden}"
+            for hidden in hidden_options
+        ]
+
+    return rules
+
+
+def symmetric_values(values):
+    """
+    Add reversed versions of two-allele values.
+
+    Example:
+        ["34"] -> ["34", "43"]
+    """
+    out = set()
+
+    for value in values:
+        value = str(value)
+        out.add(value)
+
+        if len(value) == 2:
+            out.add(value[::-1])
+
+    return sorted(out)
+
+
+BODY_COLOR_ROLL_RULES = {
+    # white = black codominance gives silver, so white cannot hide black
+    "00": ["00", "02", "03", "04", "05", "06"],
+
+    # black cannot hide white or it becomes silver
+    "11": ["11", "12", "13", "14", "15", "16"],
+
+    # silver must be white + black
+    "01": ["01", "10"],
+
+    # brown dominates red/yellow/blue/patchwork
+    "22": ["22", "23", "24", "25", "26"],
+
+    # red/yellow/blue mix with each other, so they can only hide patchwork
+    "33": ["33", "36"],  # red
+    "44": ["44", "46"],  # yellow
+    "55": ["55", "56"],  # blue
+
+    # mixed colors must stay mixed
+    "34": ["34", "43"],  # orange
+    "35": ["35", "53"],  # purple
+    "45": ["45", "54"],  # green
+
+    # patchwork is recessive
+    "66": ["66"],
+}
+
+
+HAIR_COLOR_ROLL_RULES = {
+    # white = black codominance gives silver, so white cannot hide black
+    "00": ["00", "02", "03", "04", "05", "06"],
+
+    # black cannot hide white or it becomes silver
+    "11": ["11", "12", "13", "14", "15", "16"],
+
+    # silver must be white + black
+    "01": ["01", "10"],
+
+    # other hair colors behave like a recessive ladder beneath white/black
+    "22": ["22", "23", "24", "25", "26"],  # brown
+    "33": ["33", "34", "35", "36"],        # blonde
+    "44": ["44", "45", "46"],              # red
+    "55": ["55", "56"],                    # pink
+    "66": ["66"],                          # blue
+}
+
+DOSAGE_ROLL_RULES = {
+    # one active allele vs two active alleles matters
+    "eyes": {
+        "00": ["00"],
+        "01": ["01", "10"],
+        "11": ["11"],
+    },
+
+    "hair": {
+        "00": ["00"],
+        "01": ["01", "10"],
+        "11": ["11"],
+    },
+
+    "fuzz": {
+        "00": ["00"],
+        "01": ["01", "10"],
+        "11": ["11"],
+    },
+
+    # arms are codominant-ish combinations
+    "arms": {
+        "00": ["00"],
+        "01": ["01", "10"],
+        "11": ["11"],
+        "02": ["02", "20"],
+        "12": ["12", "21"],
+        "22": ["22"],
+    },
+
+    # splitting must stay exact, otherwise mitosion/spore changes
+    "splitting": {
+        "00": ["00"],
+        "11": ["11"],
+        "22": ["22"],
+    },
+
+    # gender should stay exact
+    "gender": {
+        "00": ["00"],
+        "01": ["01", "10"],
+    },
+
+    # texture is currently exact
+    "hair_texture": {
+        "00": ["00"],
+        "11": ["11"],
+    },
+}
+
+REQUEST_GENOTYPE_ROLL_RULES = {}
+
+# -----------------------------
+# Shape/size are always visible traits.
+# 00 is not "none" here, so 00 can hide higher/recessive levels.
+# -----------------------------
+REQUEST_GENOTYPE_ROLL_RULES["shape"] = build_ladder_roll_rules(
+    "shape",
+    include_zero=True,
+    zero_is_no_trait=False
+)
+
+REQUEST_GENOTYPE_ROLL_RULES["size"] = build_ladder_roll_rules(
+    "size",
+    include_zero=True,
+    zero_is_no_trait=False
+)
+
+# -----------------------------
+# Special colors
+# -----------------------------
+REQUEST_GENOTYPE_ROLL_RULES["color"] = BODY_COLOR_ROLL_RULES
+REQUEST_GENOTYPE_ROLL_RULES["hair_color"] = HAIR_COLOR_ROLL_RULES
+
+# -----------------------------
+# Simple dominance-ladder traits.
+# 00 means none/no trait, so 00 stays exact.
+# -----------------------------
+for gene_name in [
+    "eye_color",
+    "brows",
+    "mouths",
+    "noses",
+    "crowns",
+    "ears",
+    "facial_hair",
+]:
+    if gene_name in REQUEST_TRAIT_CATALOG:
+        REQUEST_GENOTYPE_ROLL_RULES[gene_name] = build_ladder_roll_rules(
+            gene_name,
+            include_zero=False,
+            zero_is_no_trait=True
+        )
+
+# -----------------------------
+# Binary exact traits.
+# If requested, they stay exact for now.
+# -----------------------------
+for gene_name in [
+    "wings",
+    "halos",
+    "horns",
+    "wrinkles",
+    "freckles",
+    "stones",
+    "tails",
+]:
+    REQUEST_GENOTYPE_ROLL_RULES[gene_name] = {
+        "00": ["00"],
+        "11": ["11"],
+    }
+
+# -----------------------------
+# Dosage/codominant/special traits.
+# -----------------------------
+for gene_name, rules in DOSAGE_ROLL_RULES.items():
+    REQUEST_GENOTYPE_ROLL_RULES[gene_name] = rules
+
+
+# Backward-compatible alias if any old code references this name.
+REQUEST_RECESSIVE_ROLL_TRAITS = REQUEST_GENOTYPE_ROLL_RULES
+
+def make_requested_gene_value(gene_name, selected_gene_value):
+    """
+    Convert a requested dropdown value into the actual imported gene.
+
+    Uses REQUEST_GENOTYPE_ROLL_RULES when available.
+
+    Example:
+        eye_color requested 22 -> randomly 22, 23, 24, or 25
+        eye_color requested 55 -> 55
+        hair requested 01 -> 01 or 10
+        body orange requested 34 -> 34 or 43
+    """
+    selected_gene_value = str(selected_gene_value)
+
+    rules = REQUEST_GENOTYPE_ROLL_RULES.get(gene_name, None)
+
+    if rules is None:
+        return selected_gene_value
+
+    possible_values = rules.get(selected_gene_value, None)
+
+    if not possible_values:
+        return selected_gene_value
+
+    return random.choice(possible_values)
+
+
+
 def apply_requested_import_policy(rock, requested_values):
     """
     Apply requested-import logic to a random rock.
 
     Checked genes:
-        force selected gene value
+        force selected expression.
+
+    Dependency-safe:
+        eye_color ignored unless eyes requested.
+        hair_color ignored unless hair/facial_hair/brows requested.
+        hair_texture ignored unless hair/facial_hair requested.
 
     Unchecked catalog genes:
-        suppress expression while preserving recessive carrier alleles where possible
+        suppress expression while preserving recessive carrier alleles where possible.
     """
     if requested_values is None:
         requested_values = {}
+
+    # Backend safety: remove invalid dependent requests.
+    filtered_requested_values = {}
+
+    for gene_name, gene_value in requested_values.items():
+        if requested_dependency_satisfied_from_values(gene_name, requested_values):
+            filtered_requested_values[gene_name] = gene_value
+
+    requested_values = filtered_requested_values
+
+    actual_forced_values = {}
 
     for gene_name in REQUEST_TRAIT_CATALOG.keys():
         if gene_name not in rock.genes:
             continue
 
         if gene_name in requested_values:
-            rock.genes[gene_name] = str(requested_values[gene_name])
+            actual_value = make_requested_gene_value(
+                gene_name,
+                requested_values[gene_name]
+            )
+
+            rock.genes[gene_name] = actual_value
+            actual_forced_values[gene_name] = actual_value
+
         else:
             rock.genes[gene_name] = suppress_gene_for_requested_import(
                 gene_name,
                 rock.genes[gene_name]
             )
 
-    # Sync gender field if gender was affected.
     if "gender" in rock.genes:
         rock.gender = express_gender_from_gene(rock.genes["gender"])
+
+    rock.requested_actual_forced_values = actual_forced_values
 
     return rock
 
@@ -9170,7 +10524,6 @@ def make_requested_import_builder(game, on_refresh=None):
 
     return ui
 
-
 def import_random_rock(game, cost=RANDOM_IMPORT_COST, force_gender=None):
     """
     Buy/import a fully random rock for a flat cost.
@@ -9220,7 +10573,6 @@ def import_random_rock(game, cost=RANDOM_IMPORT_COST, force_gender=None):
 
     return rock
 
-
 def show_game_rocks(game, cols=4, figsize_per_rock=4, include_sold=False):
     """
     Show current game rocks.
@@ -9255,7 +10607,6 @@ def show_potion_shop():
 
     print("====================================")
 
-
 def show_inventory(game):
     print("====================================")
     print("INVENTORY")
@@ -9270,7 +10621,6 @@ def show_inventory(game):
             print(f"{name}: {count}")
 
     print("====================================")
-
 
 def buy_potion(game, potion_key):
     if potion_key not in POTION_SHOP:
@@ -9334,7 +10684,6 @@ def show_rock_money_table(game, include_sold=False):
 
     print("================================================================================")
 
-
 # ============================================================
 # SAVE / LOAD SYSTEM
 # ============================================================
@@ -9342,9 +10691,7 @@ def show_rock_money_table(game, include_sold=False):
 import json
 from datetime import datetime
 
-
 SAVE_VERSION = "0.1.0"
-
 
 def rock_to_dict(rock):
     """
@@ -9385,7 +10732,6 @@ def rock_to_dict(rock):
         # Gender cache
         "gender": getattr(rock, "gender", None),
     }
-
 
 def rock_from_dict(data):
     """
@@ -9433,7 +10779,6 @@ def rock_from_dict(data):
 
     return rock
 
-
 def serialize_breeding_queue_entry(entry):
     """
     Convert breeding queue entry to JSON-safe format.
@@ -9458,7 +10803,6 @@ def serialize_breeding_queue_entry(entry):
         "potion": None
     }
 
-
 def deserialize_breeding_queue_entry(data):
     """
     Rebuild breeding queue entry from JSON-safe format.
@@ -9474,7 +10818,6 @@ def deserialize_breeding_queue_entry(data):
         "parents": (int(parents[0]), int(parents[1])),
         "potion": potion
     }
-
 
 def game_to_dict(game):
     """
@@ -9510,7 +10853,6 @@ def game_to_dict(game):
     }
 
     return save_data
-
 
 def game_from_dict(save_data):
     """
@@ -9562,7 +10904,6 @@ def game_from_dict(save_data):
 
     return game
 
-
 def game_to_json_string(game, indent=2):
     """
     Convert game to pretty JSON string.
@@ -9573,14 +10914,12 @@ def game_to_json_string(game, indent=2):
         sort_keys=False
     )
 
-
 def game_from_json_string(json_string):
     """
     Load game from JSON string.
     """
     save_data = json.loads(json_string)
     return game_from_dict(save_data)
-
 
 def save_game_json(game, filepath):
     """
@@ -9592,7 +10931,6 @@ def save_game_json(game, filepath):
 
     return filepath
 
-
 def load_game_json(filepath):
     """
     Load game from a JSON file path.
@@ -9602,7 +10940,6 @@ def load_game_json(filepath):
         json_string = f.read()
 
     return game_from_json_string(json_string)
-
 
 def make_save_filename(game):
     """
@@ -9640,7 +10977,6 @@ def describe_rock_for_breeding(rock):
         f"{', '.join(status_bits)} | "
         f"{parent_text}"
     )
-
 
 def preview_breeding_pair(game, parent_a_id, parent_b_id):
     """

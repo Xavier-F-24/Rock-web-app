@@ -282,6 +282,115 @@ def render_available_breeders_gallery(game, selected_ids=None, max_cols=4):
                     selected=(rock.id in selected_ids)
                 )
 
+def render_queue_removal_controls(game):
+    """
+    Streamlit UI for removing selected queued breeding pairs.
+    """
+    if len(game.breeding_queue) == 0:
+        st.info("No breeding pairs currently queued.")
+        return
+
+    with st.expander("Remove queued breeding pair(s)", expanded=False):
+        st.write("Select the pair(s) you want to remove from the queue.")
+
+        selected_indices = []
+
+        for i, entry in enumerate(game.breeding_queue):
+            a, b = get_queue_entry_pair(entry)
+            potion_key = get_queue_entry_potion(entry)
+
+            rock_a = get_rock(game, a)
+            rock_b = get_rock(game, b)
+
+            name_a = rock_a.name if rock_a is not None else "missing"
+            name_b = rock_b.name if rock_b is not None else "missing"
+
+            potion_text = get_potion_name(potion_key)
+
+            label = (
+                f"Remove Pair {i + 1}: "
+                f"#{a} {name_a} × #{b} {name_b} "
+                f"| Potion: {potion_text}"
+            )
+
+            checked = st.checkbox(
+                label,
+                key=f"remove_queue_pair_{game.generation}_{i}_{a}_{b}_{potion_key}"
+            )
+
+            if checked:
+                selected_indices.append(i)
+
+        c1, c2 = st.columns(2)
+
+        with c1:
+            if st.button(
+                "Remove Selected Pair(s)",
+                disabled=len(selected_indices) == 0
+            ):
+                removed_count, text = capture_print(
+                    remove_selected_pairs_from_breeding_queue,
+                    game,
+                    selected_indices
+                )
+
+                st.text(text)
+                st.success(f"Removed {removed_count} queued pair(s).")
+                st.rerun()
+
+        with c2:
+            if st.button("Clear All Queued Pair(s)"):
+                _, text = capture_print(clear_breeding_queue, game)
+                st.text(text)
+                st.rerun()
+
+def requested_dependency_ok_streamlit(gene_name):
+    """
+    Streamlit-side dependency logic.
+
+    Eye Color requires Eyes.
+    Hair Color requires Hair OR Facial Hair OR Brows.
+    Hair Texture requires Hair OR Facial Hair.
+    """
+    if gene_name == "eye_color":
+        eyes_checked = st.session_state.get("req_eyes_check", False)
+        eyes_value = st.session_state.get("req_eyes_value", "00")
+        return eyes_checked and eyes_value != "00"
+
+    if gene_name == "hair_color":
+        hair_checked = st.session_state.get("req_hair_check", False)
+        hair_value = st.session_state.get("req_hair_value", "00")
+
+        facial_checked = st.session_state.get("req_facial_hair_check", False)
+        facial_value = st.session_state.get("req_facial_hair_value", "00")
+
+        brows_checked = st.session_state.get("req_brows_check", False)
+        brows_value = st.session_state.get("req_brows_value", "00")
+
+        return (
+            (hair_checked and hair_value != "00")
+            or (facial_checked and facial_value != "00")
+            or (brows_checked and brows_value != "00")
+        )
+
+    if gene_name == "hair_texture":
+        hair_checked = st.session_state.get("req_hair_check", False)
+        hair_value = st.session_state.get("req_hair_value", "00")
+
+        facial_checked = st.session_state.get("req_facial_hair_check", False)
+        facial_value = st.session_state.get("req_facial_hair_value", "00")
+
+        brows_checked = st.session_state.get("req_brows_check", False)
+        brows_value = st.session_state.get("req_brows_value", "00")
+
+        return (
+            (hair_checked and hair_value != "00")
+            or (facial_checked and facial_value != "00")
+            or (brows_checked and brows_value != "00")
+        )
+
+    return True
+
 # -----------------------------
 # Header
 # -----------------------------
@@ -418,7 +527,12 @@ elif page == "🧬 Breeding":
         format_func=lambda x: potion_labels.get(x, "No potion")
     )
 
-    b1, b2, b3 = st.columns(3)
+    if parent_a is not None and parent_b is not None and parent_a != parent_b:
+        st.info(format_relatedness_report(game, parent_a, parent_b))
+
+    st.divider()
+
+    b1, b2 = st.columns(2)
 
     with b1:
         if st.button("Preview Pair"):
@@ -437,22 +551,25 @@ elif page == "🧬 Breeding":
             st.text(text)
             st.rerun()
 
-    with b3:
-        if st.button("Clear Queue"):
-            _, text = capture_print(clear_breeding_queue, game)
-            st.text(text)
-            st.rerun()
-
     st.divider()
 
     st.subheader("Current Breeding Queue")
     _, queue_text = capture_print(show_breeding_queue, game)
     st.text(queue_text)
 
+    render_queue_removal_controls(game)
+
     show_breeding_tree = st.checkbox(
         "Show queue tree on breeding page",
         value=True
     )
+
+    st.divider()
+
+    if st.button("Breed Generation", type="primary"):
+        _, text = capture_print(run_generation_from_ui, game)
+        st.text(text)
+        st.rerun()
 
     selected_breeding_ids = []
 
@@ -462,12 +579,16 @@ elif page == "🧬 Breeding":
     if parent_b is not None:
         selected_breeding_ids.append(parent_b)
 
+    
+
     with st.expander("Available Breeding Rocks", expanded=True):
         render_available_breeders_gallery(
             game,
             selected_ids=selected_breeding_ids,
             max_cols=4
         )
+
+    st.divider()
 
     if show_breeding_tree:
         fig = draw_game_tree(
@@ -488,12 +609,7 @@ elif page == "🧬 Breeding":
             }
         )
 
-    st.divider()
-
-    if st.button("Breed Generation", type="primary"):
-        _, text = capture_print(run_generation_from_ui, game)
-        st.text(text)
-        st.rerun()
+    
 
 
 # -----------------------------
@@ -542,7 +658,8 @@ elif page == "💰 Market":
         )
 
         st.caption(
-            "Eye Color requires Eyes. Hair Color and Hair Texture require Hair."
+            "Eye Color requires Eyes. Hair Color requires Hair, Facial Hair, or Brows. "
+            "Hair Texture requires Hair or Facial Hair."
         )
 
         req_cols = st.columns(2)
@@ -588,9 +705,10 @@ elif page == "💰 Market":
                 if disabled:
                     if gene_name == "eye_color":
                         st.caption("Requires Eyes.")
-                    elif gene_name in ["hair_color", "hair_texture"]:
-                        st.caption("Requires Hair.")
-
+                    elif gene_name == "hair_color":
+                        st.caption("Requires Hair, Facial Hair, or Brows.")
+                    elif gene_name == "hair_texture":
+                        st.caption("Requires Hair or Facial Hair, or Brows.")
         reroll_if_craisen = st.checkbox(
             "Reroll requested import if craisen",
             value=True,
