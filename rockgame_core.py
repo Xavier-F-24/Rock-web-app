@@ -55,35 +55,35 @@ CLUTCH_MEAN = 1.5
 CLUTCH_STD = 2.0
 MAX_CLUTCH_SIZE = None
 
-SPORE_CLONE_COUNT = 4
-SPORE_PUFF_CHANCE = 0.25
+SPORE_CLONE_COUNT = 3
+SPORE_PUFF_CHANCE = 0.50
 
-POTION_MUTATION_RATE = 0.12
-FERTILITY_EXTRA_CHILDREN = 2
-ANTI_CRAISEN_REROLLS = 3
+POTION_MUTATION_RATE = 0.15
+FERTILITY_EXTRA_CHILDREN = 1
+ANTI_CRAISEN_REROLLS = 2
 
 PAD_FRAC = 0.2
 
 POTION_SHOP = {
     "anti_craisen": {
         "name": "Anti-Craisen Potion",
-        "cost": 5,
-        "description": "Later: reduce or reroll craisen offspring risk."
+        "cost": 6,
+        "description": "reduce or reroll craisen offspring risk."
     },
     "mutation": {
         "name": "Mutation Potion",
-        "cost": 2,
-        "description": "Later: increase mutation chance for one breeding pair."
+        "cost": 3,
+        "description": "increase mutation chance for one breeding pair."
     },
     "fertility": {
         "name": "Fertility Potion",
         "cost": 3,
-        "description": "Later: produce extra child from one pair."
+        "description": "produce extra child from one pair."
     },
     "reroll": {
         "name": "Reroll Potion",
         "cost": 3,
-        "description": "Later: reroll clutch size from one pair."
+        "description": "reroll clutch size from one pair."
     },
 }
 
@@ -682,7 +682,11 @@ def get_rock_phenotype(rock: Rock) -> Dict[str, str]:
                     phenotype[gene_name] = f"Error interpreting gene '{gene_name}': '{gene_pair_value}'"
 
         elif gene_name in ["death_gene1", "death_gene2", "death_gene3"]:
-            rock.is_craisen = 1 if f"{gene_pair_value[0]}{gene_pair_value[1]}" == f"{gene_pair_value[2]}{gene_pair_value[3]}" else 0
+            if f"{gene_pair_value[0]}{gene_pair_value[1]}" == f"{gene_pair_value[2]}{gene_pair_value[3]}": 
+                if random.random() < 0.5:
+                    rock.is_craisen = 1 
+            else:
+                rock.is_craisen = 0
 
         elif gene_name == "gender":
             phenotype[gene_name] = "Male" if gene_pair_value == "01" else "Female"
@@ -778,7 +782,7 @@ def check_craisen(rock):
             left = raw[:2]
             right = raw[2:4]
 
-            if left == right:
+            if left == right and random.random() < 0.5:
                 return True
 
     return False
@@ -4002,7 +4006,7 @@ def draw_eyes(ctx):
     drawn_positions = []
 
     for ex, ey in eye_positions:
-        sclera_color = "white"
+        sclera_color = get_eye_color(eye_color_name) #"white"
 
         if eye_color_name == "callus":
             sclera_color = "tan"
