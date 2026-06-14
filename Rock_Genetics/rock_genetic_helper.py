@@ -41,6 +41,415 @@ from typing import Dict, List, Tuple, Optional, Any
 # ROCK GENES ZONE
 #-----------------------------------------------------
 
+@dataclass(frozen=True)
+class TraitOption:
+    """
+    One allele-level option for a gene.
+    """
+    allele: int
+    roll_threshold: int
+    name: str
+    cost: int
+    dominance: int
+
+
+@dataclass(frozen=True)
+class PhenotypeState:
+    """
+    One expressed phenotype state.
+
+    For many genes, the state key is just the allele value.
+    For dosage genes, the state key may be:
+        0 = none
+        1 = one active copy
+        2 = two active copies
+    """
+    key: int
+    name: str
+    cost: int
+
+
+@dataclass(frozen=True)
+class GeneSpec:
+    """
+    Complete specification for one gene.
+    """
+    name: str
+    expression_rule: str
+    options: dict[int, TraitOption]
+    states: dict[int, PhenotypeState] = field(default_factory=dict)
+    special_states: dict[tuple[int, int], PhenotypeState] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def option_for_allele(self, allele: int) -> TraitOption:
+        return self.options[allele]
+
+    def state_for_key(self, key: int) -> PhenotypeState:
+        return self.states[key]
+    
+def make_gene_spec(
+    *,
+    name: str,
+    rolls: list[int],
+    alleles: list[int],
+    allele_names: list[str],
+    allele_costs: list[int],
+    dominance: list[int],
+    expression_rule: str = "dominance",
+    state_keys: list[int] | None = None,
+    state_names: list[str] | None = None,
+    state_costs: list[int] | None = None,
+    special_states: dict[tuple[int, int], tuple[str, int]] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> GeneSpec:
+    """
+    Build a GeneSpec from explicit lists.
+
+    For ordinary dominance genes:
+        state_names/state_costs can be omitted and will default to allele-level values.
+
+    For dosage genes:
+        pass separate state_keys/state_names/state_costs.
+
+    special_states:
+        maps allele pairs like (0, 1) to ("silver", 0)
+    """
+    if not (
+        len(rolls) == len(alleles) == len(allele_names) == len(allele_costs) == len(dominance)
+    ):
+        raise ValueError(
+            f"{name}: rolls/alleles/allele_names/allele_costs/dominance must have equal lengths."
+        )
+
+    options = {
+        allele: TraitOption(
+            allele=allele,
+            roll_threshold=roll,
+            name=allele_name,
+            cost=cost,
+            dominance=dom,
+        )
+        for roll, allele, allele_name, cost, dom in zip(
+            rolls, alleles, allele_names, allele_costs, dominance
+        )
+    }
+
+    if state_keys is None:
+        state_keys = list(alleles)
+
+    if state_names is None:
+        state_names = list(allele_names)
+
+    if state_costs is None:
+        state_costs = list(allele_costs)
+
+    if not (len(state_keys) == len(state_names) == len(state_costs)):
+        raise ValueError(
+            f"{name}: state_keys/state_names/state_costs must have equal lengths."
+        )
+
+    states = {
+        key: PhenotypeState(key=key, name=state_name, cost=state_cost)
+        for key, state_name, state_cost in zip(state_keys, state_names, state_costs)
+    }
+
+    built_special_states: dict[tuple[int, int], PhenotypeState] = {}
+    if special_states is not None:
+        for pair, (special_name, special_cost) in special_states.items():
+            built_special_states[tuple(pair)] = PhenotypeState(
+                key=-1,
+                name=special_name,
+                cost=special_cost,
+            )
+
+    return GeneSpec(
+        name=name,
+        expression_rule=expression_rule,
+        options=options,
+        states=states,
+        special_states=built_special_states,
+        metadata=metadata or {},
+    )
+    
+@dataclass
+class Phenotype:
+    phenes: dict[str, str] = field(default_factory=dict)
+    costs: dict[str, int] = field(default_factory=dict)
+
+    def get(self, gene_name: str, default: str = "n/a") -> str:
+        return self.phenes.get(gene_name, default)
+
+    def cost_of(self, gene_name: str, default: int = 0) -> int:
+        return self.costs.get(gene_name, default)
+    
+
+GENE_SPECS: dict[str, GeneSpec] = {
+    "shape": make_gene_spec(
+        name="shape",
+        rolls=[1, 17, 18, 19, 20],
+        alleles=[0, 1, 2, 3, 4],
+        allele_names=["circle", "oval", "square", "triangle", "oblong"],
+        allele_costs=[0, -1, 2, 4, -2],
+        dominance=[0, 1, 2, 3, 4],
+        expression_rule="dominance",
+    ),
+
+    "size": make_gene_spec(
+        name="size",
+        rolls=[1, 17, 18, 19, 20],
+        alleles=[0, 1, 2, 3, 4],
+        allele_names=["medium", "large", "small", "giant", "missized"],
+        allele_costs=[0, 1, 2, 4, -2],
+        dominance=[0, 1, 2, 3, 4],
+        expression_rule="dominance",
+    ),
+
+    "color": make_gene_spec(
+        name="color",
+        rolls=[1, 11, 16, 17, 18, 19, 20],
+        alleles=[0, 1, 2, 3, 4, 5, 6],
+        allele_names=["white", "black", "brown", "red", "yellow", "blue", "patchwork"],
+        allele_costs=[0, 0, 1, 2, 2, 2, -1],
+        dominance=[0, 0, 1, 2, 2, 2, 3],
+        expression_rule="body_color_codominance",
+        special_states={
+            (0, 1): ("silver", 0),
+            (1, 0): ("silver", 0),
+            (3, 4): ("orange", 2),
+            (4, 3): ("orange", 2),
+            (3, 5): ("purple", 2),
+            (5, 3): ("purple", 2),
+            (4, 5): ("green", 2),
+            (5, 4): ("green", 2),
+        },
+    ),
+
+    "eyes": make_gene_spec(
+        name="eyes",
+        rolls=[1, 18],
+        alleles=[0, 1],
+        allele_names=["inactive", "active"],
+        allele_costs=[0, 1],
+        dominance=[0, 0],
+        expression_rule="dosage",
+        state_keys=[0, 1, 2],
+        state_names=["n/a", "eye", "double eye"],
+        state_costs=[0, 1, 2],
+    ),
+
+    "brows": make_gene_spec(
+        name="brows",
+        rolls=[1, 18, 19, 20],
+        alleles=[0, 1, 2, 3],
+        allele_names=["n/a", "brows", "eyehair", "unibrows"],
+        allele_costs=[0, 1, 2, -1],
+        dominance=[0, 1, 2, 3],
+        expression_rule="dominance",
+    ),
+
+    "mouths": make_gene_spec(
+        name="mouths",
+        rolls=[1, 17, 18, 19, 20],
+        alleles=[0, 1, 2, 3, 4],
+        allele_names=["n/a", "mouth", "smile", "chip", "smeagol"],
+        allele_costs=[0, 1, 2, 3, -1],
+        dominance=[0, 1, 2, 3, 4],
+        expression_rule="dominance",
+    ),
+
+    "noses": make_gene_spec(
+        name="noses",
+        rolls=[1, 17, 18, 19, 20],
+        alleles=[0, 1, 2, 3, 4],
+        allele_names=["n/a", "nub", "honk", "holes", "concave"],
+        allele_costs=[0, 1, 2, 3, -1],
+        dominance=[0, 1, 2, 3, 4],
+        expression_rule="dominance",
+    ),
+
+    "arms": make_gene_spec(
+        name="arms",
+        rolls=[1, 19, 20],
+        alleles=[0, 1, 2],
+        allele_names=["n/a", "arms", "muscle arms"],
+        allele_costs=[0, 1, 2],
+        dominance=[0, 0, 0],
+        expression_rule="arms_special",
+    ),
+
+    "crowns": make_gene_spec(
+        name="crowns",
+        rolls=[1, 17, 18, 19, 20],
+        alleles=[0, 1, 2, 3, 4],
+        allele_names=["n/a", "small", "medium", "large", "indent"],
+        allele_costs=[0, 1, 2, 3, -1],
+        dominance=[0, 1, 2, 3, 4],
+        expression_rule="dominance",
+    ),
+
+    "wings": make_gene_spec(
+        name="wings",
+        rolls=[1, 20],
+        alleles=[0, 1],
+        allele_names=["n/a", "wings"],
+        allele_costs=[0, 2],
+        dominance=[0, 1],
+        expression_rule="dominance",
+    ),
+
+    "halos": make_gene_spec(
+        name="halos",
+        rolls=[1, 20],
+        alleles=[0, 1],
+        allele_names=["n/a", "halos"],
+        allele_costs=[0, 2],
+        dominance=[0, 1],
+        expression_rule="dominance",
+    ),
+
+    "horns": make_gene_spec(
+        name="horns",
+        rolls=[1, 20],
+        alleles=[0, 1],
+        allele_names=["n/a", "horns"],
+        allele_costs=[0, 2],
+        dominance=[0, 1],
+        expression_rule="dominance",
+    ),
+
+    "wrinkles": make_gene_spec(
+        name="wrinkles",
+        rolls=[1, 20],
+        alleles=[0, 1],
+        allele_names=["n/a", "wrinkles"],
+        allele_costs=[0, 2],
+        dominance=[0, 1],
+        expression_rule="dominance",
+    ),
+
+    "fuzz": make_gene_spec(
+        name="fuzz",
+        rolls=[1, 20],
+        alleles=[0, 1],
+        allele_names=["inactive", "active"],
+        allele_costs=[0, 1],
+        dominance=[0, 1],
+        expression_rule="dosage",
+        state_keys=[0, 1, 2],
+        state_names=["n/a", "fuzzy", "spiky"],
+        state_costs=[0, 1, 2],
+    ),
+
+    "hair": make_gene_spec(
+        name="hair",
+        rolls=[1, 18],
+        alleles=[0, 1],
+        allele_names=["inactive", "active"],
+        allele_costs=[0, 1],
+        dominance=[0, 1],
+        expression_rule="dosage",
+        state_keys=[0, 1, 2],
+        state_names=["n/a", "hair", "double hair"],
+        state_costs=[0, 1, 2],
+    ),
+
+    "facial_hair": make_gene_spec(
+        name="facial_hair",
+        rolls=[0, 15, 16, 17, 18, 19, 20],
+        alleles=[0, 1, 2, 3, 4, 5, 6],
+        allele_names=["n/a", "goatee", "beard", "pedo", "curly", "chapman", "sol"],
+        allele_costs=[0, 1, 2, -1, 3, 4, -2],
+        dominance=[0, 1, 2, 3, 4, 5, 6],
+        expression_rule="dominance",
+    ),
+
+    "freckles": make_gene_spec(
+        name="freckles",
+        rolls=[1, 20],
+        alleles=[0, 1],
+        allele_names=["n/a", "freckles"],
+        allele_costs=[0, 2],
+        dominance=[0, 1],
+        expression_rule="dominance",
+    ),
+
+    "stones": make_gene_spec(
+        name="stones",
+        rolls=[1, 20],
+        alleles=[0, 1],
+        allele_names=["n/a", "stones"],
+        allele_costs=[0, 2],
+        dominance=[0, 1],
+        expression_rule="dominance",
+    ),
+
+    "tails": make_gene_spec(
+        name="tails",
+        rolls=[1, 20],
+        alleles=[0, 1],
+        allele_names=["n/a", "tails"],
+        allele_costs=[0, 2],
+        dominance=[0, 1],
+        expression_rule="dominance",
+    ),
+
+    "eye_color": make_gene_spec(
+        name="eye_color",
+        rolls=[1, 13, 14, 15, 16, 17, 18, 19, 20],
+        alleles=[0, 1, 2, 3, 4, 5, 6, 7, 8],
+        allele_names=["white", "black", "red", "green", "blue", "yellow", "evil", "purple", "callus"],
+        allele_costs=[0, 1, 2, 3, 4, 5, -1, 6, -3],
+        dominance=[0, 0, 1, 2, 3, 4, 5, 6, 7],
+        expression_rule="dominance",
+    ),
+
+    "hair_color": make_gene_spec(
+        name="hair_color",
+        rolls=[1, 11, 16, 17, 18, 19, 20],
+        alleles=[0, 1, 2, 3, 4, 5, 6],
+        allele_names=["white", "black", "brown", "blonde", "red", "pink", "blue"],
+        allele_costs=[0, 0, 1, 2, 3, -1, -2],
+        dominance=[0, 0, 1, 2, 3, 4, 5],
+        expression_rule="hair_color_codominance",
+        special_states={
+            (0, 1): ("silver", 0),
+            (1, 0): ("silver", 0),
+        },
+    ),
+
+    "ears": make_gene_spec(
+        name="ears",
+        rolls=[1, 17, 18, 19, 20],
+        alleles=[0, 1, 2, 3, 4],
+        allele_names=["n/a", "antannae", "ears", "ogre", "goblin"],
+        allele_costs=[0, 1, 2, 3, -1],
+        dominance=[0, 1, 2, 3, 4],
+        expression_rule="dominance",
+    ),
+
+    "hair_texture": make_gene_spec(
+        name="hair_texture",
+        rolls=[1, 20],
+        alleles=[0, 1],
+        allele_names=["straight", "curly"],
+        allele_costs=[0, 2],
+        dominance=[0, 1],
+        expression_rule="dominance",
+    ),
+
+    "splitting": make_gene_spec(
+        name="splitting",
+        rolls=[1, 19, 20],
+        alleles=[0, 1, 2],
+        allele_names=["n/a", "mitosion", "spore"],
+        allele_costs=[0, 0, 0],
+        dominance=[0, 1, 2],
+        expression_rule="dominance",
+    ),
+}
+
+
+    
 Rock_gene_dict = { # "gene": [[roll],
                             #[trait],
                             #[name],
@@ -240,7 +649,7 @@ class Genome:
         roll_value: int,
         possible_rolls: list[int],
         possible_traits: list[int],
-        possible_dominance: list[str],
+        possible_dominance: list[int],
         possible_costs: list[int],
     ) -> Allele:
         best_match_idx = -1
@@ -308,20 +717,6 @@ class Genome:
         return cls(genes = genes)
     
 
-@dataclass(frozen=True)
-class Phenotype:
-    """
-    WORK NEEDED HERE
-    """
-    body_color: str
-    hair_color: str
-    mouth_type: str
-    has_horns: bool
-    has_wings: bool
-    size: float
-    # MORE
-    
-
 @dataclass
 class Rock:
     """
@@ -337,6 +732,7 @@ class Rock:
 
     status: RockStatus = RockStatus.ACTIVE
 
+    phenotype: Phenotype = field(default_factory = Phenotype)
     image_path: str | None = None
     value: int | None = None
 
