@@ -1050,7 +1050,6 @@ def get_visual_phenotype(rock):
 
     return v
 
-
 def ensure_rock_game_attributes(rock, imported=False, sold=False):
     """
     Adds gameplay attributes to a Rock object if they do not already exist.
@@ -2619,7 +2618,6 @@ def draw_head_hair_curls(ctx, hair_color, layout, hair_type):
         salt=f"head_curls_{hair_type}"
     )
 
-
 def draw_hair(ctx, rock, v):
     """
     Draw canned hairstyles inspired by the sketch.
@@ -3234,7 +3232,6 @@ def mix_colors(c1, c2, t=0.5):
     c2 = np.array(c2, dtype=float)
     return tuple(np.clip((1 - t) * c1 + t * c2, 0, 1))
 
-
 def adjust_color_brightness(color, factor=1.2):
     """
     Lighten/darken a matplotlib color.
@@ -3254,7 +3251,6 @@ def adjust_color_brightness(color, factor=1.2):
 
     return tuple(np.clip(rgb, 0, 1))
 
-
 def rock_texture_is_curly(ctx):
     """
     True if this rock expresses curly hair texture.
@@ -3272,7 +3268,6 @@ def rock_texture_is_curly(ctx):
     except Exception:
         return False
 
-
 def deterministic_rng_for_rock(rock, salt="curl"):
     """
     Deterministic random generator so curls do not jump around every redraw.
@@ -3280,7 +3275,6 @@ def deterministic_rng_for_rock(rock, salt="curl"):
     seed_text = f"{getattr(rock, 'id', 0)}_{salt}_{str(getattr(rock, 'genes', {}))}"
     seed = abs(hash(seed_text)) % (2**32)
     return random.Random(seed)
-
 
 def draw_curl_arc(
     ax,
@@ -3315,10 +3309,6 @@ def draw_curl_arc(
     ax.add_patch(arc)
 
     return arc
-
-
-
-
 
 def get_wrinkle_color(body_color):
     """
@@ -4957,7 +4947,6 @@ def get_facial_hair_layout(ctx, drawn_eye_positions=None, nose_info=None, mouth_
         }
     }
 
-
 def draw_facial_hair_curls(
     ctx,
     hair_color,
@@ -5024,7 +5013,6 @@ def draw_facial_hair_curls(
         zorder=zorder,
         salt=f"facial_curls_{fh_type}"
     )
-
 
 def draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mouth_info=None):
     """
@@ -8403,14 +8391,12 @@ if is_cabal_cursed:
     CLUTCH_STD = 1.5
 else:
     CLUTCH_STD = 2.0
-MAX_CLUTCH_SIZE = None      # set to e.g. 8 if you want to cap chaos
+MAX_CLUTCH_SIZE = None    
 SPORE_CLONE_COUNT = 3
 if is_cabal_cursed:
     SPORE_PUFF_CHANCE = 0.35
 else:
     SPORE_PUFF_CHANCE = 0.25
-
-#IMPORT_ROCK_COST = 10
 
 POTION_MUTATION_RATE = 0.12
 FERTILITY_EXTRA_CHILDREN = 1
@@ -8423,8 +8409,6 @@ IMPORT_ROCK_COST = RANDOM_IMPORT_COST
 
 REQUESTED_IMPORT_BASE_COST = 8
 REQUESTED_IMPORT_MULTIPLIER = 2.0
-
-
 
 def rebuild_used_as_parent_flags(game):
     """
