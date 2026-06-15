@@ -147,6 +147,9 @@ def show_requested_quote_preview(game):
 
             if actual_gene_value != requested_gene_value:
                 st.write(f"- {label}: requested `{requested_gene_value}`, generated `{actual_gene_value}`")
+                if gene_name == "gender":
+                    rock.requested_actual_forced_values["gender"] = "01"
+                    rock.gender = 1
             else:
                 st.write(f"- {label}: `{actual_gene_value}`")
     else:

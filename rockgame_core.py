@@ -10204,9 +10204,12 @@ def apply_requested_import_policy(rock, requested_values):
             )
 
     if "gender" in rock.genes:
+        #if requested_values["gender"] == "male":
         rock.gender = express_gender_from_gene(rock.genes["gender"])
 
     rock.requested_actual_forced_values = actual_forced_values
+
+    print(requested_values)
 
     return rock
 
@@ -10263,6 +10266,10 @@ def preview_requested_import_rock(
 
         if getattr(rock, "is_craisen", 0) != 1:
             break
+
+        if requested_values["Gender"] in ["male", "Male", 1]:
+            last_rock.gender = 1
+            last_rock.genes["gender"] = "01"
 
     cost = calculate_requested_import_cost(last_rock)
 
