@@ -171,17 +171,6 @@ def make_gene_spec(
         metadata=metadata or {},
     )
     
-@dataclass
-class Phenotype:
-    phenes: dict[str, str] = field(default_factory=dict)
-    costs: dict[str, int] = field(default_factory=dict)
-
-    def get(self, gene_name: str, default: str = "n/a") -> str:
-        return self.phenes.get(gene_name, default)
-
-    def cost_of(self, gene_name: str, default: int = 0) -> int:
-        return self.costs.get(gene_name, default)
-    
 
 GENE_SPECS: dict[str, GeneSpec] = {
     "shape": make_gene_spec(
@@ -211,7 +200,7 @@ GENE_SPECS: dict[str, GeneSpec] = {
         allele_names=["white", "black", "brown", "red", "yellow", "blue", "patchwork"],
         allele_costs=[0, 0, 1, 2, 2, 2, -1],
         dominance=[0, 0, 1, 2, 2, 2, 3],
-        expression_rule="body_color_codominance",
+        expression_rule="body_color_dominance",
         special_states={
             (0, 1): ("silver", 0),
             (1, 0): ("silver", 0),
@@ -274,7 +263,17 @@ GENE_SPECS: dict[str, GeneSpec] = {
         allele_names=["n/a", "arms", "muscle arms"],
         allele_costs=[0, 1, 2],
         dominance=[0, 0, 0],
-        expression_rule="arms_special",
+        expression_rule="arms_dominance",
+        special_states={
+            (0, 1): ("one pair arms", 1),
+            (1, 0): ("one pair arms", 1),
+            (2, 0): ("one pair muscle arms", 2),
+            (0, 2): ("one pair muscle arms", 2),
+            (1, 2): ("arms and muscle arms", 3),
+            (2, 1): ("arms and muscle arms", 3),
+            (2, 2): ("two pair muscle arms", 4),
+            (1, 1): ("two pair arms", 2),
+        },
     ),
 
     "crowns": make_gene_spec(
@@ -448,7 +447,18 @@ GENE_SPECS: dict[str, GeneSpec] = {
     ),
 }
 
+"""
+@dataclass
+class Phenotype:
+    phenes: dict[str, str] = field(default_factory=dict)
+    costs: dict[str, int] = field(default_factory=dict)
 
+    def get(self, gene_name: str, default: str = "n/a") -> str:
+        return self.phenes.get(gene_name, default)
+
+    def cost_of(self, gene_name: str, default: int = 0) -> int:
+        return self.costs.get(gene_name, default)
+"""
     
 Rock_gene_dict = { # "gene": [[roll],
                             #[trait],
@@ -619,25 +629,26 @@ class RockStatus(str, Enum):
 @dataclass(frozen=True)
 class Allele:
     value: int
-    cost: int
-    dominance: int
 
 @dataclass(frozen=True)
 class GenePair:
     allele_a: Allele
     allele_b: Allele
 
+    name_of_gene: str
+    dominance_type: str
+    money_value: int
+    phenotype: str
+
     @property
     def alleles(self) -> tuple[Allele, Allele]:
         return self.allele_a, self.allele_b
-
-    # possible codminance rules here but unlikely    
 
 @dataclass(frozen=True)
 class Genome:
     genes: dict[str, GenePair] = field(default_factory=dict)
 
-    def get(self, gene_name: str) -> GenePair:
+    def get_whole_gene(self, gene_name: str) -> GenePair:
         return self.genes[gene_name]
 
     @staticmethod
@@ -647,75 +658,163 @@ class Genome:
     @staticmethod
     def get_allele_from_roll(
         roll_value: int,
-        possible_rolls: list[int],
-        possible_traits: list[int],
-        possible_dominance: list[int],
-        possible_costs: list[int],
+        gene: GeneSpec,
     ) -> Allele:
+        
         best_match_idx = -1
+        i = 0
 
-        for i, roll_threshold in enumerate(possible_rolls):
-            if roll_value >= roll_threshold:
-                best_match_idx = i
-            else:
+        roll_threshold = gene.options[i].roll_threshold
+
+        while roll_threshold < roll_value:
+            print(f"threshold: {roll_threshold}, our roll: {roll_value}, i:{i}")
+            if len(gene.options) <= i - 1:
                 break
+            i += 1
+            roll_threshold = gene.options[i].roll_threshold
+
+        best_match_idx = i
 
         if best_match_idx == -1:
             best_match_idx = 0
 
-        trait_value = possible_traits[best_match_idx]
-        trait_dominance = possible_dominance[best_match_idx]
-        trait_cost = possible_costs[best_match_idx]
-
+        trait_value = gene.option_for_allele(best_match_idx).allele
+        
+        print(f"gene: {gene.name}, roll: {roll_value}, allele: {trait_value}")
+        
         return Allele(
             value = trait_value,
-            cost = trait_cost,
-            dominance = trait_dominance,
         )
+    
+    @staticmethod
+    def dominance_phenotype_finding(Gener, a, b) -> tuple[str, int]:
+        lesser = a if a <= b else b
+
+        phenotype = Gener.option_for_allele(lesser).name
+        money = Gener.option_for_allele(lesser).cost
+
+        return(phenotype, money)
+
+    @staticmethod
+    def instantiate_phenotype(Gener, allele_a, allele_b) -> tuple[str, int]:
+        # GETS THE MONEY VALUE AND PHENOTYPE OF EACH GENE!
+            
+        a, b = allele_a.value, allele_b.value
+
+        # FOR PURE DOMINANCE GENES
+        if Gener.expression_rule == "dominance":
+            return (Genome.dominance_phenotype_finding(
+                Gener = Gener,
+                a = a,
+                b = b,
+                )
+            )
+            
+        elif Gener.expression_rule == "dosage":
+            dose = 0
+            dose += 1 if a == 1 else 0
+            dose += 1 if b == 1 else 0
+
+            phenotype = Gener.state_for_key(dose).name
+            money = Gener.state_for_key(dose).cost
+
+            return(phenotype, money)
+            
+        else:
+            #"hair_color_dominance" 
+            #"body_color_dominance" 
+            #"arms_dominance"]:
+
+            a_dom = Gener.option_for_allele(a).dominance
+            b_dom = Gener.option_for_allele(b).dominance
+
+            if  a != b and a_dom == b_dom:
+                phenotype = Gener.special_states[(a, b)].name
+                money = Gener.special_states[(a, b)].cost
+                    
+                return(phenotype, money)
+
+            else:
+                return (Genome.dominance_phenotype_finding(
+                    Gener = Gener,
+                    a = a,
+                    b = b,
+                    )
+                )
 
     @classmethod
-    def instantiate_genotype(cls, rock_roll_dict: dict) -> "Genome":
+    def instantiate_genotype(cls, genome_spec_list: dict[str, GeneSpec], parent_a = None, parent_b = None) -> "Genome":
+        
         genes: dict[str, GenePair] = {}
 
-        # "gene": [
-        #     [roll],
-        #     [trait],
-        #     [name],
-        #     [cost],
-        #     [dominance],
-        # ]
+        # MAKE TOTALLY RANDOM GENOME PATH
+        if parent_a == None and parent_b == None:
+            for gene in genome_spec_list:
 
-        for gene_name, gene_info in rock_roll_dict.items():
-            possible_rolls = gene_info[0]
-            possible_traits = gene_info[1]
-            possible_costs = gene_info[3]
-            possible_dominance = gene_info[4]
+                print(f"instantiating gene {gene}")
 
-            roll_a, roll_b = cls.roll_gene_pair()
+                rand_genes = Genome.roll_gene_pair()
 
-            allele_a = cls.get_allele_from_roll(
-                roll_value = roll_a,
-                possible_rolls = possible_rolls,
-                possible_traits = possible_traits,
-                possible_dominance = possible_dominance,
-                possible_costs = possible_costs,
-            )
+                rand_alleles = (
+                    Genome.get_allele_from_roll(
+                        roll_value = rand_genes[0],
+                        gene = genome_spec_list[gene]),
+                    Genome.get_allele_from_roll(
+                        roll_value = rand_genes[1],
+                        gene = genome_spec_list[gene])
+                )
+                
+                phenotype, money = Genome.instantiate_phenotype(
+                    Gener = genome_spec_list[gene],
+                    allele_a = rand_alleles[0],
+                    allele_b = rand_alleles[1],
+                )
 
-            allele_b = cls.get_allele_from_roll(
-                roll_value = roll_b,
-                possible_rolls = possible_rolls,
-                possible_traits = possible_traits,
-                possible_dominance = possible_dominance,
-                possible_costs = possible_costs,
-            )
+                print(phenotype)
 
-            genes[gene_name] = GenePair(
-                allele_a = allele_a,
-                allele_b = allele_b,
-            )
+                rand_gene_pair = GenePair(
+                    allele_a = rand_alleles[0],
+                    allele_b = rand_alleles[1],
+                    name_of_gene = gene,
+                    dominance_type = genome_spec_list[gene].expression_rule,
+                    money_value = money,
+                    phenotype = phenotype,
+                )
+                
+                genes[gene] = rand_gene_pair
 
-        return cls(genes = genes)
-    
+            return cls(genes = genes)
+
+        # MAKE GENOME DEPENDING ON PARENTS
+        else:
+            for gene in genome_spec_list:
+                if random.random() < 0.5:
+                    parent_a_allele = parent_a.genotype.genes[gene].allele_a
+                else:
+                    parent_a_allele = parent_a.genotype.genes[gene].allele_b
+
+                if random.random() < 0.5:
+                    parent_b_allele = parent_b.genotype.genes[gene].allele_a
+                else:
+                    parent_b_allele = parent_b.genotype.genes[gene].allele_b
+
+                phenotype, money = Genome.instantiate_phenotype(
+                    Gener = genome_spec_list[gene],
+                    allele_a = parent_a_allele,
+                    allele_b = parent_b_allele,
+                )
+
+                rand_gene_pair = GenePair(
+                    allele_a = parent_a_allele,
+                    allele_b = parent_b_allele,
+                    name_of_gene = gene,
+                    dominance_type = genome_spec_list[gene].expression_rule,
+                    money_value = money,
+                    phenotype = phenotype,
+                )
+
+            return cls(genes = genes)
+
 
 @dataclass
 class Rock:
@@ -732,7 +831,7 @@ class Rock:
 
     status: RockStatus = RockStatus.ACTIVE
 
-    phenotype: Phenotype = field(default_factory = Phenotype)
+    #phenotype: Phenotype = field(default_factory = Phenotype)
     image_path: str | None = None
     value: int | None = None
 
@@ -757,8 +856,8 @@ class Rock:
     def handle_sporing(self, game):
         pass
 
-    def determine_phenotype(self):
-        pass
+    #def determine_phenotype(self):
+    #    pass
 
 
 
