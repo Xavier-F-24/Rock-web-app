@@ -792,15 +792,15 @@ class Rock:
                 
                 hair_counter = 0
 
-                print(genome_spec_list[gene].required_states)
-
                 if genome_spec_list[gene].required_states == {}:
                     self.value += self.genotype.genes[gene].money_value
                 else:
                     for req in genome_spec_list[gene].required_states:
-                        if hair_counter == 0 and self.genotype.genes[gene].phenotype != genome_spec_list[gene].required_states[req]:
+                        if hair_counter == 0 and self.genotype.genes[req].phenotype != genome_spec_list[gene].required_states[req]:
                             hair_counter = 1
                             self.value += self.genotype.genes[gene].money_value
+                        
+            self.value = max(1, self.value)
 
         else:
             self.value = 0
