@@ -661,26 +661,20 @@ class Genome:
         gene: GeneSpec,
     ) -> Allele:
         
-        best_match_idx = -1
-        i = 0
-
+        i = 1
         roll_threshold = gene.options[i].roll_threshold
 
         while roll_threshold < roll_value:
-            print(f"threshold: {roll_threshold}, our roll: {roll_value}, i:{i}")
-            if len(gene.options) <= i - 1:
+            if len(gene.options) <= i + 1:
+                i += 1
                 break
             i += 1
             roll_threshold = gene.options[i].roll_threshold
 
-        best_match_idx = i
+        if roll_threshold == roll_value:
+            i += 1
 
-        if best_match_idx == -1:
-            best_match_idx = 0
-
-        trait_value = gene.option_for_allele(best_match_idx).allele
-        
-        print(f"gene: {gene.name}, roll: {roll_value}, allele: {trait_value}")
+        trait_value = gene.option_for_allele(i-1).allele
         
         return Allele(
             value = trait_value,
@@ -749,9 +743,8 @@ class Genome:
 
         # MAKE TOTALLY RANDOM GENOME PATH
         if parent_a == None and parent_b == None:
-            for gene in genome_spec_list:
 
-                print(f"instantiating gene {gene}")
+            for gene in genome_spec_list:
 
                 rand_genes = Genome.roll_gene_pair()
 
@@ -770,8 +763,6 @@ class Genome:
                     allele_b = rand_alleles[1],
                 )
 
-                print(phenotype)
-
                 rand_gene_pair = GenePair(
                     allele_a = rand_alleles[0],
                     allele_b = rand_alleles[1],
@@ -787,17 +778,18 @@ class Genome:
 
         # MAKE GENOME DEPENDING ON PARENTS
         else:
+
             for gene in genome_spec_list:
+
                 if random.random() < 0.5:
                     parent_a_allele = parent_a.genotype.genes[gene].allele_a
                 else:
                     parent_a_allele = parent_a.genotype.genes[gene].allele_b
-
                 if random.random() < 0.5:
                     parent_b_allele = parent_b.genotype.genes[gene].allele_a
                 else:
                     parent_b_allele = parent_b.genotype.genes[gene].allele_b
-
+                    
                 phenotype, money = Genome.instantiate_phenotype(
                     Gener = genome_spec_list[gene],
                     allele_a = parent_a_allele,
@@ -813,8 +805,9 @@ class Genome:
                     phenotype = phenotype,
                 )
 
-            return cls(genes = genes)
+                genes[gene] = rand_gene_pair
 
+            return cls(genes = genes)
 
 @dataclass
 class Rock:
