@@ -44,7 +44,7 @@ from typing import Dict, List, Tuple, Optional, Any
 @dataclass(frozen=True)
 class TraitOption:
     """
-    One allele-level option for a gene.
+    One allele - level option for a gene
     """
     allele: int
     roll_threshold: int
@@ -52,13 +52,12 @@ class TraitOption:
     cost: int
     dominance: int
 
-
 @dataclass(frozen=True)
 class PhenotypeState:
     """
-    One expressed phenotype state.
+    One expressed phenotype state
 
-    For many genes, the state key is just the allele value.
+    For most genes, the state key is just the allele value
     For dosage genes, the state key may be:
         0 = none
         1 = one active copy
@@ -68,7 +67,6 @@ class PhenotypeState:
     name: str
     cost: int
 
-
 @dataclass(frozen=True)
 class GeneSpec:
     """
@@ -77,8 +75,11 @@ class GeneSpec:
     name: str
     expression_rule: str
     options: dict[int, TraitOption]
-    states: dict[int, PhenotypeState] = field(default_factory=dict)
-    special_states: dict[tuple[int, int], PhenotypeState] = field(default_factory=dict)
+    states: dict[int, PhenotypeState] = field(default_factory = dict)
+    special_states: dict[tuple[int, int], PhenotypeState] = field(default_factory = dict)
+    
+    required_states: dict[str, str] = field(default_factory=dict)
+
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def option_for_allele(self, allele: int) -> TraitOption:
@@ -100,20 +101,24 @@ def make_gene_spec(
     state_names: list[str] | None = None,
     state_costs: list[int] | None = None,
     special_states: dict[tuple[int, int], tuple[str, int]] | None = None,
+
+    required_states: dict[str, str] | None = None,
+
     metadata: dict[str, Any] | None = None,
-) -> GeneSpec:
+    ) -> GeneSpec:
     """
-    Build a GeneSpec from explicit lists.
+    Build a GeneSpec from explicit lists
 
     For ordinary dominance genes:
-        state_names/state_costs can be omitted and will default to allele-level values.
+        state_names/state_costs can be omitted and will default to allele-level values
 
     For dosage genes:
-        pass separate state_keys/state_names/state_costs.
+        pass separate state_keys/state_names/state_costs
 
     special_states:
         maps allele pairs like (0, 1) to ("silver", 0)
     """
+    
     if not (
         len(rolls) == len(alleles) == len(allele_names) == len(allele_costs) == len(dominance)
     ):
@@ -162,15 +167,20 @@ def make_gene_spec(
                 cost=special_cost,
             )
 
+    if required_states == None:
+        required_states = {}
+
     return GeneSpec(
-        name=name,
-        expression_rule=expression_rule,
-        options=options,
-        states=states,
-        special_states=built_special_states,
+        name = name,
+        expression_rule = expression_rule,
+        options = options,
+        states = states,
+        special_states = built_special_states,
+
+        required_states = required_states,
+
         metadata=metadata or {},
     )
-    
 
 GENE_SPECS: dict[str, GeneSpec] = {
     "shape": make_gene_spec(
@@ -400,6 +410,9 @@ GENE_SPECS: dict[str, GeneSpec] = {
         allele_costs=[0, 1, 2, 3, 4, 5, -1, 6, -3],
         dominance=[0, 0, 1, 2, 3, 4, 5, 6, 7],
         expression_rule="dominance",
+        required_states = {
+            "eyes" : "n/a"
+            }
     ),
 
     "hair_color": make_gene_spec(
@@ -414,6 +427,11 @@ GENE_SPECS: dict[str, GeneSpec] = {
             (0, 1): ("silver", 0),
             (1, 0): ("silver", 0),
         },
+        required_states = {
+            "hair" : "n/a",
+            "facial_hair" : "n/a",
+            "brows" : "n/a"
+            }
     ),
 
     "ears": make_gene_spec(
@@ -434,6 +452,11 @@ GENE_SPECS: dict[str, GeneSpec] = {
         allele_costs=[0, 2],
         dominance=[0, 1],
         expression_rule="dominance",
+        required_states = {
+            "hair" : "n/a",
+            "facial_hair" : "n/a",
+            "brows" : "n/a"
+            }
     ),
 
     "splitting": make_gene_spec(
@@ -447,172 +470,8 @@ GENE_SPECS: dict[str, GeneSpec] = {
     ),
 }
 
-"""
-@dataclass
-class Phenotype:
-    phenes: dict[str, str] = field(default_factory=dict)
-    costs: dict[str, int] = field(default_factory=dict)
-
-    def get(self, gene_name: str, default: str = "n/a") -> str:
-        return self.phenes.get(gene_name, default)
-
-    def cost_of(self, gene_name: str, default: int = 0) -> int:
-        return self.costs.get(gene_name, default)
-"""
-    
-Rock_gene_dict = { # "gene": [[roll],
-                            #[trait],
-                            #[name],
-                            #[cost],
-                            #[dominance]]
-
-    "shape": [[1,17,18,19,20],
-              [0,1,2,3,4],
-              ["circle","oval","square","triangle","oblong"],
-              [0,-1,2,4,-2],
-              [0,1,2,3,4]],
-
-    "size": [[1,17,18,19,20],
-             [0,1,2,3,4],
-             ["medium","large","small","giant","missized"],
-             [0,1,2,4,-2],
-             [0,1,2,3,4]],
-
-    "color": [[1,11,16,17,18,19,20],
-              [0,1,2,3,4,5,6],
-              ["white","black","brown","red","yellow","blue","patchwork"],
-              [0,0,1,2,2,2,-1],
-              [0,0,1,2,2,2,3]],
-
-    "eyes": [[1,18],
-             [0,1],
-             ["n/a","eye","double eye"],
-             [0,1,2],
-             [0,0],],
-
-    "brows": [[1,18,19,20],
-              [0,1,2,3],
-              ["n/a","brows","eyehair","unibrows"],
-              [0,1,2,-1],
-              [0,1,2,3]],
-
-    "mouths": [[1,17,18,19,20],
-               [0,1,2,3,4],
-               ["n/a","mouth","smile","chip","smeagol"],
-               [0,1,2,3,-1],
-               [0,1,2,3,4]],
-
-    "noses": [[1,17,18,19,20],
-              [0,1,2,3,4],
-              ["n/a","nub","honk","holes","concave"],
-              [0,1,2,3,-1],
-              [0,1,2,3,4]],
-
-    "arms": [[1,19,20],
-             [0,1,2],
-             ["n/a","arms","muscle arms"],
-             [0,1,2],
-             [0,0,0]],
-
-    "crowns": [[1,17,18,19,20],
-               [0,1,2,3,4],
-               ["n/a","small","medium","large","indent"],
-               [0,1,2,3,-1],
-               [0,1,2,3,4]],
-
-    "wings": [[1,20],
-              [0,1],
-              ["n/a","wings"],
-              [0,2],
-              [0,1]],
-
-    "halos": [[1,20],
-              [0,1],
-              ["n/a","halos"],
-              [0,2],
-              [0,1]],
-
-    "horns": [[1,20],
-              [0,1],
-              ["n/a","horns"],
-              [0,2],
-              [0,1]],
-
-    "wrinkles": [[1,20],
-                 [0,1],
-                 ["n/a","wrinkles"],
-                 [0,2],
-                 [0,1]],
-
-    "fuzz": [[1,20],
-             [0,1],
-             ["n/a","fuzzy","spiky"],
-             [0,1,2],
-             [0,1]],
-
-    "hair": [[1,18],
-             [0,1],
-             ["n/a","hair","double hair"],
-             [0,1,2],
-             [0,1]],
-
-    "facial_hair": [[0,15,16,17,18,19,20],
-                    [0,1,2,3,4,5,6],
-                    ["n/a","goatee","beard","pedo","curly","chapman","sol"],
-                    [0,1,2,-1,3,4,-2],
-                    [0,1,2,3,4,5,6]],
-
-    "freckles": [[1,20],
-                 [0,1],
-                 ["n/a","freckles"],
-                 [0,2],
-                 [0,1]],
-
-    "stones": [[1,20],
-               [0,1],
-               ["n/a","stones"],
-               [0,2],
-               [0,1]],
-
-    "tails": [[1,20],
-              [0,1],
-              ["n/a","tails"],
-              [0,2],
-              [0,1]],
-
-    "eye_color": [[1,13,14,15,16,17,18,19,20],
-                  [0,1,2,3,4,5,6,7,8],
-                  ["white","black","red","green","blue","yellow","evil","purple","callus"],
-                  [0,1,2,3,4,5,-1,6,-3],
-                  [0,0,1,2,3,4,5,6,7]],
-
-    "hair_color": [[1,11,16,17,18,19,20],
-                   [0,1,2,3,4,5,6],
-                   ["white","black","brown","blonde","red","pink","blue"],
-                   [0,0,1,2,3,-1,-2],
-                   [0,0,1,2,3,4,5]],
-
-    "ears": [[1,17,18,19,20],
-             [0,1,2,3,4],
-             ["n/a","antannae","ears","ogre","goblin"],
-             [0,1,2,3,-1],
-             [0,1,2,3,4]],
-
-    "hair_texture": [[1,20],
-                     [0,1],
-                     ["straight","curly"],
-                     [0,2],
-                     [0,1]],
-
-    "splitting": [[1,19,20],
-                  [0,1,2],
-                  ["n/a","mitosion","spore"],
-                  [0,0,0],
-                  [0,1,2]],
-}
-
 #-----------------------------------------------------
-# ROCK DEFINITION ZONE
+# ROCK  AND GENOME DEFINITION ZONE
 #-----------------------------------------------------
 
 class Sex(str, Enum):
@@ -648,9 +507,53 @@ class GenePair:
 class Genome:
     genes: dict[str, GenePair] = field(default_factory=dict)
 
-    def get_whole_gene(self, gene_name: str) -> GenePair:
+    def get_gene(self, gene_name: str) -> GenePair:
         return self.genes[gene_name]
+    
+    def print_genes(self):
+        for gene in self.genes:
+            print(f"{self.genes[gene].name_of_gene}: {self.genes[gene].allele_a.value} and {self.genes[gene].allele_b.value} as: {self.genes[gene].phenotype} worth {self.genes[gene].money_value} \n")
 
+    @staticmethod
+    def mutate_allele(
+        game,
+        roll_value: int,
+        gene: GeneSpec,
+        allele_passed: Allele,
+        **kwargs,
+    ) -> Allele:
+        
+        """
+        IMPORTANT SETUP FOR GAME FORMAT AND MUTATION CHANCES!
+        """
+
+        if kwargs != None:
+            if kwargs.get("mutation_potion", False):
+                mutation_chance = game.rules.potions["mutation_potion"].mutation_chance
+            else:
+                mutation_chance = game.mutation_chance
+        else:
+            mutation_chance = game.mutation_chance
+
+        if random.random() < mutation_chance:
+
+            possible_rolls = len(gene.options) - 1
+
+            mutated_out_gene = roll_value
+
+            mutated_in_gene = random.randint(0, possible_rolls)
+
+            while mutated_in_gene == mutated_out_gene:
+                mutated_in_gene = random.randint(0, possible_rolls)
+
+            mutated_in_allele = gene.option_for_allele(mutated_in_gene).allele
+
+            return Allele(
+                value = mutated_in_allele,
+            )
+        
+        return(allele_passed)
+        
     @staticmethod
     def roll_gene_pair() -> list[int]:
         return [random.randint(1, 20), random.randint(1, 20)]
@@ -681,7 +584,11 @@ class Genome:
         )
     
     @staticmethod
-    def dominance_phenotype_finding(Gener, a, b) -> tuple[str, int]:
+    def dominance_phenotype_finding(
+        Gener,
+        a,
+        b,
+    ) -> tuple[str, int]:
         lesser = a if a <= b else b
 
         phenotype = Gener.option_for_allele(lesser).name
@@ -690,7 +597,11 @@ class Genome:
         return(phenotype, money)
 
     @staticmethod
-    def instantiate_phenotype(Gener, allele_a, allele_b) -> tuple[str, int]:
+    def instantiate_phenotype(
+        Gener,
+        allele_a,
+        allele_b
+    ) -> tuple[str, int]:
         # GETS THE MONEY VALUE AND PHENOTYPE OF EACH GENE!
             
         a, b = allele_a.value, allele_b.value
@@ -728,6 +639,12 @@ class Genome:
                     
                 return(phenotype, money)
 
+            elif a!= 0 and a == b and a_dom == b_dom and Gener.expression_rule == "arms_dominance":
+                phenotype = Gener.special_states[(a, b)].name
+                money = Gener.special_states[(a, b)].cost
+                    
+                return(phenotype, money)
+
             else:
                 return (Genome.dominance_phenotype_finding(
                     Gener = Gener,
@@ -737,7 +654,14 @@ class Genome:
                 )
 
     @classmethod
-    def instantiate_genotype(cls, genome_spec_list: dict[str, GeneSpec], parent_a = None, parent_b = None) -> "Genome":
+    def instantiate_genotype(
+        cls,
+        genome_spec_list: dict[str, GeneSpec],
+        parent_a = None,
+        parent_b = None,
+        game = None,
+        **kwargs
+    ) -> "Genome":
         
         genes: dict[str, GenePair] = {}
 
@@ -789,7 +713,21 @@ class Genome:
                     parent_b_allele = parent_b.genotype.genes[gene].allele_a
                 else:
                     parent_b_allele = parent_b.genotype.genes[gene].allele_b
-                    
+                
+                parent_a_allele = Genome.mutate_allele(
+                    game = game,
+                    roll_value = parent_a_allele.value,
+                    gene = genome_spec_list[gene],
+                    allele_passed= parent_a_allele
+                )
+
+                parent_b_allele = Genome.mutate_allele(
+                    game = game,
+                    roll_value = parent_b_allele.value,
+                    gene = genome_spec_list[gene],
+                    allele_passed= parent_b_allele
+                )
+
                 phenotype, money = Genome.instantiate_phenotype(
                     Gener = genome_spec_list[gene],
                     allele_a = parent_a_allele,
@@ -843,14 +781,37 @@ class Rock:
     
         self.status = new_status
 
+    def calculate_value(self, genome_spec_list: dict[str, GeneSpec]):
+
+        if self.status == RockStatus.ACTIVE:
+
+            # THIS ROCK EXISTS BABEEE
+            self.value = 1
+
+            for gene in self.genotype.genes:
+                
+                hair_counter = 0
+
+                print(genome_spec_list[gene].required_states)
+
+                if genome_spec_list[gene].required_states == {}:
+                    self.value += self.genotype.genes[gene].money_value
+                else:
+                    for req in genome_spec_list[gene].required_states:
+                        if hair_counter == 0 and self.genotype.genes[gene].phenotype != genome_spec_list[gene].required_states[req]:
+                            hair_counter = 1
+                            self.value += self.genotype.genes[gene].money_value
+
+        else:
+            self.value = 0
+
+
     def handle_mitosion(self, game):
         pass
 
     def handle_sporing(self, game):
         pass
 
-    #def determine_phenotype(self):
-    #    pass
 
 
 
