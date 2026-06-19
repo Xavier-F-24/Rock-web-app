@@ -471,19 +471,8 @@ GENE_SPECS: dict[str, GeneSpec] = {
 }
 
 #-----------------------------------------------------
-# ROCK  AND GENOME DEFINITION ZONE
+#GENOME DEFINITION ZONE
 #-----------------------------------------------------
-
-class Sex(str, Enum):
-    MALE = "male"
-    FEMALE = "female"
-
-class RockStatus(str, Enum):
-    ACTIVE = "active"
-    SOLD = "sold"
-    DEAD = "dead"
-    CRAISENED = "craisened"
-    BRED = "bred"
 
 @dataclass(frozen=True)
 class Allele:
@@ -513,46 +502,37 @@ class Genome:
     def print_genes(self):
         for gene in self.genes:
             print(f"{self.genes[gene].name_of_gene}: {self.genes[gene].allele_a.value} and {self.genes[gene].allele_b.value} as: {self.genes[gene].phenotype} worth {self.genes[gene].money_value} \n")
+ 
+@dataclass()
+class GenomeFactory: 
 
     @staticmethod
     def mutate_allele(
-        game,
         roll_value: int,
         gene: GeneSpec,
         allele_passed: Allele,
+        mutation_chance = 1/100,
         **kwargs,
     ) -> Allele:
         
         """
         IMPORTANT SETUP FOR GAME FORMAT AND MUTATION CHANCES!
         """
+        if random.random() >= mutation_chance:
+            return allele_passed
 
-        if kwargs != None:
-            if kwargs.get("mutation_potion", False):
-                mutation_chance = game.rules.potions["mutation_potion"].mutation_chance
-            else:
-                mutation_chance = game.mutation_chance
-        else:
-            mutation_chance = game.mutation_chance
+        possible_values = [
+            gene.options[option].allele
+            for option in gene.options
+            if gene.options[option].allele != allele_passed.value
+        ]
 
-        if random.random() < mutation_chance:
+        if not possible_values:
+            return allele_passed
 
-            possible_rolls = len(gene.options) - 1
-
-            mutated_out_gene = roll_value
-
-            mutated_in_gene = random.randint(0, possible_rolls)
-
-            while mutated_in_gene == mutated_out_gene:
-                mutated_in_gene = random.randint(0, possible_rolls)
-
-            mutated_in_allele = gene.option_for_allele(mutated_in_gene).allele
-
-            return Allele(
-                value = mutated_in_allele,
+        return Allele(
+            value=random.choice(possible_values)
             )
-        
-        return(allele_passed)
         
     @staticmethod
     def roll_gene_pair() -> list[int]:
@@ -564,25 +544,18 @@ class Genome:
         gene: GeneSpec,
     ) -> Allele:
         
-        i = 1
-        roll_threshold = gene.options[i].roll_threshold
+        chosen_option = gene.options[0]
 
-        while roll_threshold < roll_value:
-            if len(gene.options) <= i + 1:
-                i += 1
+        for option in gene.options:
+            if roll_value >= gene.options[option].roll_threshold:
+                chosen_option = gene.options[option]
+            else:
                 break
-            i += 1
-            roll_threshold = gene.options[i].roll_threshold
 
-        if roll_threshold == roll_value:
-            i += 1
-
-        trait_value = gene.option_for_allele(i-1).allele
-        
         return Allele(
-            value = trait_value,
-        )
-    
+            value=chosen_option.allele
+            )
+
     @staticmethod
     def dominance_phenotype_finding(
         Gener,
@@ -608,7 +581,7 @@ class Genome:
 
         # FOR PURE DOMINANCE GENES
         if Gener.expression_rule == "dominance":
-            return (Genome.dominance_phenotype_finding(
+            return (GenomeFactory.dominance_phenotype_finding(
                 Gener = Gener,
                 a = a,
                 b = b,
@@ -646,62 +619,65 @@ class Genome:
                 return(phenotype, money)
 
             else:
-                return (Genome.dominance_phenotype_finding(
+                return (GenomeFactory.dominance_phenotype_finding(
                     Gener = Gener,
                     a = a,
                     b = b,
                     )
                 )
 
-    @classmethod
-    def instantiate_genotype(
-        cls,
+    @staticmethod
+    def make_random_rock_genome(
+        genome_spec_list: dict[str, GeneSpec],
+        **kwargs
+    ) -> Genome:
+        
+        genes: dict[str, GenePair] = {}
+
+        # MAKE TOTALLY RANDOM GENOME PATH
+        for gene in genome_spec_list:
+
+            rand_genes = GenomeFactory.roll_gene_pair()
+
+            rand_alleles = (
+                GenomeFactory.get_allele_from_roll(
+                    roll_value = rand_genes[0],
+                    gene = genome_spec_list[gene]),
+                GenomeFactory.get_allele_from_roll(
+                    roll_value = rand_genes[1],
+                    gene = genome_spec_list[gene])
+            )
+                
+            phenotype, money = GenomeFactory.instantiate_phenotype(
+                Gener = genome_spec_list[gene],
+                allele_a = rand_alleles[0],
+                allele_b = rand_alleles[1],
+            )
+
+            rand_gene_pair = GenePair(
+                allele_a = rand_alleles[0],
+                allele_b = rand_alleles[1],
+                name_of_gene = gene,
+                dominance_type = genome_spec_list[gene].expression_rule,
+                money_value = money,
+                phenotype = phenotype,
+            )
+                
+            genes[gene] = rand_gene_pair
+
+        return (Genome(genes))
+
+    @staticmethod
+    def make_child_rock_genome_from_parents(
         genome_spec_list: dict[str, GeneSpec],
         parent_a = None,
         parent_b = None,
         game = None,
         **kwargs
-    ) -> "Genome":
-        
-        genes: dict[str, GenePair] = {}
+    ) -> Genome:
+            # MAKE GENOME DEPENDING ON PARENTS
 
-        # MAKE TOTALLY RANDOM GENOME PATH
-        if parent_a == None and parent_b == None:
-
-            for gene in genome_spec_list:
-
-                rand_genes = Genome.roll_gene_pair()
-
-                rand_alleles = (
-                    Genome.get_allele_from_roll(
-                        roll_value = rand_genes[0],
-                        gene = genome_spec_list[gene]),
-                    Genome.get_allele_from_roll(
-                        roll_value = rand_genes[1],
-                        gene = genome_spec_list[gene])
-                )
-                
-                phenotype, money = Genome.instantiate_phenotype(
-                    Gener = genome_spec_list[gene],
-                    allele_a = rand_alleles[0],
-                    allele_b = rand_alleles[1],
-                )
-
-                rand_gene_pair = GenePair(
-                    allele_a = rand_alleles[0],
-                    allele_b = rand_alleles[1],
-                    name_of_gene = gene,
-                    dominance_type = genome_spec_list[gene].expression_rule,
-                    money_value = money,
-                    phenotype = phenotype,
-                )
-                
-                genes[gene] = rand_gene_pair
-
-            return cls(genes = genes)
-
-        # MAKE GENOME DEPENDING ON PARENTS
-        else:
+            genes: dict[str, GenePair] = {}
 
             for gene in genome_spec_list:
 
@@ -714,21 +690,23 @@ class Genome:
                 else:
                     parent_b_allele = parent_b.genotype.genes[gene].allele_b
                 
-                parent_a_allele = Genome.mutate_allele(
+                parent_a_allele = GenomeFactory.mutate_allele(
                     game = game,
                     roll_value = parent_a_allele.value,
                     gene = genome_spec_list[gene],
-                    allele_passed= parent_a_allele
+                    allele_passed= parent_a_allele,
+                    **kwargs
                 )
 
-                parent_b_allele = Genome.mutate_allele(
+                parent_b_allele = GenomeFactory.mutate_allele(
                     game = game,
                     roll_value = parent_b_allele.value,
                     gene = genome_spec_list[gene],
-                    allele_passed= parent_b_allele
+                    allele_passed= parent_b_allele,
+                    **kwargs
                 )
 
-                phenotype, money = Genome.instantiate_phenotype(
+                phenotype, money = GenomeFactory.instantiate_phenotype(
                     Gener = genome_spec_list[gene],
                     allele_a = parent_a_allele,
                     allele_b = parent_b_allele,
@@ -745,7 +723,21 @@ class Genome:
 
                 genes[gene] = rand_gene_pair
 
-            return cls(genes = genes)
+            return (Genome(genes))
+
+#-----------------------------------------------------
+#ROCK DEFINITION ZONE
+#-----------------------------------------------------
+class Sex(str, Enum):
+    MALE = "male"
+    FEMALE = "female"
+
+class RockStatus(str, Enum):
+    ACTIVE = "active"
+    SOLD = "sold"
+    DEAD = "dead"
+    CRAISENED = "craisened"
+    BRED = "bred"
 
 @dataclass
 class Rock:
@@ -806,11 +798,6 @@ class Rock:
             self.value = 0
 
 
-    def handle_mitosion(self, game):
-        pass
-
-    def handle_sporing(self, game):
-        pass
 
 
 
