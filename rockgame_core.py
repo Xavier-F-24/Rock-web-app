@@ -583,8 +583,6 @@ REQUEST_TRAIT_DEPENDENCIES = {
     },
 }
 
-
-
 def random_rock_name() -> str:
     return random.choice(name_bits_start) + random.choice(name_bits_end)
 
@@ -817,8 +815,8 @@ EYE_COLOR_MAP = {
     "callus": "tan",
     "n/a":    "black",
 }
-  # -----------------------------
-# Body color dominance system
+# -----------------------------
+# Body color system
 # -----------------------------
 
 BODY_COLOR_MAP = {
@@ -8262,13 +8260,11 @@ import math
 # ============================================================
 CURSED_PLAYER_NAMES = {"tristan", "t"}
 
-
 def normalize_player_name(name):
     """
     Normalize player names for save files and curse checks.
     """
     return str(name or "").strip().lower()
-
 
 def sanitize_player_name_for_file(name):
     """
@@ -8299,7 +8295,6 @@ def sanitize_player_name_for_file(name):
 
     return safe
 
-
 def get_game_save_filename(game):
     """
     Build player-specific save filename.
@@ -8311,7 +8306,6 @@ def get_game_save_filename(game):
     generation = int(getattr(game, "generation", 0))
 
     return f"rocks_{player_slug}_gen{generation}.json"
-
 
 def ensure_player_profile_state(game):
     """
@@ -8325,7 +8319,6 @@ def ensure_player_profile_state(game):
 
     return game
 
-
 def set_player_name(game, player_name):
     """
     Store player name on the game.
@@ -8333,7 +8326,6 @@ def set_player_name(game, player_name):
     ensure_player_profile_state(game)
     game.player_name = str(player_name or "").strip()
     return game
-
 
 def is_cabal_cursed(game):
     """
@@ -8359,8 +8351,6 @@ def is_cabal_cursed(game):
     }
 
     return name in cursed_names
-
-
 
 STARTER_GENDERS = {
     1: ("Male", "01"),
@@ -8719,7 +8709,6 @@ def ensure_market_state(game):
 
     return game
 
-
 def clear_market_state(game):
     """
     Clear current market pod offers and any unresolved pending pod.
@@ -8727,7 +8716,6 @@ def clear_market_state(game):
     game.market_pods = []
     game.pending_market_pod = None
     return game
-
 
 def sync_next_rock_id(game):
     """
@@ -8759,7 +8747,6 @@ def sync_next_rock_id(game):
 
     return game.next_id
 
-
 def reserve_rock_id(game):
     """
     Reserve and return the next real positive rock id.
@@ -8771,14 +8758,12 @@ def reserve_rock_id(game):
 
     return rid
 
-
 def assign_new_rock_id(game, rock):
     """
     Assign a real unique positive id to a rock.
     """
     rock.id = reserve_rock_id(game)
     return rock.id
-
 
 def add_rock_to_game_with_new_id(game, rock):
     """
@@ -8906,7 +8891,6 @@ def make_market_guest_parent_for_tier(game, tier_key, forced_gender=None, max_at
     evaluate_rock_value(best_rock)
 
     return best_rock
-
 
 def generate_market_pods_for_generation(game, force=False):
     """
@@ -9081,7 +9065,6 @@ def get_market_pod_offer(game, offer_id):
 
     return None
 
-
 def buy_market_pod(game, offer_id):
     """
     Buy a market pod.
@@ -9165,7 +9148,6 @@ def buy_market_pod(game, offer_id):
     print(f"They produced {len(children)} child candidate(s). Choose one to keep.")
 
     return True
-
 
 def choose_market_pod_child(game, child_index):
     """
@@ -10645,7 +10627,6 @@ def get_max_requested_trait_level(gene_name):
 
     return max_level
 
-
 REQUEST_RECESSIVE_ROLL_TRAITS = {
     "eye_color": {
         "max_level": get_max_requested_trait_level("eye_color")
@@ -10656,7 +10637,6 @@ REQUEST_RECESSIVE_ROLL_TRAITS = {
         "exact_values": {"00", "01", "11"}  # white and silver stay exact
     },
 }
-
 
 def requested_dependency_satisfied_from_values(gene_name, requested_values):
     """
@@ -10698,7 +10678,6 @@ def requested_dependency_satisfied_from_values(gene_name, requested_values):
 
     return any(checks)
 
-
 # ============================================================
 # REQUESTED IMPORT: HIDDEN RECESSIVE GENOTYPE ROLL RULES
 # ============================================================
@@ -10729,7 +10708,6 @@ def get_catalog_alleles(gene_name, include_zero=False):
             alleles.add(ch)
 
     return sorted(alleles, key=lambda x: int(x))
-
 
 def build_ladder_roll_rules(gene_name, include_zero=False, zero_is_no_trait=True):
     """
@@ -10767,7 +10745,6 @@ def build_ladder_roll_rules(gene_name, include_zero=False, zero_is_no_trait=True
 
     return rules
 
-
 def symmetric_values(values):
     """
     Add reversed versions of two-allele values.
@@ -10785,7 +10762,6 @@ def symmetric_values(values):
             out.add(value[::-1])
 
     return sorted(out)
-
 
 BODY_COLOR_ROLL_RULES = {
     # white = black codominance gives silver, so white cannot hide black
@@ -10813,7 +10789,6 @@ BODY_COLOR_ROLL_RULES = {
     # patchwork is recessive
     "66": ["66"],
 }
-
 
 HAIR_COLOR_ROLL_RULES = {
     # white = black codominance gives silver, so white cannot hide black
@@ -11351,6 +11326,7 @@ def import_random_rock(game, cost=RANDOM_IMPORT_COST, force_gender=None):
     print(f"Cash money is now ${game.money}.")
 
     return rock
+
 
 def show_game_rocks(game, cols=4, figsize_per_rock=4, include_sold=False):
     """
