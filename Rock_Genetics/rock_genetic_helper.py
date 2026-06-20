@@ -38,8 +38,11 @@ from enum import Enum
 from typing import Dict, List, Tuple, Optional, Any
 
 #-----------------------------------------------------
-# ROCK GENES ZONE
+# ROCK GEOME ZONE
 #-----------------------------------------------------
+class Sex(str, Enum):
+    MALE = "male"
+    FEMALE = "female"
 
 @dataclass(frozen=True)
 class TraitOption:
@@ -79,6 +82,8 @@ class GeneSpec:
     special_states: dict[tuple[int, int], PhenotypeState] = field(default_factory = dict)
     
     required_states: dict[str, str] = field(default_factory=dict)
+    required_gender: Sex | None= None
+    required_gender_states: str | None = None
 
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -103,6 +108,8 @@ def make_gene_spec(
     special_states: dict[tuple[int, int], tuple[str, int]] | None = None,
 
     required_states: dict[str, str] | None = None,
+    required_gender: Sex | None = None,
+    required_gender_states: str | None = None,
 
     metadata: dict[str, Any] | None = None,
     ) -> GeneSpec:
@@ -178,6 +185,8 @@ def make_gene_spec(
         special_states = built_special_states,
 
         required_states = required_states,
+        required_gender = required_gender,
+        required_gender_states = required_gender_states,
 
         metadata=metadata or {},
     )
@@ -370,6 +379,8 @@ GENE_SPECS: dict[str, GeneSpec] = {
         allele_costs=[0, 1, 2, -1, 3, 4, -2],
         dominance=[0, 1, 2, 3, 4, 5, 6],
         expression_rule="dominance",
+        required_gender= Sex.MALE,
+        required_gender_states= "peach fuzz"
     ),
 
     "freckles": make_gene_spec(
@@ -478,21 +489,21 @@ GENE_SPECS: dict[str, GeneSpec] = {
 class Allele:
     value: int
 
-@dataclass(frozen=True)
+@dataclass()
 class GenePair:
     allele_a: Allele
     allele_b: Allele
 
-    name_of_gene: str
+    name_of_gene: str 
     dominance_type: str
-    money_value: int
-    phenotype: str
+    money_value: int | None = None
+    phenotype: str | None = None
 
     @property
     def alleles(self) -> tuple[Allele, Allele]:
         return self.allele_a, self.allele_b
 
-@dataclass(frozen=True)
+@dataclass()
 class Genome:
     genes: dict[str, GenePair] = field(default_factory=dict)
 
@@ -505,14 +516,14 @@ class Genome:
  
 @dataclass()
 class GenomeFactory: 
+    
+    genome_spec_list = GENE_SPECS
 
     @staticmethod
     def mutate_allele(
-        roll_value: int,
         gene: GeneSpec,
         allele_passed: Allele,
         mutation_chance = 1/100,
-        **kwargs,
     ) -> Allele:
         
         """
@@ -556,83 +567,14 @@ class GenomeFactory:
             value=chosen_option.allele
             )
 
-    @staticmethod
-    def dominance_phenotype_finding(
-        Gener,
-        a,
-        b,
-    ) -> tuple[str, int]:
-        lesser = a if a <= b else b
-
-        phenotype = Gener.option_for_allele(lesser).name
-        money = Gener.option_for_allele(lesser).cost
-
-        return(phenotype, money)
-
-    @staticmethod
-    def instantiate_phenotype(
-        Gener,
-        allele_a,
-        allele_b
-    ) -> tuple[str, int]:
-        # GETS THE MONEY VALUE AND PHENOTYPE OF EACH GENE!
-            
-        a, b = allele_a.value, allele_b.value
-
-        # FOR PURE DOMINANCE GENES
-        if Gener.expression_rule == "dominance":
-            return (GenomeFactory.dominance_phenotype_finding(
-                Gener = Gener,
-                a = a,
-                b = b,
-                )
-            )
-            
-        elif Gener.expression_rule == "dosage":
-            dose = 0
-            dose += 1 if a == 1 else 0
-            dose += 1 if b == 1 else 0
-
-            phenotype = Gener.state_for_key(dose).name
-            money = Gener.state_for_key(dose).cost
-
-            return(phenotype, money)
-            
-        else:
-            #"hair_color_dominance" 
-            #"body_color_dominance" 
-            #"arms_dominance"]:
-
-            a_dom = Gener.option_for_allele(a).dominance
-            b_dom = Gener.option_for_allele(b).dominance
-
-            if  a != b and a_dom == b_dom:
-                phenotype = Gener.special_states[(a, b)].name
-                money = Gener.special_states[(a, b)].cost
-                    
-                return(phenotype, money)
-
-            elif a!= 0 and a == b and a_dom == b_dom and Gener.expression_rule == "arms_dominance":
-                phenotype = Gener.special_states[(a, b)].name
-                money = Gener.special_states[(a, b)].cost
-                    
-                return(phenotype, money)
-
-            else:
-                return (GenomeFactory.dominance_phenotype_finding(
-                    Gener = Gener,
-                    a = a,
-                    b = b,
-                    )
-                )
-
-    @staticmethod
     def make_random_rock_genome(
-        genome_spec_list: dict[str, GeneSpec],
+        self,
         **kwargs
     ) -> Genome:
         
         genes: dict[str, GenePair] = {}
+
+        genome_spec_list = self.genome_spec_list
 
         # MAKE TOTALLY RANDOM GENOME PATH
         for gene in genome_spec_list:
@@ -647,37 +589,29 @@ class GenomeFactory:
                     roll_value = rand_genes[1],
                     gene = genome_spec_list[gene])
             )
-                
-            phenotype, money = GenomeFactory.instantiate_phenotype(
-                Gener = genome_spec_list[gene],
-                allele_a = rand_alleles[0],
-                allele_b = rand_alleles[1],
-            )
 
             rand_gene_pair = GenePair(
                 allele_a = rand_alleles[0],
                 allele_b = rand_alleles[1],
                 name_of_gene = gene,
                 dominance_type = genome_spec_list[gene].expression_rule,
-                money_value = money,
-                phenotype = phenotype,
             )
                 
             genes[gene] = rand_gene_pair
 
         return (Genome(genes))
 
-    @staticmethod
     def make_child_rock_genome_from_parents(
-        genome_spec_list: dict[str, GeneSpec],
+        self,
         parent_a = None,
         parent_b = None,
-        game = None,
         **kwargs
     ) -> Genome:
             # MAKE GENOME DEPENDING ON PARENTS
 
             genes: dict[str, GenePair] = {}
+
+            genome_spec_list = self.genome_spec_list
 
             for gene in genome_spec_list:
 
@@ -691,25 +625,15 @@ class GenomeFactory:
                     parent_b_allele = parent_b.genotype.genes[gene].allele_b
                 
                 parent_a_allele = GenomeFactory.mutate_allele(
-                    game = game,
-                    roll_value = parent_a_allele.value,
                     gene = genome_spec_list[gene],
                     allele_passed= parent_a_allele,
                     **kwargs
                 )
 
                 parent_b_allele = GenomeFactory.mutate_allele(
-                    game = game,
-                    roll_value = parent_b_allele.value,
                     gene = genome_spec_list[gene],
                     allele_passed= parent_b_allele,
                     **kwargs
-                )
-
-                phenotype, money = GenomeFactory.instantiate_phenotype(
-                    Gener = genome_spec_list[gene],
-                    allele_a = parent_a_allele,
-                    allele_b = parent_b_allele,
                 )
 
                 rand_gene_pair = GenePair(
@@ -717,8 +641,6 @@ class GenomeFactory:
                     allele_b = parent_b_allele,
                     name_of_gene = gene,
                     dominance_type = genome_spec_list[gene].expression_rule,
-                    money_value = money,
-                    phenotype = phenotype,
                 )
 
                 genes[gene] = rand_gene_pair
@@ -726,12 +648,8 @@ class GenomeFactory:
             return (Genome(genes))
 
 #-----------------------------------------------------
-#ROCK DEFINITION ZONE
+# ROCK DEFINITION ZONE
 #-----------------------------------------------------
-class Sex(str, Enum):
-    MALE = "male"
-    FEMALE = "female"
-
 class RockStatus(str, Enum):
     ACTIVE = "active"
     SOLD = "sold"
@@ -773,31 +691,147 @@ class Rock:
     
         self.status = new_status
 
-    def calculate_value(self, genome_spec_list: dict[str, GeneSpec]):
 
-        if self.status == RockStatus.ACTIVE:
+#-----------------------------------------------------
+# PHENOTYPE DEFINITION ZONE
+#-----------------------------------------------------
+@dataclass()
+class ExpressionEngine: 
+
+    genome_spec_list = GENE_SPECS
+
+    @staticmethod
+    def dominance_phenotype_finding(
+        Gener,
+        a, #allele_a.value
+        b, #allele_b.value
+    ) -> tuple[str, int]:
+        lesser = a if a <= b else b
+
+        phenotype = Gener.option_for_allele(lesser).name
+        money = Gener.option_for_allele(lesser).cost
+
+        return(phenotype, money)
+
+    def instantiate_phenotype(
+        self,
+        rock,
+    ) -> Rock:
+        # GETS THE MONEY VALUE AND PHENOTYPE OF EACH GENE!
+        
+        genome_spec_list = self.genome_spec_list
+
+        for gene in genome_spec_list:
+
+            Gener = genome_spec_list[gene]
+
+            a, b = rock.genotype.genes[gene].allele_a.value, rock.genotype.genes[gene].allele_b.value
+
+            # FOR PURE DOMINANCE GENES
+
+            # DEALING WITH WOMEN FOR FACIAL HAIR
+            if rock.sex != Gener.required_gender and Gener == "facial_hair":
+                phenotype = Gener.required_gender_states
+                money = 1
+
+                rock.genotype.genes[gene].phenotype, rock.genotype.genes[gene].money_value = phenotype, money
+
+            elif Gener.expression_rule == "dominance":
+                phenotype, money =  (ExpressionEngine.dominance_phenotype_finding(
+                        Gener = Gener,
+                        a = a,
+                        b = b,
+                        )
+                    )
+            
+                rock.genotype.genes[gene].phenotype, rock.genotype.genes[gene].money_value = phenotype, money
+                
+            elif Gener.expression_rule == "dosage":
+                dose = 0
+                dose += 1 if a == 1 else 0
+                dose += 1 if b == 1 else 0
+
+                phenotype = Gener.state_for_key(dose).name
+                money = Gener.state_for_key(dose).cost
+
+                rock.genotype.genes[gene].phenotype, rock.genotype.genes[gene].money_value = phenotype, money
+                
+            else:
+                #"hair_color_dominance" 
+                #"body_color_dominance" 
+                #"arms_dominance"]:
+
+                a_dom = Gener.option_for_allele(a).dominance
+                b_dom = Gener.option_for_allele(b).dominance
+
+                # HAIR AND BODY COLOR RULES
+                if  a != b and a_dom == b_dom:
+                    phenotype = Gener.special_states[(a, b)].name
+                    money = Gener.special_states[(a, b)].cost
+                        
+                    rock.genotype.genes[gene].phenotype, rock.genotype.genes[gene].money_value = phenotype, money
+
+                # ARMS RULES
+                elif a!= 0 and a == b and a_dom == b_dom and Gener.expression_rule == "arms_dominance":
+                    phenotype = Gener.special_states[(a, b)].name
+                    money = Gener.special_states[(a, b)].cost
+                        
+                    rock.genotype.genes[gene].phenotype, rock.genotype.genes[gene].money_value = phenotype, money
+               
+                else:
+                    phenotype, money = (ExpressionEngine.dominance_phenotype_finding(
+                            Gener = Gener,
+                            a = a,
+                            b = b,
+                            )
+                        )
+                
+                    rock.genotype.genes[gene].phenotype, rock.genotype.genes[gene].money_value = phenotype, money
+
+        return(rock)
+    
+#-----------------------------------------------------
+# VALUE DEFINITION ZONE
+#-----------------------------------------------------
+@dataclass()
+class ValueCalculator: 
+
+    genome_spec_list = GENE_SPECS
+
+    def set_rock_value(
+            self,
+            rock, 
+        ) -> Rock:
+
+        genome_spec_list = self.genome_spec_list
+
+        if rock.status == RockStatus.ACTIVE:
 
             # THIS ROCK EXISTS BABEEE
-            self.value = 1
+            rock.value = 1
 
-            for gene in self.genotype.genes:
+            for gene in rock.genotype.genes:
                 
                 hair_counter = 0
 
-                if genome_spec_list[gene].required_states == {}:
-                    self.value += self.genotype.genes[gene].money_value
+                if rock.sex == Sex.FEMALE and gene == "facial_hair" and rock.genotype.genes[gene].phenotype != "n/a":
+                    rock.value += 1
+
+                elif genome_spec_list[gene].required_states == {}:
+                    rock.value += rock.genotype.genes[gene].money_value
                 else:
                     for req in genome_spec_list[gene].required_states:
-                        if hair_counter == 0 and self.genotype.genes[req].phenotype != genome_spec_list[gene].required_states[req]:
+                        if hair_counter == 0 and rock.genotype.genes[req].phenotype != genome_spec_list[gene].required_states[req]:
                             hair_counter = 1
-                            self.value += self.genotype.genes[gene].money_value
+                            rock.value += rock.genotype.genes[gene].money_value
                         
-            self.value = max(1, self.value)
+            rock.value = max(1, rock.value)
 
         else:
-            self.value = 0
+            rock.value = 0
 
-
+        return(rock)
+    
 
 
 
