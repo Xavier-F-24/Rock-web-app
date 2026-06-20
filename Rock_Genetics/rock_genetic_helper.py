@@ -518,6 +518,7 @@ class Genome:
 class GenomeFactory: 
     
     genome_spec_list = GENE_SPECS
+    death_gene_list = ["death_gene1", "death_gene2", "death_gene3"]
 
     @staticmethod
     def mutate_allele(
@@ -601,12 +602,14 @@ class GenomeFactory:
 
         return (Genome(genes))
 
+
     def make_child_rock_genome_from_parents(
         self,
         parent_a = None,
         parent_b = None,
         **kwargs
     ) -> Genome:
+            
             # MAKE GENOME DEPENDING ON PARENTS
 
             genes: dict[str, GenePair] = {}
@@ -647,6 +650,67 @@ class GenomeFactory:
 
             return (Genome(genes))
 
+    def roll_craisen_pair(
+            self,
+    ) -> tuple[int, int]:
+            a = random.randint(1,100)
+            b = random.randint(1,100)
+            while a == b:
+                a = random.randint(1,100)
+                b = random.randint(1,100)
+            return (a, b)
+
+    def inherit_death_genes(
+        self,
+        parent_a,
+        parent_b,
+    ) -> Genome:
+        
+        genes = {}
+        
+        for death_gene in self.death_gene_list:
+
+            if random.random() < 0.5:
+                parent_a_allele = parent_a.death_genes.genes[death_gene].allele_a
+            else:
+                parent_a_allele = parent_a.death_genes.genes[death_gene].allele_b
+            if random.random() < 0.5:
+                parent_b_allele = parent_b.death_genes.genes[death_gene].allele_a
+            else:
+                parent_b_allele = parent_b.death_genes.genes[death_gene].allele_b
+                
+            death_gene_pair = GenePair(
+                allele_a = parent_a_allele,
+                allele_b = parent_b_allele,
+                name_of_gene = death_gene,
+                dominance_type = "death_genes",
+                )
+
+            genes[death_gene] = death_gene_pair
+
+        return(Genome(genes= genes))
+    
+    def make_death_genes(
+        self,
+    ) -> Genome:
+        
+        genes = {}
+        
+        for death_gene in self.death_gene_list:
+
+            (a, b) = self.roll_craisen_pair()
+
+            death_gene_pair = GenePair(
+                allele_a = Allele(value = a),
+                allele_b = Allele(value = b),
+                name_of_gene = death_gene,
+                dominance_type = "death_genes",
+                )
+
+            genes[death_gene] = death_gene_pair
+
+        return(Genome(genes= genes))
+
 #-----------------------------------------------------
 # ROCK DEFINITION ZONE
 #-----------------------------------------------------
@@ -667,6 +731,7 @@ class Rock:
     sex: Sex
 
     genotype: Genome = field(default_factory = Genome)
+    death_genes: Genome = field(default_factory = Genome)
     parent_ids: list[int] = field(default_factory = list)
     generation: int = 0
 
@@ -690,7 +755,6 @@ class Rock:
             raise TypeError(f"new_status must be a RockStatus, not {type(new_status)}")
     
         self.status = new_status
-
 
 #-----------------------------------------------------
 # PHENOTYPE DEFINITION ZONE
