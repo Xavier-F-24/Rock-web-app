@@ -31,11 +31,11 @@ This file answers:
 # IMPORT ZONE
 #-----------------------------------------------------
 
-import math, random, base64, io
+import random
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Tuple, Optional, Any
+from typing import  Any
 
 #-----------------------------------------------------
 # ROCK GEOME ZONE
@@ -566,7 +566,7 @@ class GenomeFactory:
         return Allele(
             value=chosen_option.allele
             )
-
+    
     def make_random_rock_genome(
         self,
         **kwargs
@@ -579,13 +579,13 @@ class GenomeFactory:
         # MAKE TOTALLY RANDOM GENOME PATH
         for gene in genome_spec_list:
 
-            rand_genes = GenomeFactory.roll_gene_pair()
+            rand_genes = self.roll_gene_pair()
 
             rand_alleles = (
-                GenomeFactory.get_allele_from_roll(
+                self.get_allele_from_roll(
                     roll_value = rand_genes[0],
                     gene = genome_spec_list[gene]),
-                GenomeFactory.get_allele_from_roll(
+                self.get_allele_from_roll(
                     roll_value = rand_genes[1],
                     gene = genome_spec_list[gene])
             )
@@ -624,13 +624,13 @@ class GenomeFactory:
                 else:
                     parent_b_allele = parent_b.genotype.genes[gene].allele_b
                 
-                parent_a_allele = GenomeFactory.mutate_allele(
+                parent_a_allele = self.mutate_allele(
                     gene = genome_spec_list[gene],
                     allele_passed= parent_a_allele,
                     **kwargs
                 )
 
-                parent_b_allele = GenomeFactory.mutate_allele(
+                parent_b_allele = self.mutate_allele(
                     gene = genome_spec_list[gene],
                     allele_passed= parent_b_allele,
                     **kwargs
@@ -737,7 +737,7 @@ class ExpressionEngine:
                 rock.genotype.genes[gene].phenotype, rock.genotype.genes[gene].money_value = phenotype, money
 
             elif Gener.expression_rule == "dominance":
-                phenotype, money =  (ExpressionEngine.dominance_phenotype_finding(
+                phenotype, money =  (self.dominance_phenotype_finding(
                         Gener = Gener,
                         a = a,
                         b = b,
@@ -779,7 +779,7 @@ class ExpressionEngine:
                     rock.genotype.genes[gene].phenotype, rock.genotype.genes[gene].money_value = phenotype, money
                
                 else:
-                    phenotype, money = (ExpressionEngine.dominance_phenotype_finding(
+                    phenotype, money = (self.dominance_phenotype_finding(
                             Gener = Gener,
                             a = a,
                             b = b,
