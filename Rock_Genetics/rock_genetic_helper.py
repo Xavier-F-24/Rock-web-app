@@ -40,6 +40,7 @@ from typing import  Any
 #-----------------------------------------------------
 # ROCK GEOME ZONE
 #-----------------------------------------------------
+
 class Sex(str, Enum):
     MALE = "male"
     FEMALE = "female"
@@ -496,7 +497,7 @@ class GenePair:
 
     name_of_gene: str 
     dominance_type: str
-    money_value: int | None = None
+    money_value: int = 0
     phenotype: str | None = None
 
     @property
@@ -514,38 +515,74 @@ class Genome:
         for gene in self.genes:
             print(f"{self.genes[gene].name_of_gene}: {self.genes[gene].allele_a.value} and {self.genes[gene].allele_b.value} as: {self.genes[gene].phenotype} worth {self.genes[gene].money_value} \n")
  
+#-----------------------------------------------------
+# ROCK DEFINITION ZONE
+#-----------------------------------------------------
+class RockStatus(str, Enum):
+    ACTIVE = "active"
+    SOLD = "sold"
+    DEAD = "dead"
+    CRAISENED = "craisened"
+    BRED = "bred"
+
+@dataclass
+class Rock:
+    """
+    ATTRIBUTES OF DE ROCK   
+    """
+    id: int
+    name: str
+    sex: Sex
+
+    genotype: Genome = field(default_factory = Genome)
+    death_genes: Genome = field(default_factory = Genome)
+    parent_ids: list[int] = field(default_factory = list)
+    generation: int = 0
+
+    status: RockStatus = RockStatus.ACTIVE
+
+    death_reason: str | None = None
+
+    #phenotype: Phenotype = field(default_factory = Phenotype)
+    image_path: str | None = None
+
+    value: int = 0
+
+    sell_value: int = 0
+    score_value: int = 0
+
+    is_market: bool = False
+
+    """
+    METHODS OF DE ROCK   
+    """
+    @property
+    def is_active(self) -> bool:
+        return self.status == RockStatus.ACTIVE
+
+    def change_status(
+            self, 
+            new_status: RockStatus
+    ):
+        if not isinstance(new_status, RockStatus):
+            raise TypeError(f"new_status must be a RockStatus, not {type(new_status)}")
+    
+        self.status = new_status
+
+#-----------------------------------------------------
+# GENOTYPE MAKER DEFINITION ZONE
+#-----------------------------------------------------
+
 @dataclass()
 class GenomeFactory: 
     
     genome_spec_list = GENE_SPECS
     death_gene_list = ["death_gene1", "death_gene2", "death_gene3"]
 
-    @staticmethod
-    def mutate_allele(
-        gene: GeneSpec,
-        allele_passed: Allele,
-        mutation_chance = 1/100,
-    ) -> Allele:
-        
-        """
-        IMPORTANT SETUP FOR GAME FORMAT AND MUTATION CHANCES!
-        """
-        if random.random() >= mutation_chance:
-            return allele_passed
+    #-----------------------------------------------------
+    # SETUP DEFINITION ZONE TO MAKE ROCK GENOMES
+    #-----------------------------------------------------
 
-        possible_values = [
-            gene.options[option].allele
-            for option in gene.options
-            if gene.options[option].allele != allele_passed.value
-        ]
-
-        if not possible_values:
-            return allele_passed
-
-        return Allele(
-            value=random.choice(possible_values)
-            )
-        
     @staticmethod
     def roll_gene_pair() -> list[int]:
         return [random.randint(1, 20), random.randint(1, 20)]
@@ -568,6 +605,67 @@ class GenomeFactory:
             value=chosen_option.allele
             )
     
+    @staticmethod
+    def mutate_allele(
+        gene: GeneSpec,
+        allele_passed: Allele,
+        mutation_chance,
+    ) -> Allele:
+        
+        """
+        IMPORTANT SETUP FOR GAME FORMAT AND MUTATION CHANCES!
+        """
+        if random.random() >= mutation_chance:
+            return allele_passed
+
+        possible_values = [
+            gene.options[option].allele
+            for option in gene.options
+            if gene.options[option].allele != allele_passed.value
+        ]
+
+        if not possible_values:
+            return allele_passed
+
+        return Allele(
+            value=random.choice(possible_values)
+        )
+    
+    @staticmethod
+    def roll_craisen_pair(
+    ) -> tuple[int, int]:
+            a = random.randint(1,100)
+            b = random.randint(1,100)
+            while a == b:
+                a = random.randint(1,100)
+                b = random.randint(1,100)
+            return (a, b)
+
+    def mutate_death_allele(
+        self,
+        allele_passed: Allele,
+        mutation_chance,
+    ) -> Allele:
+        
+        """
+        IMPORTANT SETUP FOR GAME FORMAT AND MUTATION CHANCES!
+        """
+        if random.random() >= mutation_chance:
+            return allele_passed
+
+        new_allele, _ = self.roll_craisen_pair()
+
+        while new_allele == allele_passed.value:
+            new_allele, _ = self.roll_craisen_pair()
+
+        return Allele(
+            value = new_allele
+        )
+        
+    #-----------------------------------------------------
+    # NEW ROCK BEHAVIOR DEFINITION ZONE
+    #-----------------------------------------------------
+
     def make_random_rock_genome(
         self,
         **kwargs
@@ -601,94 +699,6 @@ class GenomeFactory:
             genes[gene] = rand_gene_pair
 
         return (Genome(genes))
-
-
-    def make_child_rock_genome_from_parents(
-        self,
-        parent_a = None,
-        parent_b = None,
-        **kwargs
-    ) -> Genome:
-            
-            # MAKE GENOME DEPENDING ON PARENTS
-
-            genes: dict[str, GenePair] = {}
-
-            genome_spec_list = self.genome_spec_list
-
-            for gene in genome_spec_list:
-
-                if random.random() < 0.5:
-                    parent_a_allele = parent_a.genotype.genes[gene].allele_a
-                else:
-                    parent_a_allele = parent_a.genotype.genes[gene].allele_b
-                if random.random() < 0.5:
-                    parent_b_allele = parent_b.genotype.genes[gene].allele_a
-                else:
-                    parent_b_allele = parent_b.genotype.genes[gene].allele_b
-                
-                parent_a_allele = self.mutate_allele(
-                    gene = genome_spec_list[gene],
-                    allele_passed= parent_a_allele,
-                    **kwargs
-                )
-
-                parent_b_allele = self.mutate_allele(
-                    gene = genome_spec_list[gene],
-                    allele_passed= parent_b_allele,
-                    **kwargs
-                )
-
-                rand_gene_pair = GenePair(
-                    allele_a = parent_a_allele,
-                    allele_b = parent_b_allele,
-                    name_of_gene = gene,
-                    dominance_type = genome_spec_list[gene].expression_rule,
-                )
-
-                genes[gene] = rand_gene_pair
-
-            return (Genome(genes))
-
-    def roll_craisen_pair(
-            self,
-    ) -> tuple[int, int]:
-            a = random.randint(1,100)
-            b = random.randint(1,100)
-            while a == b:
-                a = random.randint(1,100)
-                b = random.randint(1,100)
-            return (a, b)
-
-    def inherit_death_genes(
-        self,
-        parent_a,
-        parent_b,
-    ) -> Genome:
-        
-        genes = {}
-        
-        for death_gene in self.death_gene_list:
-
-            if random.random() < 0.5:
-                parent_a_allele = parent_a.death_genes.genes[death_gene].allele_a
-            else:
-                parent_a_allele = parent_a.death_genes.genes[death_gene].allele_b
-            if random.random() < 0.5:
-                parent_b_allele = parent_b.death_genes.genes[death_gene].allele_a
-            else:
-                parent_b_allele = parent_b.death_genes.genes[death_gene].allele_b
-                
-            death_gene_pair = GenePair(
-                allele_a = parent_a_allele,
-                allele_b = parent_b_allele,
-                name_of_gene = death_gene,
-                dominance_type = "death_genes",
-                )
-
-            genes[death_gene] = death_gene_pair
-
-        return(Genome(genes= genes))
     
     def make_death_genes(
         self,
@@ -711,50 +721,102 @@ class GenomeFactory:
 
         return(Genome(genes= genes))
 
-#-----------------------------------------------------
-# ROCK DEFINITION ZONE
-#-----------------------------------------------------
-class RockStatus(str, Enum):
-    ACTIVE = "active"
-    SOLD = "sold"
-    DEAD = "dead"
-    CRAISENED = "craisened"
-    BRED = "bred"
+    #-----------------------------------------------------
+    # INHERITANCE BEHAVIOR DEFINITION ZONE
+    #-----------------------------------------------------
 
-@dataclass
-class Rock:
-    """
-    ATTRIBUTES OF DE ROCK   
-    """
-    id: int
-    name: str
-    sex: Sex
+    def make_child_rock_genome_from_parents(
+        self,
+        parent_a : Rock,
+        parent_b : Rock,
+        mutation_chance,
+        **kwargs
+    ) -> Genome:
+            
+            # MAKE GENOME DEPENDING ON PARENTS
 
-    genotype: Genome = field(default_factory = Genome)
-    death_genes: Genome = field(default_factory = Genome)
-    parent_ids: list[int] = field(default_factory = list)
-    generation: int = 0
+            genes: dict[str, GenePair] = {}
 
-    status: RockStatus = RockStatus.ACTIVE
+            genome_spec_list = self.genome_spec_list
 
-    #phenotype: Phenotype = field(default_factory = Phenotype)
-    image_path: str | None = None
-    value: int | None = None
 
-    is_market: bool = False
 
-    """
-    METHODS OF DE ROCK   
-    """
-    @property
-    def is_active(self) -> bool:
-        return self.status == RockStatus.ACTIVE
+            for gene in genome_spec_list:
 
-    def change_status(self, new_status: RockStatus):
-        if not isinstance(new_status, RockStatus):
-            raise TypeError(f"new_status must be a RockStatus, not {type(new_status)}")
-    
-        self.status = new_status
+                if random.random() < 0.5:
+                    parent_a_allele = parent_a.genotype.genes[gene].allele_a
+                else:
+                    parent_a_allele = parent_a.genotype.genes[gene].allele_b
+                if random.random() < 0.5:
+                    parent_b_allele = parent_b.genotype.genes[gene].allele_a
+                else:
+                    parent_b_allele = parent_b.genotype.genes[gene].allele_b
+                
+                parent_a_allele = self.mutate_allele(
+                    gene = genome_spec_list[gene],
+                    allele_passed= parent_a_allele,
+                    mutation_chance = mutation_chance,
+                    **kwargs
+                )
+
+                parent_b_allele = self.mutate_allele(
+                    gene = genome_spec_list[gene],
+                    allele_passed= parent_b_allele,
+                    mutation_chance = mutation_chance,
+                    **kwargs
+                )
+
+                rand_gene_pair = GenePair(
+                    allele_a = parent_a_allele,
+                    allele_b = parent_b_allele,
+                    name_of_gene = gene,
+                    dominance_type = genome_spec_list[gene].expression_rule,
+                )
+
+                genes[gene] = rand_gene_pair
+
+            return (Genome(genes))
+
+    def inherit_death_genes(
+        self,
+        parent_a,
+        parent_b,
+        mutation_chance,
+    ) -> Genome:
+        
+        genes = {}
+        
+        for death_gene in self.death_gene_list:
+
+            if random.random() < 0.5:
+                parent_a_allele = parent_a.death_genes.genes[death_gene].allele_a
+            else:
+                parent_a_allele = parent_a.death_genes.genes[death_gene].allele_b
+            if random.random() < 0.5:
+                parent_b_allele = parent_b.death_genes.genes[death_gene].allele_a
+            else:
+                parent_b_allele = parent_b.death_genes.genes[death_gene].allele_b
+            
+            parent_a_allele = self.mutate_death_allele(
+                    allele_passed= parent_a_allele,
+                    mutation_chance = mutation_chance,
+                )
+            
+            parent_b_allele = self.mutate_death_allele(
+                    allele_passed= parent_b_allele,
+                    mutation_chance = mutation_chance,
+                )
+
+            death_gene_pair = GenePair(
+                allele_a = parent_a_allele,
+                allele_b = parent_b_allele,
+                name_of_gene = death_gene,
+                dominance_type = "death_genes",
+                )
+
+            genes[death_gene] = death_gene_pair
+
+        return(Genome(genes= genes))
 
 #-----------------------------------------------------
 # PHENOTYPE DEFINITION ZONE
@@ -779,7 +841,7 @@ class ExpressionEngine:
 
     def instantiate_phenotype(
         self,
-        rock,
+        rock: Rock,
     ) -> Rock:
         # GETS THE MONEY VALUE AND PHENOTYPE OF EACH GENE!
         
@@ -864,61 +926,44 @@ class ValueCalculator:
 
     def set_rock_value(
             self,
-            rock, 
+            rock: Rock,
         ) -> Rock:
 
         genome_spec_list = self.genome_spec_list
 
-        if rock.status == RockStatus.ACTIVE:
+        # THIS ROCK EXISTS BABEEE
+        rock.value = 1
 
-            # THIS ROCK EXISTS BABEEE
-            rock.value = 1
-
-            for gene in rock.genotype.genes:
+        for gene in rock.genotype.genes:
                 
-                hair_counter = 0
+            hair_counter = 0
 
-                if rock.sex == Sex.FEMALE and gene == "facial_hair" and rock.genotype.genes[gene].phenotype != "n/a":
-                    rock.value += 1
+            if rock.sex == Sex.FEMALE and gene == "facial_hair" and rock.genotype.genes[gene].phenotype != "n/a":
+                rock.value += 1
 
-                elif genome_spec_list[gene].required_states == {}:
-                    rock.value += rock.genotype.genes[gene].money_value
-                else:
-                    for req in genome_spec_list[gene].required_states:
-                        if hair_counter == 0 and rock.genotype.genes[req].phenotype != genome_spec_list[gene].required_states[req]:
-                            hair_counter = 1
-                            rock.value += rock.genotype.genes[gene].money_value
+            elif genome_spec_list[gene].required_states == {}:
+                rock.value += rock.genotype.genes[gene].money_value
+            else:
+                for req in genome_spec_list[gene].required_states:
+                    if hair_counter == 0 and rock.genotype.genes[req].phenotype != genome_spec_list[gene].required_states[req]:
+                        hair_counter = 1
+                        rock.value += rock.genotype.genes[gene].money_value
                         
-            rock.value = max(1, rock.value)
+        rock.value = max(1, rock.value)
+        rock.sell_value = rock.value
+        rock.score_value = rock.value
 
-        else:
-            rock.value = 0
+        return(rock)
+
+    def set_rock_not_active_value(
+            self,
+            rock: Rock, 
+        ) -> Rock:
+
+        if rock.status != RockStatus.ACTIVE:
+            rock.sell_value = 0
+            rock.score_value = 0
 
         return(rock)
     
-
-
-
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

@@ -15,20 +15,255 @@ This file answers:
 """
 #-----------------------------------------------------
 
-import random
+#-----------------------------------------------------
+# IMPORT ZONE
+#-----------------------------------------------------
+
+import random, math
+
+from dataclasses import dataclass, field
 from typing import List
 
-name_bits_start = [
+#-----------------------------------------------------
+# SPECIAL IMPORT ZONE
+#-----------------------------------------------------
+
+import Rock_Genetics.rock_genetic_helper as genetics
+
+"""
+To run module individually: python -m Rock_Breeding.rock_breeding_helper
+"""
+
+#-----------------------------------------------------
+# ROCK Name ZONE
+#-----------------------------------------------------
+
+NAME_BITS_START = [
     "Grum", "Peb", "Bas", "Quartz", "Moss", "Igni", "Crag", "Glim", "Obsi", "Feld"
 ]
 
-name_bits_end = [
+NAME_BITS_END = [
     "ble", "ite", "or", "yx", "stone", "ling", "rock", "spar", "gem", "oid"
 ]
 
-def random_rock_name() -> str:
-    return random.choice(name_bits_start) + random.choice(name_bits_end)
+CHILD_DEATH_CHANCE = 0.05
+CLUTCH_MEAN = 1.5
+CLUTCH_STD = 2.0
+MAX_CLUTCH_SIZE = None
 
+MUTATION_CHANCE = 1/100
+
+#-----------------------------------------------------
+# BREEDING ORCHESTRATOR DEFINITION ZONE
+#-----------------------------------------------------
+
+@dataclass()
+class BreedingMaster: 
+
+    name_bits_start = NAME_BITS_START
+    name_bits_end = NAME_BITS_END
+
+    child_death_chance = CHILD_DEATH_CHANCE
+
+    clutch_mean = CLUTCH_MEAN
+    clutch_std = CLUTCH_STD
+    max_clutch_size = MAX_CLUTCH_SIZE
+
+    child_gene_mutation_chance = MUTATION_CHANCE
+
+    GenomeFactory: genetics.GenomeFactory = field(default_factory = genetics.GenomeFactory)
+
+    ExpressionEngine: genetics.ExpressionEngine = field(default_factory = genetics.ExpressionEngine)
+
+    ValueCalculator: genetics.ValueCalculator = field(default_factory = genetics.ValueCalculator)
+
+    #-----------------------------------------------------
+    # ROCK ATTRIBUTES ZONE
+    #-----------------------------------------------------
+    def random_rock_name(
+        self,
+    ) -> str:
+        return random.choice(self.name_bits_start) + random.choice(self.name_bits_end)
+
+    def roll_clutch_size(
+            self,
+            mean = None,
+            std = None, 
+            max_clutch_size = None,
+    ):
+        """
+        Emulates Excel:
+        ABS(INT(NORMINV(RAND(), 1.5, 2))) + 1
+
+        In Python:
+        NORMINV(RAND(), mean, std) is equivalent to a normal draw.
+        Excel INT floors toward negative infinity, so use math.floor.
+        """
+        if mean == None:
+            mean = self.clutch_mean
+
+        if std == None:
+            std = self.clutch_std
+
+        if max_clutch_size == None:
+            max_clutch_size = self.max_clutch_size
+
+        x = random.gauss(mean, std)
+        clutch = abs(math.floor(x)) + 1
+
+        if max_clutch_size is not None:
+            clutch = min(clutch, max_clutch_size)
+
+        return clutch
+
+    def maybe_kill_child(
+        self,
+        child = genetics.Rock, 
+        death_chance = None,
+    ):
+        """
+        Child has a percent chance of dying after birth.
+        Dead children remain in the tree but are worthless and cannot breed.
+        """
+        if death_chance == None:
+            death_chance = self.child_death_chance
+
+        if random.random() < death_chance:
+            child.change_status(new_status = RockStatus.DEAD)
+            child.death_reason = "died after birth"
+            self.ValueCalculator.set_rock_not_active_value(rock = child)
+            return True
+
+        return False
+
+    def validate_breeding_pair(
+        self,
+        parent_a: genetics.Rock,
+        parent_b: genetics.Rock,
+        require_opposite_gender = True,
+    ):
+        """
+        Validate whether two rocks can breed.
+        """
+
+        errors = []
+        warnings = [] 
+
+        if parent_a is None or parent_b is None:
+            return {
+                "valid": False,
+                "errors": errors,
+                "warnings": warnings,
+                "parent_a": parent_a,
+                "parent_b": parent_b,
+            }
+
+        if parent_a.id == parent_b.id:
+            errors.append("A rock cannot breed with itself.")
+
+        if not parent_a.is_active:
+            errors.append(f"parent a is not breedable, but is: {parent_a.status}")
+
+        if not parent_b.is_active:
+            errors.append(f"parent b is not breedable, but is: {parent_b.status}")
+
+        if require_opposite_gender and parent_a.sex == parent_b.sex:
+            errors.append(
+                f"Parents must be opposite gender. "
+                f"Rock #{parent_a.id} is {parent_a.sex} and "
+                f"Rock #{parent_b.id} is {parent_b.sex}."
+            )
+
+        return {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "parent_a": parent_a,
+            "parent_b": parent_b,
+        }
+
+    #-----------------------------------------------------
+    # ACTUAL ROCK BREEDING
+    #-----------------------------------------------------
+    def breed_child_for_game(
+        self,
+        parent_a,
+        parent_b,
+
+        next_id,
+        child_generation,
+
+        mutation_chance = None,
+
+        #child_name = None,
+        Not_importing = True,
+        negative_id = None
+    ):
+        """
+        Breed one child from a valid parent pair.
+
+        Does not advance generation by itself.
+        """
+        result = self.validate_breeding_pair(
+            parent_a = parent_a, 
+            parent_b = parent_b
+        )
+
+        if not result["valid"]:
+            raise ValueError("Invalid breeding pair: " + "; ".join(result["errors"]))
+
+        parent_a = result["parent_a"]
+        parent_b = result["parent_b"]
+
+        child_id = next_id
+        child_name = self.random_rock_name()
+
+        if random.random() < 0.5:
+            child_sex = genetics.Sex.MALE
+        else:
+            child_sex = genetics.Sex.FEMALE
+
+        if mutation_chance == None:
+            mutation_chance = self.child_gene_mutation_chance
+
+        child_genes = self.GenomeFactory.make_child_rock_genome_from_parents(
+            parent_a = parent_a,
+            parent_b = parent_b,
+            mutation_chance = mutation_chance,
+        )
+
+        child_death_genes = self.GenomeFactory.inherit_death_genes(
+            parent_a = parent_a,
+            parent_b = parent_b,
+            mutation_chance = mutation_chance,
+        )
+
+        child = genetics.Rock(
+            id = child_id,
+            name = child_name,
+            sex = child_sex,
+
+            genotype = child_genes,
+            death_genes = child_death_genes,
+            parent_ids = [parent_a.id, parent_b.id],
+            generation = child_generation,
+            status = genetics.RockStatus.ACTIVE
+        )
+
+        child = self.ExpressionEngine.instantiate_phenotype(
+            rock = child,
+        )
+
+        child = self.ValueCalculator.set_rock_value(
+            rock = child,
+        )
+
+        return child
+
+
+
+#-----------------------------------------------------
+# THESE WILL PROBABLY GO INTO GAMEMASTER
+#-----------------------------------------------------
 def get_pair_mutation_rate(base_mutation_rate, potion_key):
     """
     Mutation potion increases mutation rate for this pair.
@@ -50,40 +285,6 @@ def apply_fertility_to_clutch(clutch_size, potion_key):
         return clutch_size + FERTILITY_EXTRA_CHILDREN
 
     return clutch_size
-
-def maybe_kill_child(child, death_chance=CHILD_DEATH_CHANCE):
-    """
-    Child has a percent chance of dying after birth.
-
-    Dead children remain in the tree but are worthless and cannot breed.
-    """
-    ensure_rock_game_attributes(child)
-
-    if random.random() < death_chance:
-        child.dead = True
-        child.death_reason = "died after birth"
-        child.sell_value = 0
-        child.score_value = 0
-        return True
-
-    return False
-
-def roll_clutch_size(mean=CLUTCH_MEAN, std=CLUTCH_STD, max_clutch_size=MAX_CLUTCH_SIZE):
-    """
-    Emulates Excel:
-    ABS(INT(NORMINV(RAND(), 1.5, 2))) + 1
-
-    In Python:
-    NORMINV(RAND(), mean, std) is equivalent to a normal draw.
-    Excel INT floors toward negative infinity, so use math.floor.
-    """
-    x = random.gauss(mean, std)
-    clutch = abs(math.floor(x)) + 1
-
-    if max_clutch_size is not None:
-        clutch = min(clutch, max_clutch_size)
-
-    return clutch
 
 def apply_reroll_to_clutch(clutch_size, potion_key):
     """
@@ -579,145 +780,6 @@ def is_rock_breedable(rock):
         return False, f"Rock #{rock.id} is craisen and cannot breed."
 
     return True, "Breedable."
-
-def validate_breeding_pair(
-    game,
-    parent_a_id,
-    parent_b_id,
-    block_siblings=False,
-    block_parent_child=False,
-    require_opposite_gender=True,
-    warn_related=True
-):
-    """
-    Validate whether two rocks can breed.
-
-    Uses game-specific relationship helpers so it cannot accidentally call
-    the old get_ancestors(rocks, rock_id) function.
-    """
-
-    errors = []
-    warnings = []
-
-    try:
-        parent_a_id = int(parent_a_id)
-        parent_b_id = int(parent_b_id)
-    except Exception:
-        return {
-            "valid": False,
-            "errors": ["Parent IDs must be integers."],
-            "warnings": [],
-            "parent_a": None,
-            "parent_b": None,
-        }
-
-    parent_a = get_rock(game, parent_a_id)
-    parent_b = get_rock(game, parent_b_id)
-
-    if parent_a is None:
-        errors.append(f"Rock #{parent_a_id} does not exist.")
-
-    if parent_b is None:
-        errors.append(f"Rock #{parent_b_id} does not exist.")
-
-    if parent_a is None or parent_b is None:
-        return {
-            "valid": False,
-            "errors": errors,
-            "warnings": warnings,
-            "parent_a": parent_a,
-            "parent_b": parent_b,
-        }
-
-    if parent_a_id == parent_b_id:
-        errors.append("A rock cannot breed with itself.")
-
-    ok_a, msg_a = is_rock_breedable(parent_a)
-    ok_b, msg_b = is_rock_breedable(parent_b)
-
-    if not ok_a:
-        errors.append(msg_a)
-
-    if not ok_b:
-        errors.append(msg_b)
-
-    gender_a = get_rock_gender_value(parent_a)
-    gender_b = get_rock_gender_value(parent_b)
-
-    if require_opposite_gender and gender_a == gender_b:
-        errors.append(
-            f"Parents must be opposite gender. "
-            f"Rock #{parent_a.id} is {get_rock_gender_name(parent_a)} and "
-            f"Rock #{parent_b.id} is {get_rock_gender_name(parent_b)}."
-        )
-
-    if block_siblings and game_are_siblings(parent_a, parent_b):
-        errors.append("Sibling breeding is not allowed.")
-
-    if block_parent_child and game_is_parent_child(parent_a, parent_b):
-        errors.append("Parent-child breeding is not allowed.")
-
-    if warn_related and game_are_related(game, parent_a, parent_b):
-        if not game_are_siblings(parent_a, parent_b) and not game_is_parent_child(parent_a, parent_b):
-            warnings.append("These rocks are related through shared ancestry.")
-
-    return {
-        "valid": len(errors) == 0,
-        "errors": errors,
-        "warnings": warnings,
-        "parent_a": parent_a,
-        "parent_b": parent_b,
-    }
-
-def breed_child_for_game(
-    game,
-    parent_a_id,
-    parent_b_id,
-    mutation_rate=0.02,
-    child_name=None,
-    Not_importing = True,
-    negative_id = None
-):
-    """
-    Breed one child from a valid parent pair.
-
-    Does not advance generation by itself.
-    """
-    result = validate_breeding_pair(game, parent_a_id, parent_b_id)
-
-    if not result["valid"]:
-        raise ValueError("Invalid breeding pair: " + "; ".join(result["errors"]))
-
-    parent_a = result["parent_a"]
-    parent_b = result["parent_b"]
-
-    if Not_importing == True:
-        child_id = game.next_id
-        game.next_id += 1
-    else:
-        child_id = negative_id
-
-    child_genes = make_child_genome(
-        parent_a,
-        parent_b,
-        mutation_rate=mutation_rate
-    )
-
-    child = Rock(
-        id=child_id,
-        name=child_name if child_name is not None else random_rock_name(),
-        genes=child_genes,
-        parents=(parent_a.id, parent_b.id),
-        generation=game.generation + 1
-    )
-
-    ensure_rock_game_attributes(child, imported=False, sold=False)
-    evaluate_rock_value(child)
-
-    if Not_importing == True:
-        game.rocks[child_id] = child
-
-    return child
 
 def anti_craisen_reroll_child_if_needed(
     game,
