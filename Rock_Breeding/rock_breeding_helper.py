@@ -96,6 +96,13 @@ class BreedingMaster:
     # GETTING ROCK NAME
     #-----------------------------------------------------
 
+    @staticmethod
+    def default(
+        value, 
+        fallback
+    ):
+        return fallback if value is None else value
+
     def random_rock_name(
         self,
     ) -> str:
@@ -130,8 +137,7 @@ class BreedingMaster:
         else:
             child_sex = genetics.Sex.FEMALE
 
-        if mutation_chance == None:
-            mutation_chance = self.child_gene_mutation_chance
+        mutation_chance = self.default(mutation_chance, self.child_gene_mutation_chance)
 
         child_genes = self.GenomeFactory.make_child_rock_genome_from_parents(
             parent_a = parent_a,
@@ -243,14 +249,12 @@ class BreedingMaster:
         NORMINV(RAND(), mean, std) is equivalent to a normal draw.
         Excel INT floors toward negative infinity, so use math.floor.
         """
-        if mean == None:
-            mean = self.clutch_mean
+        
+        mean = self.default(mean, self.clutch_mean)
 
-        if std == None:
-            std = self.clutch_std
+        std = self.default(std, self.clutch_std)
 
-        if max_clutch_size == None:
-            max_clutch_size = self.max_clutch_size
+        max_clutch_size = self.default(max_clutch_size, self.max_clutch_size)
 
         x = random.gauss(mean, std)
         clutch = abs(math.floor(x)) + 1
@@ -319,11 +323,9 @@ class BreedingMaster:
 
         returns the child_spore Rock list: only contains child if no sporing!!
         """
-        if spore_death_chance == None:
-            spore_death_chance = self.spore_death_chance
+        spore_death_chance = self.default(spore_death_chance, self.spore_death_chance)
 
-        if spore_clone_count == None:
-            spore_clone_count = self.spore_clone_count
+        spore_clone_count = self.default(spore_clone_count, self.spore_clone_count)
 
         child_spore: list[genetics.Rock] = [child]
 
@@ -367,8 +369,7 @@ class BreedingMaster:
         Child has a percent chance of dying after birth.
         Dead children remain in the tree but are worthless and cannot breed.
         """
-        if death_chance == None:
-            death_chance = self.child_death_chance
+        death_chance = self.default(death_chance, self.child_death_chance)
 
         if random.random() < death_chance and child.status == genetics.RockStatus.ACTIVE:
             child.change_status(new_status = genetics.RockStatus.DEAD)
@@ -386,8 +387,7 @@ class BreedingMaster:
         Child has a percent chance of dying after birth.
         Dead children remain in the tree but are worthless and cannot breed.
         """
-        if craisen_chance == None:
-            craisen_chance = self.craisen_death_chance
+        craisen_chance = self.default(craisen_chance, self.craisen_death_chance)
 
         if random.random() < craisen_chance and child.checked_craisen == False and child.status == genetics.RockStatus.ACTIVE:
             child.change_status(new_status = genetics.RockStatus.CRAISENED)
@@ -450,24 +450,11 @@ class BreedingMaster:
         parent_a = result["parent_a"]
         parent_b = result["parent_b"]
 
-        #-----------------------------------------------------
-        # THIS IS PROBABLY THE PLACE TO USE **KWARGS !!
-        #-----------------------------------------------------
-
-        if mutation_chance == None:
-            mutation_chance = self.child_gene_mutation_chance
-
-        if death_chance == None:
-            death_chance = self.child_death_chance
-
-        if craisen_chance == None:
-            craisen_chance = self.craisen_death_chance
-
-        if spore_death_chance == None:
-            spore_death_chance = self.spore_death_chance
-
-        if spore_clone_count == None:
-            spore_clone_count = self.spore_clone_count
+        mutation_chance = self.default(mutation_chance, self.child_gene_mutation_chance)
+        death_chance = self.default(death_chance, self.child_death_chance)
+        craisen_chance = self.default(craisen_chance, self.craisen_death_chance)
+        spore_death_chance = self.default(spore_death_chance, self.spore_death_chance)
+        spore_clone_count = self.default(spore_clone_count, self.spore_clone_count)
 
         clutch = self.roll_clutch_size(
             mean = None,
