@@ -51,7 +51,10 @@ CLUTCH_MEAN = 1.5
 CLUTCH_STD = 2.0
 MAX_CLUTCH_SIZE = None
 
-MUTATION_CHANCE = 1/100
+MUTATION_CHANCE = 0.01
+
+SPORE_DEATH_CHANCE = 0.25
+SPORE_CLONE_COUNT = 3
 
 #-----------------------------------------------------
 # BREEDING ORCHESTRATOR DEFINITION ZONE
@@ -65,6 +68,9 @@ class BreedingMaster:
 
     child_death_chance = CHILD_DEATH_CHANCE
 
+    spore_death_chance = SPORE_DEATH_CHANCE
+    spore_clone_count = SPORE_CLONE_COUNT
+
     clutch_mean = CLUTCH_MEAN
     clutch_std = CLUTCH_STD
     max_clutch_size = MAX_CLUTCH_SIZE
@@ -77,65 +83,87 @@ class BreedingMaster:
 
     ValueCalculator: genetics.ValueCalculator = field(default_factory = genetics.ValueCalculator)
 
+    child_bred_in_generation: list[genetics.Rock] = field(default_factory = list)
+
     #-----------------------------------------------------
-    # ROCK ATTRIBUTES ZONE
+    # GETTING ROCK NAME
     #-----------------------------------------------------
+
     def random_rock_name(
         self,
     ) -> str:
         return random.choice(self.name_bits_start) + random.choice(self.name_bits_end)
 
-    def roll_clutch_size(
-            self,
-            mean = None,
-            std = None, 
-            max_clutch_size = None,
-    ):
-        """
-        Emulates Excel:
-        ABS(INT(NORMINV(RAND(), 1.5, 2))) + 1
+    #-----------------------------------------------------
+    # BREEDING ONE CHILD, SET VALUE, SET ACTIVE
+    #-----------------------------------------------------
 
-        In Python:
-        NORMINV(RAND(), mean, std) is equivalent to a normal draw.
-        Excel INT floors toward negative infinity, so use math.floor.
-        """
-        if mean == None:
-            mean = self.clutch_mean
-
-        if std == None:
-            std = self.clutch_std
-
-        if max_clutch_size == None:
-            max_clutch_size = self.max_clutch_size
-
-        x = random.gauss(mean, std)
-        clutch = abs(math.floor(x)) + 1
-
-        if max_clutch_size is not None:
-            clutch = min(clutch, max_clutch_size)
-
-        return clutch
-
-    def maybe_kill_child(
+    def breed_child_from_parents(
         self,
-        child = genetics.Rock, 
-        death_chance = None,
+        parent_a: genetics.Rock,
+        parent_b: genetics.Rock,
+
+        next_id,
+        child_generation,
+
+        mutation_chance = None,
+
     ):
         """
-        Child has a percent chance of dying after birth.
-        Dead children remain in the tree but are worthless and cannot breed.
+        Breed one child from a valid parent pair.
+
+        Does not advance generation by itself.
         """
-        if death_chance == None:
-            death_chance = self.child_death_chance
 
-        if random.random() < death_chance:
-            child.change_status(new_status = RockStatus.DEAD)
-            child.death_reason = "died after birth"
-            self.ValueCalculator.set_rock_not_active_value(rock = child)
-            return True
+        child_id = next_id
+        child_name = self.random_rock_name()
 
-        return False
+        if random.random() < 0.5:
+            child_sex = genetics.Sex.MALE
+        else:
+            child_sex = genetics.Sex.FEMALE
 
+        if mutation_chance == None:
+            mutation_chance = self.child_gene_mutation_chance
+
+        child_genes = self.GenomeFactory.make_child_rock_genome_from_parents(
+            parent_a = parent_a,
+            parent_b = parent_b,
+            mutation_chance = mutation_chance,
+        )
+
+        child_death_genes = self.GenomeFactory.inherit_death_genes(
+            parent_a = parent_a,
+            parent_b = parent_b,
+            mutation_chance = mutation_chance,
+        )
+
+        child = genetics.Rock(
+            id = child_id,
+            name = child_name,
+            sex = child_sex,
+
+            genotype = child_genes,
+            death_genes = child_death_genes,
+            parent_ids = [parent_a.id, parent_b.id],
+            generation = child_generation,
+            status = genetics.RockStatus.ACTIVE
+        )
+
+        child = self.ExpressionEngine.instantiate_phenotype(
+            rock = child,
+        )
+
+        child = self.ValueCalculator.set_rock_value(
+            rock = child,
+        )
+
+        return (child)
+
+    #-----------------------------------------------------
+    # GETTING NECESSARIES FOR A FULL ROCK CLUTCH
+    #-----------------------------------------------------
+    
     def validate_breeding_pair(
         self,
         parent_a: genetics.Rock,
@@ -181,29 +209,156 @@ class BreedingMaster:
             "parent_b": parent_b,
         }
 
-    #-----------------------------------------------------
-    # ACTUAL ROCK BREEDING
-    #-----------------------------------------------------
-    def breed_child_for_game(
-        self,
-        parent_a,
-        parent_b,
-
-        next_id,
-        child_generation,
-
-        mutation_chance = None,
-
-        #child_name = None,
-        Not_importing = True,
-        negative_id = None
+    def roll_clutch_size(
+            self,
+            mean = None,
+            std = None, 
+            max_clutch_size = None,
     ):
         """
-        Breed one child from a valid parent pair.
+        Emulates Excel:
+        ABS(INT(NORMINV(RAND(), 1.5, 2))) + 1
 
-        Does not advance generation by itself.
+        In Python:
+        NORMINV(RAND(), mean, std) is equivalent to a normal draw.
+        Excel INT floors toward negative infinity, so use math.floor.
         """
-        result = self.validate_breeding_pair(
+        if mean == None:
+            mean = self.clutch_mean
+
+        if std == None:
+            std = self.clutch_std
+
+        if max_clutch_size == None:
+            max_clutch_size = self.max_clutch_size
+
+        x = random.gauss(mean, std)
+        clutch = abs(math.floor(x)) + 1
+
+        if max_clutch_size is not None:
+            clutch = min(clutch, max_clutch_size)
+
+        return clutch
+
+    def maybe_mitote_child(
+        self,
+        child: genetics.Rock, 
+    ):
+        """
+        Children with mitosion active split into two rocks, 
+        this creates a clone without the name indicator of old!
+
+        returns the mitoted_child Rock object!
+        """
+
+        child_mitote = None
+
+        if child.genotype.genes["splitting"].phenotype == "mitosion" and child.has_split == False:
+
+            mitote_name = self.random_rock_name()
+            mitote_id = child.id + 1
+
+            child_mitote = genetics.Rock(
+                id = mitote_id,
+                name = mitote_name,
+                sex = child.sex,
+                genotype = child.genotype,
+                death_genes = child.death_genes,
+                parent_ids = child.parent_ids,
+                generation = child.generation,
+                status = genetics.RockStatus.ACTIVE,
+
+                has_split = True
+            )
+
+            child.has_split = True
+
+            return child_mitote
+
+        return child_mitote
+    
+    def maybe_spore_child(
+        self,
+        child: genetics.Rock, 
+        spore_death_chance = None,
+        spore_clone_count = None,
+    ):
+        """
+        Children with spore active split into 4 rocks, 
+        this creates the clones without the name indicator of old,
+        and computes the risky spore death chance of SPORE_DEATH
+
+        returns the child_spore Rock list: only contains child if no sporing!!
+        """
+        if spore_death_chance == None:
+            spore_death_chance = self.spore_death_chance
+
+        if spore_clone_count == None:
+            spore_clone_count = self.spore_clone_count
+
+        child_spore: list[genetics.Rock] = [child]
+
+        if child.genotype.genes["splitting"].phenotype == "spore" and child.has_split == False:
+            for spore_clone in range(1 + spore_clone_count):
+                
+                spore_name = self.random_rock_name()
+                spore_id = child.id + 1 + spore_clone
+
+                child_puff = genetics.Rock(
+                    id = spore_id,
+                    name = spore_name,
+                    sex = child.sex,
+                    genotype = child.genotype,
+                    death_genes = child.death_genes,
+                    parent_ids = child.parent_ids,
+                    generation = child.generation,
+                    status = genetics.RockStatus.ACTIVE,
+
+                    has_split = True
+                )
+
+                if random.random() < spore_death_chance:
+                    child_puff.change_status(new_status = genetics.RockStatus.DEAD)
+                    child_puff.death_reason = "puffed out at birth"
+                
+                child_spore.append(child_puff)
+
+            child.has_split = True
+
+            return child_spore
+
+        return child_spore
+    
+    def maybe_kill_child(
+        self,
+        child: genetics.Rock, 
+        death_chance = None,
+    ):
+        """
+        Child has a percent chance of dying after birth.
+        Dead children remain in the tree but are worthless and cannot breed.
+        """
+        if death_chance == None:
+            death_chance = self.child_death_chance
+
+        if random.random() < death_chance:
+            child.change_status(new_status = genetics.RockStatus.DEAD)
+            child.death_reason = "died after birth"
+            return child
+
+        return child
+    
+    def keep_ids_on_track(
+        self,
+    ):
+        
+        pass
+    #-----------------------------------------------------
+    # BREEDING FOR A FULL ROCK CLUTCH
+    #-----------------------------------------------------
+    
+    """
+    result = self.validate_breeding_pair(
             parent_a = parent_a, 
             parent_b = parent_b
         )
@@ -213,54 +368,7 @@ class BreedingMaster:
 
         parent_a = result["parent_a"]
         parent_b = result["parent_b"]
-
-        child_id = next_id
-        child_name = self.random_rock_name()
-
-        if random.random() < 0.5:
-            child_sex = genetics.Sex.MALE
-        else:
-            child_sex = genetics.Sex.FEMALE
-
-        if mutation_chance == None:
-            mutation_chance = self.child_gene_mutation_chance
-
-        child_genes = self.GenomeFactory.make_child_rock_genome_from_parents(
-            parent_a = parent_a,
-            parent_b = parent_b,
-            mutation_chance = mutation_chance,
-        )
-
-        child_death_genes = self.GenomeFactory.inherit_death_genes(
-            parent_a = parent_a,
-            parent_b = parent_b,
-            mutation_chance = mutation_chance,
-        )
-
-        child = genetics.Rock(
-            id = child_id,
-            name = child_name,
-            sex = child_sex,
-
-            genotype = child_genes,
-            death_genes = child_death_genes,
-            parent_ids = [parent_a.id, parent_b.id],
-            generation = child_generation,
-            status = genetics.RockStatus.ACTIVE
-        )
-
-        child = self.ExpressionEngine.instantiate_phenotype(
-            rock = child,
-        )
-
-        child = self.ValueCalculator.set_rock_value(
-            rock = child,
-        )
-
-        return child
-
-
-
+    """
 #-----------------------------------------------------
 # THESE WILL PROBABLY GO INTO GAMEMASTER
 #-----------------------------------------------------

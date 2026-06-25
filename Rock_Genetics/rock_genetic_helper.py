@@ -541,6 +541,8 @@ class Rock:
 
     status: RockStatus = RockStatus.ACTIVE
 
+    has_split: bool = False
+
     death_reason: str | None = None
 
     #phenotype: Phenotype = field(default_factory = Phenotype)
@@ -816,7 +818,7 @@ class GenomeFactory:
 
             genes[death_gene] = death_gene_pair
 
-        return(Genome(genes= genes))
+        return(Genome(genes = genes))
 
 #-----------------------------------------------------
 # PHENOTYPE DEFINITION ZONE
@@ -948,22 +950,17 @@ class ValueCalculator:
                     if hair_counter == 0 and rock.genotype.genes[req].phenotype != genome_spec_list[gene].required_states[req]:
                         hair_counter = 1
                         rock.value += rock.genotype.genes[gene].money_value
-                        
+              
         rock.value = max(1, rock.value)
-        rock.sell_value = rock.value
-        rock.score_value = rock.value
 
-        return(rock)
-
-    def set_rock_not_active_value(
-            self,
-            rock: Rock, 
-        ) -> Rock:
-
-        if rock.status != RockStatus.ACTIVE:
+        if rock.status == RockStatus.ACTIVE:
+            rock.sell_value = rock.value
+            rock.score_value = rock.value
+        else:
             rock.sell_value = 0
             rock.score_value = 0
 
         return(rock)
+
     
 
