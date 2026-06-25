@@ -51,6 +51,8 @@ NAME_BITS_END = [
 #-----------------------------------------------------
 
 CHILD_DEATH_CHANCE = 0.05
+CRAISEN_DEATH_CHANCE = 0.50
+
 CLUTCH_MEAN = 1.5
 CLUTCH_STD = 2.0
 MAX_CLUTCH_SIZE = None
@@ -71,6 +73,7 @@ class BreedingMaster:
     name_bits_end = NAME_BITS_END
 
     child_death_chance = CHILD_DEATH_CHANCE
+    craisen_death_chance = CRAISEN_DEATH_CHANCE
 
     spore_death_chance = SPORE_DEATH_CHANCE
     spore_clone_count = SPORE_CLONE_COUNT
@@ -213,6 +216,16 @@ class BreedingMaster:
             "parent_b": parent_b,
         }
 
+    def set_parents_as_bred(
+        self,
+        parent_a: genetics.Rock,
+        parent_b: genetics.Rock,
+    ):
+        parent_a.change_status(genetics.RockStatus.BRED)
+        parent_b.change_status(genetics.RockStatus.BRED)
+
+        return (parent_a, parent_b)
+
     def roll_clutch_size(
             self,
             mean = None,
@@ -345,34 +358,162 @@ class BreedingMaster:
         if death_chance == None:
             death_chance = self.child_death_chance
 
-        if random.random() < death_chance:
+        if random.random() < death_chance and child.status == genetics.RockStatus.ACTIVE:
             child.change_status(new_status = genetics.RockStatus.DEAD)
             child.death_reason = "died after birth"
             return child
 
         return child
     
-    def keep_ids_on_track(
+    def maybe_craisen_child(
+        self,
+        child: genetics.Rock, 
+        craisen_chance = None,
+    ):
+        """
+        Child has a percent chance of dying after birth.
+        Dead children remain in the tree but are worthless and cannot breed.
+        """
+        if craisen_chance == None:
+            craisen_chance = self.craisen_death_chance
+
+        if random.random() < craisen_chance and child.checked_craisen == False and child.status == genetics.RockStatus.ACTIVE:
+            child.change_status(new_status = genetics.RockStatus.CRAISENED)
+            child.checked_craisen = True
+            child.death_reason = "craisend up, man"
+            return child
+
+        return child
+    
+    def get_next_id(
         self,
     ):
-        
-        pass
+        """
+        Helps with mitosion / sporing
+        calculates the length of the current bred children
+        returns length of list for next ID (will be added to "next_id" in case)
+        """
+        new_id = 0
+
+        if self.child_bred_in_generation:
+            new_id = 0 + len(self.child_bred_in_generation)
+
+        return (new_id)
+
     #-----------------------------------------------------
     # BREEDING FOR A FULL ROCK CLUTCH
     #-----------------------------------------------------
     
-    """
-    result = self.validate_breeding_pair(
-            parent_a = parent_a, 
-            parent_b = parent_b
-        )
+    def breed_parent_set(
+        self,
+        parent_a: genetics.Rock,
+        parent_b: genetics.Rock,
+
+        next_id,
+        child_generation,
+
+        mutation_chance = None,
+
+        # MORE???
+
+    ):
+        """
+        Takes parents a and b, claculates clutch,
+        breeds them with mitosion, spore, kill handling
+        """
+
+        result = self.validate_breeding_pair(
+                parent_a = parent_a, 
+                parent_b = parent_b
+            )
 
         if not result["valid"]:
             raise ValueError("Invalid breeding pair: " + "; ".join(result["errors"]))
 
         parent_a = result["parent_a"]
         parent_b = result["parent_b"]
-    """
+
+        if mutation_chance == None:
+            mutation_chance = self.child_gene_mutation_chance
+
+        clutch = self.roll_clutch_size(
+            # SOMETHING HERE -> POTIONS
+        )
+
+        mod_id = next_id + self.get_next_id()
+
+        for child in range(clutch):
+            
+            mod_id = next_id + self.get_next_id()
+
+            child = self.breed_child_from_parents(
+                parent_a = parent_a,
+                parent_b = parent_b,
+                next_id = mod_id,
+                child_generation = child_generation,
+                mutation_chance = None,
+            )
+
+            child = self.maybe_kill_child(
+                child = self.maybe_craisen_child(
+                    child = child,
+                    craisen_chance = None
+                    ),
+                death_chance = None,
+            )
+
+            self.child_bred_in_generation.append(child)
+
+            #-----------------------------------------------------
+            # HANDLE MITOSION OF CHILD
+            #-----------------------------------------------------
+
+            mitote = self.maybe_mitote_child(child = child)
+
+            if mitote != None:
+
+                mitote = self.maybe_kill_child(
+                    child = self.maybe_craisen_child(
+                        child = mitote,
+                        craisen_chance = None
+                        ),
+                    death_chance = None,
+                )
+                
+                self.child_bred_in_generation.append(mitote)
+            
+            #-----------------------------------------------------
+            # HANDLE SPORING OF CHILD
+            #-----------------------------------------------------
+
+            spore = self.maybe_spore_child(
+                child = child,
+                spore_death_chance = None,
+                spore_clone_count = None,
+            )
+
+            if len(spore) > 1:
+
+                spore.pop(0) # REMOVE THE ORIGINAL CHILD - ALWAYS FIRST!
+
+                for spore_bro in spore:
+
+                    spore_bro = self.maybe_kill_child(
+                        child = self.maybe_craisen_child(
+                            child = spore_bro,
+                            craisen_chance = None
+                            ),
+                        death_chance = None,
+                    )
+
+                    self.child_bred_in_generation.append(spore_bro)
+
+        (parent_a, parent_b) = self.set_parents_as_bred(
+                                parent_a = parent_a,
+                                parent_b = parent_b,
+                            )
+
+        
 #-----------------------------------------------------
 # THESE WILL PROBABLY GO INTO GAMEMASTER
 #-----------------------------------------------------

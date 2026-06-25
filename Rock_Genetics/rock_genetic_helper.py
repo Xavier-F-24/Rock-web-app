@@ -542,6 +542,7 @@ class Rock:
     status: RockStatus = RockStatus.ACTIVE
 
     has_split: bool = False
+    checked_craisen: bool = False
 
     death_reason: str | None = None
 
