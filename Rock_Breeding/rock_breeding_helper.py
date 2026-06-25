@@ -46,6 +46,10 @@ NAME_BITS_END = [
     "ble", "ite", "or", "yx", "stone", "ling", "rock", "spar", "gem", "oid"
 ]
 
+#-----------------------------------------------------
+# ROCK BASE GAME NUMBERS
+#-----------------------------------------------------
+
 CHILD_DEATH_CHANCE = 0.05
 CLUTCH_MEAN = 1.5
 CLUTCH_STD = 2.0
