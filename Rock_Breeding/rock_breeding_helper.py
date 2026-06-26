@@ -180,14 +180,6 @@ class BreedingMaster:
             status = genetics.RockStatus.ACTIVE
         )
 
-        child = self.ExpressionEngine.instantiate_phenotype(
-            rock = child,
-        )
-
-        child = self.ValueCalculator.set_rock_value(
-            rock = child,
-        )
-
         return (child)
 
     #-----------------------------------------------------
@@ -575,7 +567,7 @@ class BreedingMaster:
                 child = child,
                 parent_a = parent_a,
                 parent_b = parent_b,
-                
+
                 spore_death_chance = spore_death_chance,
                 spore_clone_count = spore_clone_count,
             )
@@ -598,14 +590,34 @@ class BreedingMaster:
 
                     print(f"wow, you got a baby puff! {spore_bro.id} is {spore_bro.status} because {spore_bro.death_reason}")
 
+        #-----------------------------------------------------
+        # MARK PARENTS AS BRED
+        #-----------------------------------------------------
 
         (parent_a, parent_b) = self.set_parents_as_bred(
                                 parent_a = parent_a,
                                 parent_b = parent_b,
                             )
 
+        #-----------------------------------------------------
+        # CALCULATE CHILDREN VALUES AND PHENOTYPES
+        #-----------------------------------------------------
+
+        for child in self.child_bred_for_parents:
+            child = self.ValueCalculator.set_rock_value(
+                rock = self.ExpressionEngine.instantiate_phenotype(
+                    rock = child
+                )
+            )
+
+        #-----------------------------------------------------
+        # SAVE THE PARENTS CLUTCH
+        #-----------------------------------------------------
         parents_clutch = self.child_bred_for_parents.copy()
 
+        #-----------------------------------------------------
+        # CLEAR BREEDINGMASTERS LIST FOR NO CROSS CONTAMINATION
+        #-----------------------------------------------------
         self.child_bred_for_parents.clear()
 
         return parents_clutch

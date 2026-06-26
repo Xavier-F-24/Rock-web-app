@@ -528,6 +528,10 @@ class RockName:
     honorific: str | None = None
     epithet: str | None = None
 
+    #-----------------------------------------------------
+    # PRINT A STR OF THE ROCKS FULL NAME SET!
+    #-----------------------------------------------------
+
     @property
     def full_name(self) -> str:
         parts = []
@@ -877,6 +881,10 @@ class ExpressionEngine:
         money = Gener.option_for_allele(lesser).cost
 
         return(phenotype, money)
+    
+    #-----------------------------------------------------
+    # CALCULATE A ROCKS GENE VALUES AND PHENOTYPES
+    #-----------------------------------------------------
 
     def instantiate_phenotype(
         self,
@@ -981,6 +989,10 @@ class ExpressionEngine:
 class ValueCalculator: 
 
     genome_spec_list = GENE_SPECS
+
+    #-----------------------------------------------------
+    # CALCULATE A ROCKS VALUES WITH STATUS
+    #-----------------------------------------------------
 
     def set_rock_value(
             self,
@@ -1245,9 +1257,9 @@ class NameGenerator:
     epithet_chance: float = 0.05
 
     # Inheritance chances
-    inherit_family_chance: float = 0.45
-    inherit_honorific_chance: float = 0.20
-    inherit_epithet_chance: float = 0.20
+    inherit_family_chance: float = 0.75
+    inherit_honorific_chance: float = 0.10
+    inherit_epithet_chance: float = 0.15
 
     #-----------------------------------------------------
     # NAME NECESSARIES
@@ -1329,24 +1341,24 @@ class NameGenerator:
         chance = self.family_name_chance
 
         if parent_info.value_score >= 6:
-            chance += 0.05
+            chance += 0.10
         if parent_info.value_score >= 8:
-            chance += 0.15
+            chance += 0.20
         if parent_info.value_score >= 12:
-            chance += 0.25
-        if parent_info.value_score >= 16:
             chance += 0.40
+        if parent_info.value_score >= 16:
+            chance += 0.60
 
         # If parents have a family name, child is more likely to inherit one.
         if parent_info.families:
             chance += self.inherit_family_chance
 
         # Rock does not hit its name chance and goes home empty handed
-        if not force and self.rng.random() > max(chance, 0.05):
+        if not force and self.rng.random() > chance:
             return None
 
         # Rock chooses from parent names, where applicable (if 1 -> 1)
-        if parent_info.families and self.rng.random() < 0.75:
+        if parent_info.families and self.rng.random() < 0.90:
             return self.rng.choice(parent_info.families)
 
         # Rock generates a new family name for itself
@@ -1393,11 +1405,11 @@ class NameGenerator:
             chance += self.inherit_honorific_chance
 
         # Rock does not hit its name chance and goes home empty handed
-        if not force and self.rng.random() > max(chance, 0.10):
+        if not force and self.rng.random() > chance:
             return None
 
         # Usually inherit the parent's honorific style if available.
-        if parent_info.honorifics and self.rng.random() < 0.75:
+        if parent_info.honorifics and self.rng.random() < 0.50:
             return self.rng.choice(parent_info.honorifics)
 
         # Rock makes a new honnorific for itself
@@ -1419,13 +1431,13 @@ class NameGenerator:
         if child_value is not None:
             total_value += child_value
 
+        if total_value >= 6:
+            chance += 0.05
         if total_value >= 8:
-            chance += 0.10
+            chance += 0.15
         if total_value >= 12:
-            chance += 0.20
-        if total_value >= 18:
-            chance += 0.20
-        if total_value >= 24:
+            chance += 0.25
+        if total_value >= 16:
             chance += 0.40
 
         # If parents have titles, child is more likely to inherit title energy.
@@ -1433,16 +1445,16 @@ class NameGenerator:
             chance += self.inherit_epithet_chance
 
         # Rock does not hit its name chance and goes home empty handed
-        if not force and self.rng.random() > max(chance, 0.10):
+        if not force and self.rng.random() > chance:
             return None
 
-        # Sometimes directly inherit a parent's epithet/title.
-        if parent_info.epithets and self.rng.random() < 0.33:
-            return self.rng.choice(parent_info.epithets)
-
         # Valuable lines get noble epithets more often.
-        if total_value >= 12 and self.rng.random() < 0.75:
+        if total_value >= 10 and self.rng.random() < 0.85:
             return self.rng.choice(self.noble_epithets)
+        
+        # Sometimes directly inherit a parent's epithet/title.
+        if parent_info.epithets and self.rng.random() < 0.40:
+            return self.rng.choice(parent_info.epithets)
 
         return self.rng.choice(self.ordinary_epithets)
 
