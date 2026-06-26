@@ -538,7 +538,7 @@ class BreedingMaster:
                                 parent_b = parent_b,
                             )
 
-        parents_clutch = self.child_bred_for_parents
+        parents_clutch = self.child_bred_for_parents.copy()
 
         self.child_bred_for_parents.clear()
 

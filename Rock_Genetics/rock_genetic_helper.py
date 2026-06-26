@@ -588,7 +588,7 @@ class GenomeFactory:
 
     @staticmethod
     def roll_gene_pair() -> list[int]:
-        return [random.randint(1, 20), random.randint(1, 20)]
+        return [random.randint(19, 20), random.randint(19, 20)]
 
     @staticmethod
     def get_allele_from_roll(
@@ -718,6 +718,8 @@ class GenomeFactory:
                 allele_b = Allele(value = b),
                 name_of_gene = death_gene,
                 dominance_type = "death_genes",
+                phenotype = "n/a",
+                money_value = 0,
                 )
 
             genes[death_gene] = death_gene_pair
@@ -815,6 +817,8 @@ class GenomeFactory:
                 allele_b = parent_b_allele,
                 name_of_gene = death_gene,
                 dominance_type = "death_genes",
+                phenotype = "n/a",
+                money_value = 0,
                 )
 
             genes[death_gene] = death_gene_pair
@@ -862,6 +866,21 @@ class ExpressionEngine:
             if rock.sex != Gener.required_gender and Gener == "facial_hair":
                 phenotype = Gener.required_gender_states
                 money = 1
+
+                rock.genotype.genes[gene].phenotype, rock.genotype.genes[gene].money_value = phenotype, money
+
+            # NEED SPECIAL WORK SO MITOSION, SPORE DOES NOT SHOW UP AS MITOSION!
+            if Gener == "splitting":
+                dose = 0
+                dose += a if a != 0 else 0
+                dose += a if b != 0 else 0
+
+                if dose == 2:
+                    phenotype, money = "mitosion", 0
+                elif dose == 4:
+                    phenotype, money = "spore", 0
+                else:
+                    phenotype, money = "n/a", 0
 
                 rock.genotype.genes[gene].phenotype, rock.genotype.genes[gene].money_value = phenotype, money
 
