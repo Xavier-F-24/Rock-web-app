@@ -31,6 +31,7 @@ This file answers:
 # IMPORT ZONE
 #-----------------------------------------------------
 
+from __future__ import annotations
 import random
 
 from dataclasses import dataclass, field
@@ -516,6 +517,35 @@ class Genome:
             print(f"{self.genes[gene].name_of_gene}: {self.genes[gene].allele_a.value} and {self.genes[gene].allele_b.value} as: {self.genes[gene].phenotype} worth {self.genes[gene].money_value} \n")
  
 #-----------------------------------------------------
+# ROCK NAME DEFINITION ZONE
+#-----------------------------------------------------
+
+@dataclass(frozen = True)
+class RockName:
+
+    given: str
+    family: str | None = None
+    honorific: str | None = None
+    epithet: str | None = None
+
+    @property
+    def full_name(self) -> str:
+        parts = []
+
+        if self.honorific:
+            parts.append(self.honorific)
+
+        parts.append(self.given)
+
+        if self.family:
+            parts.append(self.family)
+
+        if self.epithet:
+            parts.append(self.epithet)
+
+        return " ".join(parts)
+
+#-----------------------------------------------------
 # ROCK DEFINITION ZONE
 #-----------------------------------------------------
 class RockStatus(str, Enum):
@@ -530,9 +560,10 @@ class Rock:
     """
     ATTRIBUTES OF DE ROCK   
     """
+
     id: int
-    name: str
     sex: Sex
+    name: RockName| None = None
 
     genotype: Genome = field(default_factory = Genome)
     death_genes: Genome = field(default_factory = Genome)
@@ -582,13 +613,16 @@ class GenomeFactory:
     genome_spec_list = GENE_SPECS
     death_gene_list = ["death_gene1", "death_gene2", "death_gene3"]
 
+    rng: random.Random = field(default_factory=random.Random)
+
     #-----------------------------------------------------
     # SETUP DEFINITION ZONE TO MAKE ROCK GENOMES
     #-----------------------------------------------------
 
-    @staticmethod
-    def roll_gene_pair() -> list[int]:
-        return [random.randint(19, 20), random.randint(19, 20)]
+    def roll_gene_pair(
+        self,
+    ) -> list[int]:
+        return [self.rng.randint(1, 20), self.rng.randint(1, 20)]
 
     @staticmethod
     def get_allele_from_roll(
@@ -608,8 +642,8 @@ class GenomeFactory:
             value=chosen_option.allele
             )
     
-    @staticmethod
     def mutate_allele(
+        self,
         gene: GeneSpec,
         allele_passed: Allele,
         mutation_chance,
@@ -618,7 +652,7 @@ class GenomeFactory:
         """
         IMPORTANT SETUP FOR GAME FORMAT AND MUTATION CHANCES!
         """
-        if random.random() >= mutation_chance:
+        if self.rng.random() >= mutation_chance:
             return allele_passed
 
         possible_values = [
@@ -631,17 +665,17 @@ class GenomeFactory:
             return allele_passed
 
         return Allele(
-            value=random.choice(possible_values)
+            value = self.rng.choice(possible_values)
         )
     
-    @staticmethod
     def roll_craisen_pair(
+        self
     ) -> tuple[int, int]:
-            a = random.randint(1,100)
-            b = random.randint(1,100)
+            a = self.rng.randint(1,100)
+            b = self.rng.randint(1,100)
             while a == b:
-                a = random.randint(1,100)
-                b = random.randint(1,100)
+                a = self.rng.randint(1,100)
+                b = self.rng.randint(1,100)
             return (a, b)
 
     def mutate_death_allele(
@@ -653,7 +687,7 @@ class GenomeFactory:
         """
         IMPORTANT SETUP FOR GAME FORMAT AND MUTATION CHANCES!
         """
-        if random.random() >= mutation_chance:
+        if self.rng.random() >= mutation_chance:
             return allele_passed
 
         new_allele, _ = self.roll_craisen_pair()
@@ -744,15 +778,13 @@ class GenomeFactory:
 
             genome_spec_list = self.genome_spec_list
 
-
-
             for gene in genome_spec_list:
 
-                if random.random() < 0.5:
+                if self.rng.random() < 0.5:
                     parent_a_allele = parent_a.genotype.genes[gene].allele_a
                 else:
                     parent_a_allele = parent_a.genotype.genes[gene].allele_b
-                if random.random() < 0.5:
+                if self.rng.random() < 0.5:
                     parent_b_allele = parent_b.genotype.genes[gene].allele_a
                 else:
                     parent_b_allele = parent_b.genotype.genes[gene].allele_b
@@ -793,11 +825,11 @@ class GenomeFactory:
         
         for death_gene in self.death_gene_list:
 
-            if random.random() < 0.5:
+            if self.rng.random() < 0.5:
                 parent_a_allele = parent_a.death_genes.genes[death_gene].allele_a
             else:
                 parent_a_allele = parent_a.death_genes.genes[death_gene].allele_b
-            if random.random() < 0.5:
+            if self.rng.random() < 0.5:
                 parent_b_allele = parent_b.death_genes.genes[death_gene].allele_a
             else:
                 parent_b_allele = parent_b.death_genes.genes[death_gene].allele_b
@@ -872,7 +904,7 @@ class ExpressionEngine:
             # NEED SPECIAL WORK SO MITOSION, SPORE DOES NOT SHOW UP AS MITOSION!
             if Gener == "splitting":
                 dose = 0
-                
+
                 dose += a if a == 1 else 0
                 dose += 2*a if a == 2 else 0
 
@@ -986,5 +1018,490 @@ class ValueCalculator:
 
         return(rock)
 
-    
+#-----------------------------------------------------
+# ROCK Name ZONE
+#-----------------------------------------------------
 
+@dataclass
+class ParentNameInfo:
+
+    honorifics: list[str] = field(default_factory=list)
+    families: list[str] = field(default_factory=list)
+    epithets: list[str] = field(default_factory=list)
+    value_score: int = 0
+
+@dataclass
+class NameGenerator:
+
+    rng: random.Random = field(default_factory = random.Random)
+
+    name_bits_start: tuple[str, ...] = (
+        "Grum", 
+        "Peb", 
+        "Bas", 
+        "Quart", 
+        "Moss", 
+        "Igni", 
+        "Crag", 
+        "Glim", 
+        "Obsi", 
+        "Feld",
+        "Boul", 
+        "Gran", 
+        "Slate", 
+        "Flint", 
+        "Marb", 
+        "Dol", 
+        "Shal", 
+        "Cobb", 
+        "Rubb", 
+        "Geo",
+        "Lava", 
+        "Tuff", 
+        "Clink", 
+        "Chert", 
+        "Jade", 
+        "On", 
+        "Garn", 
+        "Opal", 
+        "Mica", 
+        "Coal",
+    )
+
+    name_bits_end: tuple[str, ...] = (
+        "ble", 
+        "ite", 
+        "or", 
+        "yx", 
+        "stone", 
+        "ling", 
+        "rock", 
+        "spar", 
+        "gem", 
+        "oid",
+        "bert", 
+        "burt", 
+        "well", 
+        "wick",
+        "ford", 
+        "son", 
+        "ley", 
+        "mond", 
+        "more", 
+        "kins",
+        "by", 
+        "lo", 
+        "ton", 
+        "nard", 
+        "rick", 
+        "frey", 
+        "win", 
+        "low", 
+        "bel", 
+        "grim",
+    )
+
+    family_bits_start: tuple[str, ...] = (
+        "Ash", 
+        "Crag", 
+        "Deep", 
+        "Gold", 
+        "Grey", 
+        "High", 
+        "Low", 
+        "Moon", 
+        "Mud", 
+        "Night",
+        "Oak", 
+        "Old", 
+        "Red", 
+        "River", 
+        "Root", 
+        "Snow", 
+        "Star", 
+        "Sun", 
+        "Thorn", 
+        "Wolf",
+        "Black", 
+        "Bright", 
+        "Broken", 
+        "Cold", 
+        "Copper", 
+        "Dark", 
+        "Dust", 
+        "Iron", 
+        "Royal", 
+        "Silver",
+    )
+
+    family_bits_end: tuple[str, ...] = (
+        "crag", 
+        "fall", 
+        "field", 
+        "forge", 
+        "gem", 
+        "grip", 
+        "grove", 
+        "hall", 
+        "helm", 
+        "hill",
+        "horn", 
+        "keep", 
+        "maw", 
+        "more", 
+        "ridge", 
+        "root", 
+        "shard", 
+        "spark", 
+        "stone", 
+        "vale",
+        "watch", 
+        "well", 
+        "wick", 
+        "wood", 
+        "yard", 
+        "crest", 
+        "heart", 
+        "jaw", 
+        "mark", 
+        "peak",
+    )
+
+    male_honorifics: tuple[str, ...] = (
+        "Sir", 
+        "Lord", 
+        "Master", 
+        "Baron", 
+        "Duke", 
+        "Elder", 
+        "Captain", 
+        "Professor",
+    )
+
+    female_honorifics: tuple[str, ...] = (
+        "Lady", 
+        "Dame", 
+        "Madam", 
+        "Baroness", 
+        "Duchess", 
+        "Elder", 
+        "Captain", 
+        "Professor",
+    )
+
+    neutral_honorifics: tuple[str, ...] = (
+        "Elder", 
+        "Sage", 
+        "Captain", 
+        "Professor", 
+        "Honored", 
+        "Grand", 
+        "Ancient",
+    )
+
+    ordinary_epithets: tuple[str, ...] = (
+        "the Rock",
+        "the Small",
+        "the Large",
+        "the Suspicious",
+        "the Unbothered",
+        "the Crunchy",
+        "the Polished",
+        "the Questionable",
+        "the Round",
+        "the Slightly Damp",
+        "the Ancient",
+        "the Unusually Shiny",
+        "the Mildly Dangerous",
+        "the Patient",
+        "the Wiggly",
+        "the Gravelhearted",
+        "the Tiny Menace",
+        "the Pebbleborn",
+        "the Moss-Touched",
+        "the Deeply Confused",
+        "the Well-Formed",
+        "the Troubled",
+        "the Noble",
+        "the Unreasonably Valuable",
+    )
+
+    noble_epithets: tuple[str, ...] = (
+        "the ROCK",
+        "the Highborn",
+        "the Gem-Heir",
+        "the Crowned Shard",
+        "of the Old Line",
+        "of the Glittering House",
+        "of the Deep Quarry",
+        "of the First Stones",
+        "of the Royal Vein",
+        "of the Ancient Crag",
+    )
+
+    # Base chances
+    family_name_chance: float = 0.10
+    honorific_chance: float = 0.05
+    epithet_chance: float = 0.05
+
+    # Inheritance chances
+    inherit_family_chance: float = 0.45
+    inherit_honorific_chance: float = 0.20
+    inherit_epithet_chance: float = 0.20
+
+    #-----------------------------------------------------
+    # NAME NECESSARIES
+    #-----------------------------------------------------
+
+    def get_structured_name(
+        self, 
+        parent: Rock | None = None,
+    ) -> RockName | None:
+
+        # Rock names
+        rock_name = getattr(parent, "name", None)
+        if isinstance(rock_name, RockName):
+            return rock_name
+
+        # Separate fields case
+        honorific = getattr(parent, "honorific", None)
+        given = getattr(parent, "given", None)
+        family = getattr(parent, "family", None)
+        epithet = getattr(parent, "epithet", None)
+
+        if given:
+            return RockName(
+                honorific = honorific,
+                given = given,
+                family = family,
+                epithet = epithet,
+            )
+
+        return None
+
+    def collect_parent_name_info(
+        self,
+        parent_a: Rock | None = None,
+        parent_b: Rock | None = None,
+    ) -> ParentNameInfo:
+        
+        info = ParentNameInfo()
+
+        for parent in (parent_a, parent_b):
+            if parent is None:
+                continue
+
+            value = getattr(parent, "value", 0) or 0
+            info.value_score += value
+
+            rock_name = self.get_structured_name(parent)
+
+            if rock_name is not None:
+                if rock_name.honorific:
+                    info.honorifics.append(rock_name.honorific)
+                if rock_name.family:
+                    info.families.append(rock_name.family)
+                if rock_name.epithet:
+                    info.epithets.append(rock_name.epithet)
+
+        return info
+
+    def make_given_name(self) -> str:
+
+        start = self.rng.choice(self.name_bits_start)
+        end = self.rng.choice(self.name_bits_end)
+
+        return start + end
+
+    def make_family_name(self) -> str:
+
+        start = self.rng.choice(self.family_bits_start)
+        end = self.rng.choice(self.family_bits_end)
+
+        return start + end
+
+    def choose_family_name(
+        self,
+        parent_info: ParentNameInfo,
+        force: bool = False,
+    ) -> str | None:
+        
+        chance = self.family_name_chance
+
+        if parent_info.value_score >= 6:
+            chance += 0.05
+        if parent_info.value_score >= 8:
+            chance += 0.15
+        if parent_info.value_score >= 12:
+            chance += 0.25
+        if parent_info.value_score >= 16:
+            chance += 0.40
+
+        # If parents have a family name, child is more likely to inherit one.
+        if parent_info.families:
+            chance += self.inherit_family_chance
+
+        # Rock does not hit its name chance and goes home empty handed
+        if not force and self.rng.random() > max(chance, 0.05):
+            return None
+
+        # Rock chooses from parent names, where applicable (if 1 -> 1)
+        if parent_info.families and self.rng.random() < 0.75:
+            return self.rng.choice(parent_info.families)
+
+        # Rock generates a new family name for itself
+        return self.make_family_name()
+
+    def get_honorific_pool(
+        self, 
+        sex: Any
+    ) -> tuple[str, ...]:
+        
+        sex_text = str(sex).lower()
+        
+        if self.rng.random() < 0.75:
+
+            # This works with Sex.MALE, "male", "MALE", etc.
+            if "female" in sex_text:
+                return self.female_honorifics
+
+            if "male" in sex_text:
+                return self.male_honorifics
+
+        return self.neutral_honorifics
+
+    def choose_honorific(
+        self,
+        sex: Sex,
+        parent_info: ParentNameInfo,
+        force: bool = False,
+    ) -> str | None:
+        
+        chance = self.honorific_chance
+
+        if parent_info.value_score >= 6:
+            chance += 0.05
+        if parent_info.value_score >= 8:
+            chance += 0.15
+        if parent_info.value_score >= 12:
+            chance += 0.25
+        if parent_info.value_score >= 16:
+            chance += 0.40
+
+        # If a parent has an honorific, child has a strong chance to inherit prestige.
+        if parent_info.honorifics:
+            chance += self.inherit_honorific_chance
+
+        # Rock does not hit its name chance and goes home empty handed
+        if not force and self.rng.random() > max(chance, 0.10):
+            return None
+
+        # Usually inherit the parent's honorific style if available.
+        if parent_info.honorifics and self.rng.random() < 0.75:
+            return self.rng.choice(parent_info.honorifics)
+
+        # Rock makes a new honnorific for itself
+        return self.rng.choice(
+            self.get_honorific_pool(sex)
+        )
+
+    def choose_epithet(
+        self,
+        parent_info: ParentNameInfo,
+        child_value: int | None = None,
+        force: bool = False,
+    ) -> str | None:
+        
+        chance = self.epithet_chance
+
+        total_value = parent_info.value_score
+
+        if child_value is not None:
+            total_value += child_value
+
+        if total_value >= 8:
+            chance += 0.10
+        if total_value >= 12:
+            chance += 0.20
+        if total_value >= 18:
+            chance += 0.20
+        if total_value >= 24:
+            chance += 0.40
+
+        # If parents have titles, child is more likely to inherit title energy.
+        if parent_info.epithets:
+            chance += self.inherit_epithet_chance
+
+        # Rock does not hit its name chance and goes home empty handed
+        if not force and self.rng.random() > max(chance, 0.10):
+            return None
+
+        # Sometimes directly inherit a parent's epithet/title.
+        if parent_info.epithets and self.rng.random() < 0.33:
+            return self.rng.choice(parent_info.epithets)
+
+        # Valuable lines get noble epithets more often.
+        if total_value >= 12 and self.rng.random() < 0.75:
+            return self.rng.choice(self.noble_epithets)
+
+        return self.rng.choice(self.ordinary_epithets)
+
+    #-----------------------------------------------------
+    # MAKE THAT ROCK NAME!!!
+    #-----------------------------------------------------
+
+    def generate_name(
+        self,
+        sex: Sex,
+        parent_a: Rock | None = None,
+        parent_b: Rock | None = None,
+
+        value: int | None = None,
+
+        force_family: bool = False,
+        force_honorific: bool = False,
+        force_epithet: bool = False,
+    ) -> RockName:
+        
+        """
+        Generates a structured rock name.
+
+        parent_a and parent_b can be Rock objects.
+        This method checks for:
+        - parent.name
+        - parent.honorific
+        - parent.family
+        - parent.epithet
+        - parent.value
+        """
+
+        parent_info = self.collect_parent_name_info(
+            parent_a,
+            parent_b,
+        )
+
+        given = self.make_given_name()
+
+        family = self.choose_family_name(
+            parent_info = parent_info,
+            force = force_family,
+        )
+
+        honorific = self.choose_honorific(
+            sex = sex,
+            parent_info = parent_info,
+            force = force_honorific,
+        )
+
+        epithet = self.choose_epithet(
+            parent_info = parent_info,
+            child_value = value,
+            force = force_epithet,
+        )
+
+        return RockName(
+            honorific = honorific,
+            given = given,
+            family = family,
+            epithet = epithet,
+        )

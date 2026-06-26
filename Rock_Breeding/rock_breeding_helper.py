@@ -35,18 +35,6 @@ To run module individually: python -m Rock_Breeding.rock_breeding_helper
 """
 
 #-----------------------------------------------------
-# ROCK Name ZONE
-#-----------------------------------------------------
-
-NAME_BITS_START = [
-    "Grum", "Peb", "Bas", "Quartz", "Moss", "Igni", "Crag", "Glim", "Obsi", "Feld"
-]
-
-NAME_BITS_END = [
-    "ble", "ite", "or", "yx", "stone", "ling", "rock", "spar", "gem", "oid"
-]
-
-#-----------------------------------------------------
 # ROCK BASE GAME NUMBERS
 #-----------------------------------------------------
 
@@ -69,9 +57,6 @@ SPORE_CLONE_COUNT = 3
 @dataclass()
 class BreedingMaster: 
 
-    name_bits_start = NAME_BITS_START
-    name_bits_end = NAME_BITS_END
-
     child_death_chance = CHILD_DEATH_CHANCE
     craisen_death_chance = CRAISEN_DEATH_CHANCE
 
@@ -90,7 +75,11 @@ class BreedingMaster:
 
     ValueCalculator: genetics.ValueCalculator = field(default_factory = genetics.ValueCalculator)
 
+    NameGenerator: genetics.NameGenerator = field(default_factory = genetics.NameGenerator)
+
     child_bred_for_parents: list[genetics.Rock] = field(default_factory = list)
+
+    rng: random.Random = field(default_factory = random.Random)
 
     #-----------------------------------------------------
     # GETTING ROCK NAME
@@ -105,8 +94,27 @@ class BreedingMaster:
 
     def random_rock_name(
         self,
-    ) -> str:
-        return random.choice(self.name_bits_start) + random.choice(self.name_bits_end)
+        sex: genetics.Sex,
+        parent_a: genetics.Rock | None = None,
+        parent_b: genetics.Rock | None = None,
+
+        force_family: bool = False,
+        force_honorific: bool = False,
+        force_epithet: bool = False,
+
+    ) -> genetics.RockName:
+        
+        name = self.NameGenerator.generate_name(
+            sex = sex,
+            parent_a = parent_a,
+            parent_b = parent_b,
+
+            force_family = False,
+            force_honorific = False,
+            force_epithet = False,
+        )
+
+        return (name)
 
     #-----------------------------------------------------
     # BREEDING ONE CHILD, SET VALUE, SET ACTIVE
@@ -130,12 +138,21 @@ class BreedingMaster:
         """
 
         child_id = next_id
-        child_name = self.random_rock_name()
 
-        if random.random() < 0.5:
+        if self.rng.random() < 0.5:
             child_sex = genetics.Sex.MALE
         else:
             child_sex = genetics.Sex.FEMALE
+        
+        child_name = self.NameGenerator.generate_name(
+            sex = child_sex,
+            parent_a = parent_a,
+            parent_b = parent_b,
+
+            force_family = False,
+            force_honorific = False,
+            force_epithet = False,
+        )
 
         mutation_chance = self.default(mutation_chance, self.child_gene_mutation_chance)
 
@@ -256,7 +273,7 @@ class BreedingMaster:
 
         max_clutch_size = self.default(max_clutch_size, self.max_clutch_size)
 
-        x = random.gauss(mean, std)
+        x = self.rng.gauss(mean, std)
         clutch = abs(math.floor(x)) + 1
 
         if max_clutch_size is not None:
@@ -264,7 +281,7 @@ class BreedingMaster:
 
         if reroll is not None:
             clutch_one = clutch
-            clutch_two = abs(math.floor(random.gauss(mean, std))) + 1
+            clutch_two = abs(math.floor(self.rng.gauss(mean, std))) + 1
 
             return max(clutch_one, clutch_two)
         
@@ -275,6 +292,8 @@ class BreedingMaster:
 
     def maybe_mitote_child(
         self,
+        parent_a: genetics.Rock,
+        parent_b: genetics.Rock,
         child: genetics.Rock, 
     ):
         """
@@ -288,7 +307,16 @@ class BreedingMaster:
 
         if child.genotype.genes["splitting"].phenotype == "mitosion" and child.has_split == False and child.status == genetics.RockStatus.ACTIVE:
 
-            mitote_name = self.random_rock_name()
+            mitote_name = self.NameGenerator.generate_name(
+                sex = child.sex,
+                parent_a = parent_a,
+                parent_b = parent_b,
+
+                force_family = False,
+                force_honorific = False,
+                force_epithet = False,
+            )
+
             mitote_id = child.id + 1
 
             child_mitote = genetics.Rock(
@@ -313,6 +341,8 @@ class BreedingMaster:
     def maybe_spore_child(
         self,
         child: genetics.Rock, 
+        parent_a: genetics.Rock,
+        parent_b: genetics.Rock,
         spore_death_chance = None,
         spore_clone_count = None,
     ):
@@ -332,7 +362,16 @@ class BreedingMaster:
         if child.genotype.genes["splitting"].phenotype == "spore" and child.has_split == False and child.status == genetics.RockStatus.ACTIVE:
             for spore_clone in range(1 + spore_clone_count):
                 
-                spore_name = self.random_rock_name()
+                spore_name = self.NameGenerator.generate_name(
+                    sex = child.sex,
+                    parent_a = parent_a,
+                    parent_b = parent_b,
+
+                    force_family = False,
+                    force_honorific = False,
+                    force_epithet = False,
+                )
+
                 spore_id = child.id + 1 + spore_clone
 
                 child_puff = genetics.Rock(
@@ -348,7 +387,7 @@ class BreedingMaster:
                     has_split = True
                 )
 
-                if random.random() < spore_death_chance:
+                if self.rng.random() < spore_death_chance:
                     child_puff.change_status(new_status = genetics.RockStatus.DEAD)
                     child_puff.death_reason = "puffed out at birth"
                 
@@ -371,7 +410,7 @@ class BreedingMaster:
         """
         death_chance = self.default(death_chance, self.child_death_chance)
 
-        if random.random() < death_chance and child.status == genetics.RockStatus.ACTIVE:
+        if self.rng.random() < death_chance and child.status == genetics.RockStatus.ACTIVE:
             child.change_status(new_status = genetics.RockStatus.DEAD)
             child.death_reason = "died after birth"
             return child
@@ -400,7 +439,7 @@ class BreedingMaster:
         BUT MULTIPLE HITS MEANS X TIMES THE ODDS, THOUGHT!
         """
 
-        if craisen_possible and random.random() < craisen_chance and child.checked_craisen == False and child.status == genetics.RockStatus.ACTIVE:
+        if craisen_possible and self.rng.random() < craisen_chance and child.checked_craisen == False and child.status == genetics.RockStatus.ACTIVE:
             child.change_status(new_status = genetics.RockStatus.CRAISENED)
             child.checked_craisen = True
             child.death_reason = "craisend up, man"
@@ -508,7 +547,11 @@ class BreedingMaster:
             # HANDLE MITOSION OF CHILD
             #-----------------------------------------------------
 
-            mitote = self.maybe_mitote_child(child = child)
+            mitote = self.maybe_mitote_child(
+                child = child,
+                parent_a = parent_a,
+                parent_b = parent_b,
+            )
 
             if mitote != None:
 
@@ -530,6 +573,9 @@ class BreedingMaster:
 
             spore = self.maybe_spore_child(
                 child = child,
+                parent_a = parent_a,
+                parent_b = parent_b,
+                
                 spore_death_chance = spore_death_chance,
                 spore_clone_count = spore_clone_count,
             )
