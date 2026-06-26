@@ -872,12 +872,16 @@ class ExpressionEngine:
             # NEED SPECIAL WORK SO MITOSION, SPORE DOES NOT SHOW UP AS MITOSION!
             if Gener == "splitting":
                 dose = 0
-                dose += a if a != 0 else 0
-                dose += a if b != 0 else 0
+                
+                dose += a if a == 1 else 0
+                dose += 2*a if a == 2 else 0
+
+                dose += b if b == 1 else 0
+                dose += 2*b if b == 2 else 0
 
                 if dose == 2:
                     phenotype, money = "mitosion", 0
-                elif dose == 4:
+                elif dose == 8:
                     phenotype, money = "spore", 0
                 else:
                     phenotype, money = "n/a", 0

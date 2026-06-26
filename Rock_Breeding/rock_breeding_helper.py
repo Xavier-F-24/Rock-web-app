@@ -286,7 +286,7 @@ class BreedingMaster:
 
         child_mitote = None
 
-        if child.genotype.genes["splitting"].phenotype == "mitosion" and child.has_split == False:
+        if child.genotype.genes["splitting"].phenotype == "mitosion" and child.has_split == False and child.status == genetics.RockStatus.ACTIVE:
 
             mitote_name = self.random_rock_name()
             mitote_id = child.id + 1
@@ -329,7 +329,7 @@ class BreedingMaster:
 
         child_spore: list[genetics.Rock] = [child]
 
-        if child.genotype.genes["splitting"].phenotype == "spore" and child.has_split == False:
+        if child.genotype.genes["splitting"].phenotype == "spore" and child.has_split == False and child.status == genetics.RockStatus.ACTIVE:
             for spore_clone in range(1 + spore_clone_count):
                 
                 spore_name = self.random_rock_name()
@@ -389,7 +389,18 @@ class BreedingMaster:
         """
         craisen_chance = self.default(craisen_chance, self.craisen_death_chance)
 
-        if random.random() < craisen_chance and child.checked_craisen == False and child.status == genetics.RockStatus.ACTIVE:
+        craisen_possible = False
+
+        for gene in child.death_genes.genes:
+            if child.death_genes.genes[gene].allele_a == child.death_genes.genes[gene].allele_b:
+                craisen_possible = True
+
+        """
+        QUESTION: WE COULD CHANGE TO CRAISEN CHANCE BEING LOWER, 
+        BUT MULTIPLE HITS MEANS X TIMES THE ODDS, THOUGHT!
+        """
+
+        if craisen_possible and random.random() < craisen_chance and child.checked_craisen == False and child.status == genetics.RockStatus.ACTIVE:
             child.change_status(new_status = genetics.RockStatus.CRAISENED)
             child.checked_craisen = True
             child.death_reason = "craisend up, man"
@@ -465,6 +476,8 @@ class BreedingMaster:
             plus_one = None,
         )
 
+        print(f"wow, you got a {clutch} clutch")
+
         mod_id = next_id + self.get_next_id()
 
         for child in range(clutch):
@@ -476,16 +489,18 @@ class BreedingMaster:
                 parent_b = parent_b,
                 next_id = mod_id,
                 child_generation = child_generation,
-                mutation_chance = None,
+                mutation_chance = mutation_chance,
             )
 
             child = self.maybe_kill_child(
                 child = self.maybe_craisen_child(
                     child = child,
-                    craisen_chance = None
+                    craisen_chance = craisen_chance
                     ),
-                death_chance = None,
+                death_chance = death_chance,
             )
+
+            print(f"wow, you got a baby rock! {child.id} is {child.status} because {child.death_reason}")
 
             self.child_bred_for_parents.append(child)
 
@@ -500,12 +515,14 @@ class BreedingMaster:
                 mitote = self.maybe_kill_child(
                     child = self.maybe_craisen_child(
                         child = mitote,
-                        craisen_chance = None
+                        craisen_chance = craisen_chance
                         ),
-                    death_chance = None,
+                    death_chance = death_chance,
                 )
                 
                 self.child_bred_for_parents.append(mitote)
+
+                print(f"wow, {child.id} mitoted to {mitote.id}, {mitote.status}")
             
             #-----------------------------------------------------
             # HANDLE SPORING OF CHILD
@@ -513,8 +530,8 @@ class BreedingMaster:
 
             spore = self.maybe_spore_child(
                 child = child,
-                spore_death_chance = None,
-                spore_clone_count = None,
+                spore_death_chance = spore_death_chance,
+                spore_clone_count = spore_clone_count,
             )
 
             if len(spore) > 1:
@@ -526,12 +543,15 @@ class BreedingMaster:
                     spore_bro = self.maybe_kill_child(
                         child = self.maybe_craisen_child(
                             child = spore_bro,
-                            craisen_chance = None
+                            craisen_chance = craisen_chance
                             ),
-                        death_chance = None,
+                        death_chance = death_chance,
                     )
 
                     self.child_bred_for_parents.append(spore_bro)
+
+                    print(f"wow, you got a baby puff! {spore_bro.id} is {spore_bro.status} because {spore_bro.death_reason}")
+
 
         (parent_a, parent_b) = self.set_parents_as_bred(
                                 parent_a = parent_a,
