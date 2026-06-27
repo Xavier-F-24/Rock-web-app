@@ -507,8 +507,6 @@ class BreedingMaster:
             plus_one = None,
         )
 
-        print(f"wow, you got a {clutch} clutch")
-
         mod_id = next_id + self.get_next_id()
 
         for child in range(clutch):
@@ -530,8 +528,6 @@ class BreedingMaster:
                     ),
                 death_chance = death_chance,
             )
-
-            print(f"wow, you got a baby rock! {child.id} is {child.status} because {child.death_reason}")
 
             self.child_bred_for_parents.append(child)
 
@@ -556,9 +552,7 @@ class BreedingMaster:
                 )
                 
                 self.child_bred_for_parents.append(mitote)
-
-                print(f"wow, {child.id} mitoted to {mitote.id}, {mitote.status}")
-            
+ 
             #-----------------------------------------------------
             # HANDLE SPORING OF CHILD
             #-----------------------------------------------------
@@ -587,8 +581,6 @@ class BreedingMaster:
                     )
 
                     self.child_bred_for_parents.append(spore_bro)
-
-                    print(f"wow, you got a baby puff! {spore_bro.id} is {spore_bro.status} because {spore_bro.death_reason}")
 
         #-----------------------------------------------------
         # MARK PARENTS AS BRED
