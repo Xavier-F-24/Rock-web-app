@@ -13,6 +13,376 @@ This file answers:
 """
 #-----------------------------------------------------
 
+#-----------------------------------------------------
+# IMPORT ZONE
+#-----------------------------------------------------
+
+import random, math
+import numpy as np
+
+from dataclasses import dataclass, field
+from typing import List
+
+#-----------------------------------------------------
+# SPECIAL IMPORT ZONE
+#-----------------------------------------------------
+
+import Rock_Genetics.rock_genetic_helper as genetics
+
+#-----------------------------------------------------
+# START MAJOR REFACTOR: FEATURE PRESENCE 
+#-----------------------------------------------------
+
+@dataclass(frozen=True)
+class FeaturePresence:
+    eyes: bool = False
+    brows: bool = False
+    nose: bool = False
+    mouth: bool = False
+    facial_hair: bool = False
+    hair: bool = False
+    horns: bool = False
+    ears: bool = False
+    crown: bool = False
+    halo: bool = False
+    wings: bool = False
+    tail: bool = False
+
+#-----------------------------------------------------
+# FEATURE SLOTS
+#-----------------------------------------------------
+
+@dataclass(frozen=True)
+class FeatureSlot:
+    name: str
+    nx: float
+    ny: float
+    scale: float = 1.0
+
+#-----------------------------------------------------
+# FACE LAYOUT: WHAT SLOTS ARE ON THE ROCK
+#-----------------------------------------------------
+
+@dataclass(frozen=True)
+class FaceLayout:
+    slots: dict[str, FeatureSlot] = field(default_factory=dict)
+
+    def has(self, feature_name: str) -> bool:
+        return feature_name in self.slots
+
+    def get(self, feature_name: str) -> FeatureSlot | None:
+        return self.slots.get(feature_name)
+
+#-----------------------------------------------------
+# ROCK RENDERER CONTEXT: NEW AND IMPORVED
+#-----------------------------------------------------
+
+@dataclass
+class RockRenderContext:
+
+    ax: object
+
+    v: dict
+    rng: object
+    py_rng: object
+
+    body: object
+    body_points: np.ndarray
+    body_color: object
+
+    s: float
+
+    rock: genetics.Rock
+
+    def __post_init__(
+        self
+    ):
+        self.xmin = float(np.min(self.body_points[:, 0]))
+        self.xmax = float(np.max(self.body_points[:, 0]))
+        self.ymin = float(np.min(self.body_points[:, 1]))
+        self.ymax = float(np.max(self.body_points[:, 1]))
+
+        self.width = self.xmax - self.xmin
+        self.height = self.ymax - self.ymin
+
+        self.cx = 0.5 * (self.xmin + self.xmax)
+        self.cy = 0.5 * (self.ymin + self.ymax)
+
+        self.unit = min(self.width, self.height)
+
+        self.presence = self._build_feature_presence()
+        self.face_layout = self._build_face_layout()
+
+    def xy(
+        self, 
+        nx: float, 
+        ny: float,
+    ) -> tuple[float, float]:
+        
+        """
+        Convert normalized bounding-box body coordinates to actual plot coordinates.
+
+        nx = 0 means body bounding-box left
+        nx = 1 means body bounding-box right
+        ny = 0 means body bottom
+        ny = 1 means body top
+        """
+
+        x = self.xmin + nx * self.width
+        y = self.ymin + ny * self.height
+        return x, y
+
+    def body_xy(
+        self, 
+        nx: float, 
+        ny: float
+    ) -> tuple[float, float]:
+        
+        """
+        Convert normalized coordinates to actual plot coordinates,
+        but use the real body width at that y-level.
+
+        This is better than xy() for triangles, oblongs, and irregular bodies.
+        """
+
+        left_x, right_x = self.body_x_span_at_ny(ny)
+        y = self.ymin + ny * self.height
+        x = left_x + nx * (right_x - left_x)
+        return x, y
+
+    def body_x_span_at_ny(
+        self, 
+        ny: float
+    ) -> tuple[float, float]:
+        
+        """
+        Find the left and right body boundary at a normalized y-position.
+
+        This lets face features fit inside the actual body shape instead of
+        only using the bounding box.
+        """
+
+        y = self.ymin + ny * self.height
+        points = self.body_points
+        intersections = []
+
+        for i in range(len(points)):
+            x1, y1 = points[i]
+            x2, y2 = points[(i + 1) % len(points)]
+
+            crosses = (y1 <= y <= y2) or (y2 <= y <= y1)
+
+            if not crosses:
+                continue
+
+            if y1 == y2:
+                continue
+
+            t = (y - y1) / (y2 - y1)
+            x = x1 + t * (x2 - x1)
+            intersections.append(float(x))
+
+        if len(intersections) < 2:
+            return self.xmin, self.xmax
+
+        intersections.sort()
+        return intersections[0], intersections[-1]
+
+    def phen(
+        self, 
+        gene_name: str, 
+        default: str = "n/a"
+    ) -> str:
+        
+        """
+        Get the already-computed phenotype for a gene.
+        """
+
+        if self.rock is not None:
+            genotype = self.rock.genotype.genes[gene_name]
+
+            phenotype = genotype.phenotype
+
+            if phenotype is not None:
+                return phenotype
+        
+        else:
+            return (default)
+
+    def is_present(
+        self, 
+        gene_name: str
+    ) -> bool:
+
+        phenotype = self.phen(gene_name)
+
+        absent_values = {
+            #None,
+            #"",
+            "n/a",
+            #"none",
+            #"inactive",
+            #"off",
+            #False,
+            #0,
+        }
+
+        return phenotype not in absent_values
+
+    def feature_xy(
+        self, 
+        feature_name: str
+    ) -> tuple[float, float]:
+
+        """
+        Return the planned x/y coordinate for a feature.
+        """
+
+        slot = self.face_layout.get(feature_name)
+
+        if slot is None:
+            return self.body_xy(0.5, 0.5)
+
+        return self.body_xy(slot.nx, slot.ny)
+
+    def feature_scale(
+        self, 
+        feature_name: str, 
+        default: float = 1.0
+    ) -> float:
+        
+        slot = self.face_layout.get(feature_name)
+
+        if slot is None:
+            return default
+
+        return slot.scale
+
+    def _build_feature_presence(
+        self
+    ) -> FeaturePresence:
+        
+        return FeaturePresence(
+            eyes = self.is_present("eyes"),
+            brows = self.is_present("brows"),
+            nose = self.is_present("noses"),
+            mouth = self.is_present("mouths"),
+            facial_hair = self.is_present("facial_hair"),
+            hair = self.is_present("hair"),
+            horns = self.is_present("horns"),
+            ears = self.is_present("ears"),
+            crown = self.is_present("crowns"),
+            halo = self.is_present("halos"),
+            wings = self.is_present("wings"),
+            tail = self.is_present("tails"),
+        )
+
+    def _build_face_layout(
+        self
+    ) -> FaceLayout:
+        
+        """
+        Build dynamic facial feature positions.
+
+        If only eyes are present, they sit more centrally.
+        If many features are present, they spread vertically.
+        """
+
+        slots: dict[str, FeatureSlot] = {}
+
+        face_top = 0.72
+        face_bottom = 0.28
+
+        # Reserve upper head space if upper features exist.
+        if self.presence.hair:
+            face_top -= 0.07
+
+        if self.presence.crown:
+            face_top -= 0.03
+
+        if self.presence.horns:
+            face_top -= 0.02
+
+        # Give facial hair some lower room.
+        if self.presence.facial_hair:
+            face_bottom = 0.22
+
+        ordered_face_features = []
+
+        if self.presence.brows:
+            ordered_face_features.append("brows")
+
+        if self.presence.eyes:
+            ordered_face_features.append("eyes")
+
+        if self.presence.nose:
+            ordered_face_features.append("nose")
+
+        if self.presence.mouth:
+            ordered_face_features.append("mouth")
+
+        if self.presence.facial_hair:
+            ordered_face_features.append("facial_hair")
+
+        if len(ordered_face_features) == 0:
+            return FaceLayout(slots = slots)
+
+        if ordered_face_features == ["eyes"]:
+
+            slots["eyes"] = FeatureSlot(
+                name = "eyes",
+                nx = 0.5,
+                ny = 0.53,
+                scale = 1.15,
+            )
+
+            return FaceLayout(slots=slots)
+
+        if len(ordered_face_features) == 1:
+
+            feature = ordered_face_features[0]
+
+            slots[feature] = FeatureSlot(
+                name = feature,
+                nx = 0.5,
+                ny = 0.50,
+                scale = 1.05,
+            )
+
+            return FaceLayout(slots = slots)
+
+        y_positions = np.linspace(
+            face_top,
+            face_bottom,
+            len(ordered_face_features),
+        )
+
+        for feature, ny in zip(ordered_face_features, y_positions):
+
+            scale = 1.0
+
+            if feature == "eyes":
+                scale = 1.0
+
+            if feature == "brows":
+                scale = 0.95
+
+            if feature == "facial_hair":
+                scale = 1.05
+
+            slots[feature] = FeatureSlot(
+                name = feature,
+                nx = 0.5,
+                ny = float(ny),
+                scale = scale,
+            )
+
+        return FaceLayout(slots = slots)
+
+#-----------------------------------------------------
+# EYE COLOR MAP
+#-----------------------------------------------------
+
 EYE_COLOR_MAP = {
     "white":  "white",
     "black":  "black",
@@ -23,11 +393,8 @@ EYE_COLOR_MAP = {
     "evil":   "crimson",
     "purple": "purple",
     "callus": "tan",
-    "n/a":    "black",
+    "n/a":    "white",
 }
-# -----------------------------
-# Body color system
-# -----------------------------
 
 BODY_COLOR_MAP = {
     "white":     (0.88, 0.86, 0.80),
