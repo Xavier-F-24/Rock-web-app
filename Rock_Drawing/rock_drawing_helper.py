@@ -17,17 +17,38 @@ This file answers:
 # IMPORT ZONE
 #-----------------------------------------------------
 
+import base64
+import hashlib
+import io
 import random, math
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+
+from matplotlib.patches import (
+    Polygon, Circle, Ellipse, Arc, PathPatch
+)
+
+from matplotlib.axes import Axes
+from matplotlib.path import Path
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import Any, List
+
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+except ModuleNotFoundError:
+    px = None
+    go = None
 
 #-----------------------------------------------------
 # SPECIAL IMPORT ZONE
 #-----------------------------------------------------
 
 import Rock_Genetics.rock_genetic_helper as genetics
+
+PAD_FRAC = 0.2
 
 #-----------------------------------------------------
 # START MAJOR REFACTOR: FEATURE PRESENCE 
@@ -74,25 +95,53 @@ class FaceLayout:
         return self.slots.get(feature_name)
 
 #-----------------------------------------------------
+# BODY COLOR MAP FOR CONTEXT
+#-----------------------------------------------------
+
+BODY_COLOR_MAP = {
+    "white":     (0.88, 0.86, 0.80),
+    "black":     (0.16, 0.15, 0.15),
+    "silver":    (0.62, 0.62, 0.58),
+
+    "brown":     (0.48, 0.30, 0.18),
+
+    "red":       (0.74, 0.25, 0.22),
+    "yellow":    (0.90, 0.72, 0.25),
+    "blue":      (0.24, 0.40, 0.72),
+
+    "orange":    (0.92, 0.46, 0.16),
+    "green":     (0.28, 0.62, 0.30),
+    "purple":    (0.52, 0.25, 0.65),
+
+    "patchwork": (0.52, 0.48, 0.42),
+    "n/a":       (0.45, 0.42, 0.38),
+}
+
+#-----------------------------------------------------
 # ROCK RENDERER CONTEXT: NEW AND IMPORVED
 #-----------------------------------------------------
 
 @dataclass
 class RockRenderContext:
 
-    ax: object
-
-    v: dict
-    rng: object
-    py_rng: object
+    ax: Axes
 
     body: object
     body_points: np.ndarray
     body_color: object
 
-    s: float
+    size_scale: float
+
+    rng: object
+    py_rng: object
 
     rock: genetics.Rock
+    v: dict[str, Any] | None = None
+
+    presence: FeaturePresence = field(default_factory = FeaturePresence)
+    face_layout: FaceLayout = field(default_factory = FaceLayout)
+
+    body_color_map = BODY_COLOR_MAP
 
     def __post_init__(
         self
@@ -110,8 +159,25 @@ class RockRenderContext:
 
         self.unit = min(self.width, self.height)
 
-        self.presence = self._build_feature_presence()
-        self.face_layout = self._build_face_layout()
+        if self.v is None:
+            self.v = get_visual_phenotype(self.rock)
+
+        self.presence = self.build_feature_presence()
+        self.face_layout = self.build_face_layout()
+
+    @property
+    def s(
+        self
+    ) -> float:
+        """
+        Compatibility alias for old drawing functions.
+        """
+
+        return self.size_scale
+
+    #-----------------------------------------------------
+    # BODY FINDING HELPERS
+    #-----------------------------------------------------
 
     def xy(
         self, 
@@ -188,6 +254,10 @@ class RockRenderContext:
         intersections.sort()
         return intersections[0], intersections[-1]
 
+    #-----------------------------------------------------
+    # FEATURE HELPERS
+    #-----------------------------------------------------
+
     def phen(
         self, 
         gene_name: str, 
@@ -199,35 +269,20 @@ class RockRenderContext:
         """
 
         if self.rock is not None:
-            genotype = self.rock.genotype.genes[gene_name]
+            genotype = self.rock.genotype.genes.get(gene_name)
+
+            if genotype is None:
+                return default
 
             phenotype = genotype.phenotype
 
             if phenotype is not None:
                 return phenotype
+            else:
+                return (default)
         
         else:
             return (default)
-
-    def is_present(
-        self, 
-        gene_name: str
-    ) -> bool:
-
-        phenotype = self.phen(gene_name)
-
-        absent_values = {
-            #None,
-            #"",
-            "n/a",
-            #"none",
-            #"inactive",
-            #"off",
-            #False,
-            #0,
-        }
-
-        return phenotype not in absent_values
 
     def feature_xy(
         self, 
@@ -257,8 +312,32 @@ class RockRenderContext:
             return default
 
         return slot.scale
+    
+    #-----------------------------------------------------
+    # FEATURE PRESENCE BUILDING
+    #-----------------------------------------------------
 
-    def _build_feature_presence(
+    def is_present(
+        self, 
+        gene_name: str
+    ) -> bool:
+
+        phenotype = self.phen(gene_name)
+
+        absent_values = {
+            #None,
+            #"",
+            "n/a",
+            #"none",
+            #"inactive",
+            #"off",
+            #False,
+            #0,
+        }
+
+        return phenotype not in absent_values
+
+    def build_feature_presence(
         self
     ) -> FeaturePresence:
         
@@ -277,7 +356,11 @@ class RockRenderContext:
             tail = self.is_present("tails"),
         )
 
-    def _build_face_layout(
+    #-----------------------------------------------------
+    # FACE LAYOUT BUILDING
+    #-----------------------------------------------------
+
+    def build_face_layout(
         self
     ) -> FaceLayout:
         
@@ -379,6 +462,142 @@ class RockRenderContext:
 
         return FaceLayout(slots = slots)
 
+    #-----------------------------------------------------
+    # BUILDING ROCK RENDER CONTEXT BODY POINTS
+    #-----------------------------------------------------
+    
+    @staticmethod
+    def get_body_color_from_rock(
+        rock,
+        body_color_map = BODY_COLOR_MAP
+    ):
+
+        color_name = get_visual_phenotype(rock).get("color", "n/a")
+
+        return body_color_map.get(color_name, body_color_map["n/a"])
+
+    @staticmethod
+    def get_phenotype_from_rock(
+        rock, 
+        gene_name: str, 
+        fallback = "n/a"
+    ):
+        
+        gene = rock.genotype.genes[gene_name]
+
+        if gene is not None and hasattr(gene, "phenotype"):
+            phenotype = gene.phenotype
+            if phenotype is not None:
+                return phenotype
+
+        return fallback
+    
+    @classmethod
+    def from_rock(
+        cls, 
+        rock, 
+        ax
+    ):
+
+        rng = np.random.default_rng(
+            2_000 + abs(rock.id)
+        
+        )
+        py_rng = random.Random(
+            1_000 + abs(rock.id)
+        )
+
+        shape_name = cls.get_phenotype_from_rock(
+            rock = rock,
+            gene_name = "shape",
+            fallback = "circle",
+        )
+
+        size_name = cls.get_phenotype_from_rock(
+            rock = rock,
+            gene_name = "size",
+            fallback = "medium",
+        )
+
+        body_points, size_scale = make_body_points(
+            shape_name = shape_name,
+            size_name = size_name,
+            rng = rng,
+        )
+
+        body_color = cls.get_body_color_from_rock(
+            rock = rock,
+        )
+
+        body = Polygon(
+            body_points,
+            closed = True,
+            facecolor = body_color,
+            edgecolor = "black",
+            linewidth = 2.0,
+            zorder = 1,
+        )
+
+        return cls(
+            ax = ax,
+
+            body = body,
+            body_points = body_points,
+            body_color = body_color,
+
+            size_scale = size_scale,
+
+            rng = rng,
+            py_rng = py_rng,
+
+            rock = rock,
+            v = get_visual_phenotype(rock),
+            
+        )
+
+    #-----------------------------------------------------
+    # HELPFUL IMAGE SETUPS
+    #-----------------------------------------------------
+
+    def apply_camera(
+        self, 
+        normalize_size: bool = True
+    ):
+        
+        self.ax.set_title(f"{self.rock.name} #{self.rock.id} \n Gen {self.rock.generation}")
+        self.ax.set_aspect("equal")
+
+        if normalize_size:
+            self.ax.set_xlim(-2.0 * self.size_scale, 2.0 * self.size_scale)
+            self.ax.set_ylim(-1.65 * self.size_scale, 1.75 * self.size_scale)
+        else:
+            self.ax.set_xlim(-3.0, 3.0)
+            self.ax.set_ylim(-2.55, 2.85)
+
+        self.ax.axis("off")
+
+    def apply_labels(
+        self, 
+        show_genes: bool = False
+    ):
+        
+        if not show_genes:
+            return
+
+        gene_text = "\n".join(
+            f"{gene_name}: {gene_pair}"
+            for gene_name, gene_pair in self.rock.genotype.genes.items()
+        )
+
+        self.ax.text(
+            1.55 * self.size_scale,
+            1.35 * self.size_scale,
+            gene_text,
+            fontsize = 7,
+            va = "top",
+            family = "monospace",
+        )
+
 #-----------------------------------------------------
 # EYE COLOR MAP
 #-----------------------------------------------------
@@ -396,24 +615,7 @@ EYE_COLOR_MAP = {
     "n/a":    "white",
 }
 
-BODY_COLOR_MAP = {
-    "white":     (0.88, 0.86, 0.80),
-    "black":     (0.16, 0.15, 0.15),
-    "silver":    (0.62, 0.62, 0.58),
 
-    "brown":     (0.48, 0.30, 0.18),
-
-    "red":       (0.74, 0.25, 0.22),
-    "yellow":    (0.90, 0.72, 0.25),
-    "blue":      (0.24, 0.40, 0.72),
-
-    "orange":    (0.92, 0.46, 0.16),
-    "green":     (0.28, 0.62, 0.30),
-    "purple":    (0.52, 0.25, 0.65),
-
-    "patchwork": (0.52, 0.48, 0.42),
-    "n/a":       (0.45, 0.42, 0.38),
-}
 
 BODY_PRIMARY_CLASS = {"white", "black"}
 BODY_SECONDARY_CLASS = {"brown"}
@@ -444,6 +646,215 @@ HAIR_DOMINANCE_RANK = {
     "blue": 5,
 }
 
+def clean_color_alleles(
+    color_alleles
+):
+    cleaned = []
+
+    for color_name in color_alleles:
+        if color_name is None:
+            continue
+
+        color_name = str(color_name).lower()
+
+        if color_name != "n/a":
+            cleaned.append(color_name)
+
+    return cleaned
+
+def express_body_color_name(
+    color_alleles
+):
+    """
+    Body color rule used by the renderer.
+    """
+
+    alleles = clean_color_alleles(color_alleles)
+
+    if len(alleles) == 0:
+        return "n/a"
+
+    a = alleles[0]
+    b = alleles[1] if len(alleles) > 1 else alleles[0]
+    pair = {a, b}
+
+    primary_present = [color_name for color_name in [a, b] if color_name in BODY_PRIMARY_CLASS]
+
+    if len(primary_present) == 2:
+        if pair == {"white", "black"}:
+            return "silver"
+        return primary_present[0]
+
+    if len(primary_present) == 1:
+        return primary_present[0]
+
+    if "brown" in pair:
+        return "brown"
+
+    tertiary_present = [color_name for color_name in [a, b] if color_name in BODY_TERTIARY_CLASS]
+
+    if len(tertiary_present) == 2:
+        tertiary_pair = set(tertiary_present)
+
+        if tertiary_pair == {"red", "yellow"}:
+            return "orange"
+        if tertiary_pair == {"red", "blue"}:
+            return "purple"
+        if tertiary_pair == {"yellow", "blue"}:
+            return "green"
+
+        return tertiary_present[0]
+
+    if len(tertiary_present) == 1:
+        return tertiary_present[0]
+
+    if a == "patchwork" and b == "patchwork":
+        return "patchwork"
+
+    return "n/a"
+
+def express_hair_color_name(
+    hair_color_alleles
+):
+    """
+    Hair color rule used by the renderer.
+    """
+
+    alleles = clean_color_alleles(hair_color_alleles)
+
+    if len(alleles) == 0:
+        return "black"
+
+    a = alleles[0]
+    b = alleles[1] if len(alleles) > 1 else alleles[0]
+    pair = {a, b}
+
+    if pair == {"white", "black"}:
+        return "silver"
+
+    ranked = sorted(
+        [a, b],
+        key = lambda color_name: HAIR_DOMINANCE_RANK.get(color_name, 999),
+    )
+
+    return ranked[0]
+
+def get_gene_pair(
+    rock,
+    gene_name: str
+):
+    genotype = getattr(rock, "genotype", None)
+
+    if genotype is None:
+        return None
+
+    return genotype.genes.get(gene_name)
+
+def get_gene_values(
+    rock,
+    gene_name: str
+) -> list[int]:
+    gene_pair = get_gene_pair(rock, gene_name)
+
+    if gene_pair is None:
+        return []
+
+    return [
+        gene_pair.allele_a.value,
+        gene_pair.allele_b.value,
+    ]
+
+def get_gene_allele_names(
+    rock,
+    gene_name: str
+) -> list[str]:
+    values = get_gene_values(rock, gene_name)
+    spec = genetics.GENE_SPECS.get(gene_name)
+
+    if spec is None:
+        return [str(value) for value in values]
+
+    names = []
+
+    for value in values:
+        option = spec.options.get(value)
+        names.append(option.name if option is not None else str(value))
+
+    return names
+
+def get_gene_phenotype(
+    rock,
+    gene_name: str,
+    fallback: str = "n/a"
+) -> str:
+    gene_pair = get_gene_pair(rock, gene_name)
+
+    if gene_pair is None:
+        return fallback
+
+    if gene_pair.phenotype is None:
+        return fallback
+
+    return gene_pair.phenotype
+
+def get_rock_gender_value(
+    rock
+) -> int:
+    if getattr(rock, "sex", genetics.Sex.FEMALE) == genetics.Sex.MALE:
+        return 1
+
+    return 0
+
+def get_visual_phenotype(
+    rock
+) -> dict[str, Any]:
+    """
+    Build the renderer-facing phenotype dictionary from genetics dataclasses.
+    """
+
+    v: dict[str, Any] = {}
+
+    v["gender"] = "Male" if get_rock_gender_value(rock) == 1 else "Female"
+
+    status = getattr(rock, "status", None)
+    v["is_craisen"] = status == genetics.RockStatus.CRAISENED or bool(getattr(rock, "is_craisen", False))
+
+    for gene_name in genetics.GENE_SPECS:
+        values = get_gene_values(rock, gene_name)
+        allele_names = get_gene_allele_names(rock, gene_name)
+
+        v[f"{gene_name}_values"] = values
+        v[f"{gene_name}_alleles"] = allele_names
+        v[gene_name] = get_gene_phenotype(rock, gene_name)
+
+    eye_values = v.get("eyes_values", [])
+    fuzz_values = v.get("fuzz_values", [])
+    hair_values = v.get("hair_values", [])
+
+    v["eyes_count"] = sum(1 for value in eye_values if value == 1)
+    v["fuzz_count"] = sum(1 for value in fuzz_values if value == 1)
+    v["hair_count"] = sum(1 for value in hair_values if value == 1)
+
+    arm_values = v.get("arms_values", [])
+    v["normal_arm_pairs"] = arm_values.count(1)
+    v["muscle_arm_pairs"] = arm_values.count(2)
+    v["normal_arm_count"] = 2 * v["normal_arm_pairs"]
+    v["muscle_arm_count"] = 2 * v["muscle_arm_pairs"]
+
+    v["color"] = express_body_color_name(v.get("color_alleles", []))
+    v["hair_color"] = express_hair_color_name(v.get("hair_color_alleles", []))
+
+    if v["gender"] == "Female" and v.get("facial_hair", "n/a") != "n/a":
+        v["facial_hair"] = "peach fuzz"
+
+    return v
+
+def get_body_color_from_alleles(
+    color_alleles
+):
+    color_name = express_body_color_name(color_alleles)
+    return BODY_COLOR_MAP.get(color_name, BODY_COLOR_MAP["n/a"])
+
 def get_hair_color_from_alleles(hair_color_alleles):
     color_name = express_hair_color_name(hair_color_alleles)
     return HAIR_COLOR_MAP.get(color_name, HAIR_COLOR_MAP["white"])
@@ -453,49 +864,6 @@ def get_render_hair_color(ctx):
         ctx.v.get("hair_color_alleles", [ctx.v.get("hair_color", "black")])
     )
 
-# -----------------------------
-# ROCK RENDERER
-# -----------------------------
-
-@dataclass
-class RockRenderContext:
-    ax: object
-    rock: object
-    v: dict
-    rng: object
-    py_rng: object
-    body: object
-    body_points: np.ndarray
-    s: float
-    body_color: object
-
-    def __post_init__(self):
-        self.xmin = float(np.min(self.body_points[:, 0]))
-        self.xmax = float(np.max(self.body_points[:, 0]))
-        self.ymin = float(np.min(self.body_points[:, 1]))
-        self.ymax = float(np.max(self.body_points[:, 1]))
-
-        self.width = self.xmax - self.xmin
-        self.height = self.ymax - self.ymin
-
-        self.cx = 0.5 * (self.xmin + self.xmax)
-        self.cy = 0.5 * (self.ymin + self.ymax)
-
-        self.unit = min(self.width, self.height)
-
-    def xy(self, nx, ny):
-        """
-        Convert normalized body coordinates to actual plot coordinates.
-
-        nx = 0 means body left edge
-        nx = 1 means body right edge
-        ny = 0 means body bottom
-        ny = 1 means body top
-        """
-        x = self.xmin + nx * self.width
-        y = self.ymin + ny * self.height
-        return x, y
-    
 def make_body_points(shape_name, size_name, rng):
     """
     Generate the body outline points.
@@ -568,9 +936,7 @@ def make_body_points(shape_name, size_name, rng):
 
     return points, s
 
-def get_body_color_from_alleles(color_alleles):
-    color_name = express_body_color_name(color_alleles)
-    return BODY_COLOR_MAP.get(color_name, BODY_COLOR_MAP["n/a"])
+
 
 # -----------------------------
 # DRAWING WINGS FOR ROCK
@@ -4663,128 +5029,162 @@ def draw_facial_hair(ctx, rock, v, drawn_eye_positions=None, nose_info=None, mou
 # DRAWING A FULL ROCK
 # -----------------------------
 
+@dataclass
+class DrawMachine:
+    """
+    Orchestrates one rock render.
+    """
+
+    rock: genetics.Rock
+    ax: Axes | None = None
+    show_genes: bool = False
+    normalize_size: bool = True
+
+    ctx: RockRenderContext | None = None
+    drawn_eye_positions: list[tuple[float, float, float]] = field(default_factory = list)
+    nose_info: Any = None
+    mouth_info: Any = None
+
+    def ensure_axis(
+        self
+    ) -> Axes:
+        if self.ax is None:
+            _, self.ax = plt.subplots(figsize = (4, 4))
+
+        return self.ax
+
+    def make_context(
+        self
+    ) -> RockRenderContext:
+        self.ctx = RockRenderContext.from_rock(
+            rock = self.rock,
+            ax = self.ensure_axis(),
+        )
+
+        return self.ctx
+
+    def draw_external_traits(
+        self
+    ):
+        ctx = self.ctx
+
+        draw_wings(ctx)
+        draw_fuzz(ctx)
+        draw_halo(ctx)
+        draw_stones(ctx)
+        draw_tail(ctx)
+        draw_horns(ctx)
+
+    def draw_body(
+        self
+    ):
+        ctx = self.ctx
+
+        ctx.ax.add_patch(ctx.body)
+        draw_patchwork(
+            ctx.ax,
+            ctx.body,
+            ctx.v.get("color_alleles", [ctx.v.get("color", "brown")]),
+            ctx.s,
+            ctx.rng,
+        )
+
+    def draw_body_attached_traits(
+        self
+    ):
+        ctx = self.ctx
+
+        draw_hair(ctx, self.rock, ctx.v)
+        draw_ears(ctx)
+        draw_wrinkles(ctx)
+        draw_freckles(ctx)
+        draw_arms(ctx)
+        draw_crown(ctx)
+
+    def draw_face(
+        self
+    ):
+        ctx = self.ctx
+
+        self.drawn_eye_positions = draw_eyes(ctx)
+        draw_brows(ctx, self.drawn_eye_positions)
+        self.nose_info = draw_nose(ctx, self.drawn_eye_positions)
+        self.mouth_info = draw_mouth(ctx, self.drawn_eye_positions)
+
+        draw_facial_hair(
+            ctx,
+            self.rock,
+            ctx.v,
+            drawn_eye_positions = self.drawn_eye_positions,
+            nose_info = self.nose_info,
+            mouth_info = self.mouth_info,
+        )
+
+    def draw_craisen_overlay(
+        self
+    ):
+        ctx = self.ctx
+
+        if not ctx.v.get("is_craisen", False):
+            return
+
+        ctx.ax.plot(
+            [-0.75 * ctx.s, 0.75 * ctx.s],
+            [-0.75 * ctx.s, 0.75 * ctx.s],
+            color = "crimson",
+            linewidth = 4,
+            zorder = 20,
+        )
+        ctx.ax.plot(
+            [-0.75 * ctx.s, 0.75 * ctx.s],
+            [0.75 * ctx.s, -0.75 * ctx.s],
+            color = "crimson",
+            linewidth = 4,
+            zorder = 20,
+        )
+        ctx.ax.text(
+            0,
+            -1.25 * ctx.s,
+            "CRAISEN",
+            color = "crimson",
+            ha = "center",
+            va = "center",
+            fontsize = 10,
+            fontweight = "bold",
+        )
+
+    def finalize(
+        self
+    ):
+        self.ctx.apply_camera(normalize_size = self.normalize_size)
+        self.ctx.apply_labels(show_genes = self.show_genes)
+
+    def draw(
+        self
+    ) -> Axes:
+        self.make_context()
+        self.draw_external_traits()
+        self.draw_body()
+        self.draw_body_attached_traits()
+        self.draw_face()
+        self.draw_craisen_overlay()
+        self.finalize()
+
+        return self.ctx.ax
+
 def draw_rock(rock, ax=None, show_genes=False, normalize_size=True):
     """
     Trait-based rock renderer.
-
-    Uses the new categorical/co-dominant visual phenotype.
     """
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(4, 4))
 
-    rng = np.random.default_rng(1_000_000 + rock.id)
-    py_rng = random.Random(200_000 + rock.id)
-
-    v = get_visual_phenotype(rock)
-
-    shape_name = v.get("shape", "circle")
-    size_name = v.get("size", "medium")
-    color_name = v.get("color", "brown")
-    color_alleles = v.get("color_alleles", [color_name])
-
-    body_points, s = make_body_points(shape_name, size_name, rng)
-    body_color = get_body_color_from_alleles(color_alleles)
-
-    body = Polygon(
-        body_points,
-        closed=True,
-        facecolor=body_color,
-        edgecolor="black",
-        linewidth=2.0,
-        zorder=1
+    machine = DrawMachine(
+        rock = rock,
+        ax = ax,
+        show_genes = show_genes,
+        normalize_size = normalize_size,
     )
 
-    ctx = RockRenderContext(
-        ax=ax,
-        rock=rock,
-        v=v,
-        rng=rng,
-        py_rng=py_rng,
-        body=body,
-        body_points=body_points,
-        s=s,
-        body_color=body_color
-        )
-
-    draw_wings(ctx)
-    draw_fuzz(ctx)
-    draw_halo(ctx)
-
-    draw_stones(ctx)
-    draw_tail(ctx)
-
-    draw_horns(ctx)
-
-    ax.add_patch(body)
-    draw_patchwork(ax, body, color_alleles, s, rng)
-    draw_hair(ctx, rock, v)
-
-    draw_ears(ctx)
-
-    draw_wrinkles(ctx)
-    draw_freckles(ctx)
-
-    draw_arms(ctx)
-    draw_crown(ctx)
-
-    drawn_eye_positions = draw_eyes(ctx)
-    draw_brows(ctx, drawn_eye_positions)
-    nose_info = draw_nose(ctx, drawn_eye_positions)
-    mouth_info = draw_mouth(ctx, drawn_eye_positions)
-    draw_facial_hair(
-      ctx,
-      rock,
-      v,
-      drawn_eye_positions=drawn_eye_positions,
-      nose_info=nose_info,
-      mouth_info=mouth_info
-      )
-
-    # Temporary compatibility for any older code below this point.
-    eye_positions = [(x, y) for x, y, r in drawn_eye_positions]
-
-    # -----------------------------
-    # Craisen overlay
-    # -----------------------------
-
-    if v.get("is_craisen", False):
-        ax.plot([-0.75 * s, 0.75 * s], [-0.75 * s, 0.75 * s], color="crimson", linewidth=4, zorder=20)
-        ax.plot([-0.75 * s, 0.75 * s], [0.75 * s, -0.75 * s], color="crimson", linewidth=4, zorder=20)
-        ax.text(0, -1.25 * s, "CRAISEN", color="crimson", ha="center", va="center", fontsize=10, fontweight="bold")
-
-    # -----------------------------
-    # Labels / formatting
-    # -----------------------------
-
-    ax.set_title(f"{rock.name} #{rock.id}\nGen {rock.generation}")
-    ax.set_aspect("equal")
-
-    if normalize_size:
-        # Portrait mode:
-        # each rock fills its own frame.
-        ax.set_xlim(-2.0 * s, 2.0 * s)
-        ax.set_ylim(-1.65 * s, 1.75 * s)
-    else:
-        # Comparison mode:
-        # every rock uses the same camera.
-        # This makes small/large/giant visibly different.
-        ax.set_xlim(-3.0, 3.0)
-        ax.set_ylim(-2.55, 2.85)
-
-    ax.axis("off")
-
-    if show_genes:
-        gene_text = "\n".join([f"{k}: {v}" for k, v in rock.genes.items()])
-        ax.text(
-            1.55 * s,
-            1.35 * s,
-            gene_text,
-            fontsize=7,
-            va="top",
-            family="monospace"
-        )
-
-    return ax
+    return machine.draw()
 
 # -----------------------------
 # SHOWING SOME ROCK
@@ -5150,12 +5550,26 @@ def compute_lineage_positions_christmas(
 
     return pos
 
-FAMILY_PALETTE = (
-    px.colors.qualitative.Safe
-    + px.colors.qualitative.Set2
-    + px.colors.qualitative.Pastel
-    + px.colors.qualitative.Bold
-)
+if px is not None:
+    FAMILY_PALETTE = (
+        px.colors.qualitative.Safe
+        + px.colors.qualitative.Set2
+        + px.colors.qualitative.Pastel
+        + px.colors.qualitative.Bold
+    )
+else:
+    FAMILY_PALETTE = (
+        "#4E79A7",
+        "#F28E2B",
+        "#59A14F",
+        "#E15759",
+        "#B07AA1",
+        "#76B7B2",
+        "#EDC948",
+        "#9C755F",
+        "#FF9DA7",
+        "#BAB0AC",
+    )
 
 def family_color(parent_pair):
     """

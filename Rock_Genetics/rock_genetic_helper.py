@@ -617,7 +617,7 @@ class GenomeFactory:
     genome_spec_list = GENE_SPECS
     death_gene_list = ["death_gene1", "death_gene2", "death_gene3"]
 
-    rng: random.Random = field(default_factory=random.Random)
+    rng: random.Random = field(default_factory = random.Random)
 
     #-----------------------------------------------------
     # SETUP DEFINITION ZONE TO MAKE ROCK GENOMES
