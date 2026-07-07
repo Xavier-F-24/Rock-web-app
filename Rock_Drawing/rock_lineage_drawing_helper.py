@@ -323,7 +323,6 @@ class TreeDrawer:
     def add_node_text(self, fig: go.Figure, positions: dict[int, tuple[float, float]]) -> None:
         for rock_id, rock in self.helper.rocks.items():
             x, y = positions[rock_id]
-            status_symbol = get_rock_status_symbol(rock)
 
             fig.add_trace(
                 go.Scatter(
@@ -336,19 +335,6 @@ class TreeDrawer:
                     showlegend=False,
                 )
             )
-
-            if status_symbol:
-                fig.add_trace(
-                    go.Scatter(
-                        x=[x + 0.75],
-                        y=[y + 0.65],
-                        mode="text",
-                        text=[status_symbol],
-                        textfont={"size": 14, "color": get_rock_status_color(rock)},
-                        hoverinfo="skip",
-                        showlegend=False,
-                    )
-                )
 
     @staticmethod
     def hover_text(rock: genetics.Rock) -> str:

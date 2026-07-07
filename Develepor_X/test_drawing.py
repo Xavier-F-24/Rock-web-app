@@ -1,10 +1,12 @@
 import base64
+import io
 
 import matplotlib
 
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+from PIL import Image
 
 from Rock_Drawing.rock_draw_machine import DrawMachine, IdentityLabelLayout, draw_rock
 from Rock_Drawing.rock_drawing_helper import render_game_rock_images, rock_to_image_uri
@@ -13,6 +15,7 @@ from Rock_Drawing.rock_render_context import RockRenderContext
 from Rock_GameState.rock_game_state_helper import GameMaster
 
 from conftest import make_rock
+import Rock_Genetics.rock_genetic_helper as genetics
 
 
 def test_render_context_from_rock_creates_body_and_layout_data():
@@ -67,6 +70,27 @@ def test_draw_rock_returns_axis_and_adds_body_patch():
         plt.close(fig)
 
 
+def test_identity_layout_formats_structured_names_and_status_symbol():
+    fig, ax = plt.subplots()
+    rock = make_rock()
+    rock.name = genetics.RockName(
+        honorific="Lady",
+        given="Pebble",
+        family="Moonstone",
+        epithet="the Bright",
+    )
+    rock.change_status(genetics.RockStatus.SOLD)
+
+    try:
+        DrawMachine(rock=rock, ax=ax).draw()
+
+        text_values = [text.get_text() for text in ax.texts]
+        assert "$" in text_values
+        assert any("Lady\nPebble Moonstone\nthe Bright" in value for value in text_values)
+    finally:
+        plt.close(fig)
+
+
 def test_rock_to_image_uri_returns_png_data_uri():
     rock = make_rock()
 
@@ -76,6 +100,25 @@ def test_rock_to_image_uri_returns_png_data_uri():
     encoded = uri.split(",", 1)[1]
     png_bytes = base64.b64decode(encoded)
     assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_rock_to_image_uri_uses_stable_canvas_for_long_names():
+    short_name_rock = make_rock(rock_id=1)
+    long_name_rock = make_rock(rock_id=2)
+    long_name_rock.name = genetics.RockName(
+        honorific="Archduchess",
+        given="Pebblewithaverylonggivenname",
+        family="Moonstonewithaverylongfamilyname",
+        epithet="the Particularly Bright",
+    )
+
+    short_uri = rock_to_image_uri(short_name_rock, sprite_size=1.0, dpi=80)
+    long_uri = rock_to_image_uri(long_name_rock, sprite_size=1.0, dpi=80)
+
+    short_image = Image.open(io.BytesIO(base64.b64decode(short_uri.split(",", 1)[1])))
+    long_image = Image.open(io.BytesIO(base64.b64decode(long_uri.split(",", 1)[1])))
+
+    assert short_image.size == long_image.size
 
 
 def test_render_game_rock_images_returns_id_to_uri_cache():

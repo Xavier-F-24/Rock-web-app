@@ -7,6 +7,7 @@ Draw orchestration for individual rock renders.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import textwrap
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -29,8 +30,12 @@ class IdentityLabelLayout:
     name_below_body_radius: float = 0.5
     gender_right_body_radius: float = 0.5
     gender_above_body_radius: float = 0.5
+    status_right_body_radius: float = 0.0
+    status_above_center_body_radius: float = 0.65
     name_font_size: int = 8
     gender_font_size: int = 18
+    status_font_size: int = 16
+    fallback_name_line_chars: int = 16
     font_weight: str = "bold"
 
 
@@ -159,13 +164,16 @@ class DrawMachine:
         ctx = self.ctx
         gender_symbol = "\u2642" if self.rock.sex == genetics.Sex.MALE else "\u2640"
         gender_color = "royalblue" if self.rock.sex == genetics.Sex.MALE else "deeppink"
-        name = self.rock.name.full_name if hasattr(self.rock.name, "full_name") else str(self.rock.name)
+        name = self.format_rock_name()
+        status_symbol, status_color = self.get_status_symbol_and_color()
         body_radius = 0.5 * ctx.unit
         layout = self.identity_layout
 
         gender_x = ctx.xmax + layout.gender_right_body_radius * body_radius
         gender_y = ctx.ymax + layout.gender_above_body_radius * body_radius
         name_y = ctx.ymin - layout.name_below_body_radius * body_radius
+        status_x = ctx.cx + layout.status_right_body_radius * body_radius
+        status_y = ctx.cy + layout.status_above_center_body_radius * body_radius
 
         ctx.ax.text(
             gender_x,
@@ -178,6 +186,27 @@ class DrawMachine:
             fontweight=layout.font_weight,
             zorder=30,
         )
+
+        if status_symbol:
+            ctx.ax.text(
+                status_x,
+                status_y,
+                status_symbol,
+                color=status_color,
+                ha="center",
+                va="center",
+                fontsize=layout.status_font_size,
+                fontweight=layout.font_weight,
+                zorder=31,
+                bbox={
+                    "boxstyle": "circle,pad=0.18",
+                    "facecolor": "white",
+                    "edgecolor": status_color,
+                    "linewidth": 1.4,
+                    "alpha": 0.85,
+                },
+            )
+
         ctx.ax.text(
             ctx.cx,
             name_y,
@@ -187,8 +216,55 @@ class DrawMachine:
             va="center",
             fontsize=layout.name_font_size,
             fontweight=layout.font_weight,
+            linespacing=1.0,
             zorder=30,
         )
+
+    def format_rock_name(
+        self
+    ) -> str:
+        name = self.rock.name
+
+        if hasattr(name, "given"):
+            lines = []
+
+            if getattr(name, "honorific", None):
+                lines.append(str(name.honorific))
+
+            core = str(name.given)
+            if getattr(name, "family", None):
+                core = f"{core} {name.family}"
+            lines.append(core)
+
+            if getattr(name, "epithet", None):
+                lines.append(str(name.epithet))
+
+            return "\n".join(lines)
+
+        raw_name = str(name)
+        wrapped = textwrap.wrap(
+            raw_name,
+            width=max(6, self.identity_layout.fallback_name_line_chars),
+        )
+        return "\n".join(wrapped) if wrapped else raw_name
+
+    def get_status_symbol_and_color(
+        self
+    ) -> tuple[str, str]:
+        status = self.rock.status
+
+        if status == genetics.RockStatus.SOLD:
+            return "$", "green"
+        if status == genetics.RockStatus.DEAD:
+            return "X", "black"
+        if status == genetics.RockStatus.CRAISENED:
+            return "!", "crimson"
+        if status == genetics.RockStatus.BRED:
+            return "o", "gray"
+        if bool(getattr(self.rock, "is_market", False)):
+            return "NPC", "darkviolet"
+
+        return "", "black"
 
     def finalize(
         self

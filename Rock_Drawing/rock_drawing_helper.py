@@ -72,8 +72,6 @@ def rock_to_image_uri(rock, sprite_size=2.0, dpi=400, identity_layout=None):
         buffer,
         format="png",
         transparent=True,
-        bbox_inches="tight",
-        pad_inches=0.1,
         dpi=dpi,
     )
     plt.close(fig)
