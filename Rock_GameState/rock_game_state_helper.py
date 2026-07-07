@@ -204,6 +204,8 @@ class GameMaster:
         pair = QueuedPair(parent_a.id, parent_b.id, potion_key)
         self.breeding_queue.append(pair)
         self.events.append(f"Queued #{parent_a.id} x #{parent_b.id}.")
+        for warning in validation.get("warnings", []):
+            self.events.append(warning)
         return pair
 
     def breed_queue(self) -> list[genetics.Rock]:

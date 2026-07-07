@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import math
+import random
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -245,15 +246,19 @@ class TreeHelper:
                 links.append((parents[0], parents[1], int(child_id)))
         return links
 
-    def family_styles(self) -> dict[tuple[int, int], dict[str, str]]:
+    def family_styles(self, seed: int | None = None) -> dict[tuple[int, int], dict[str, str]]:
         parent_pairs = sorted({tuple(sorted((parent_a, parent_b))) for parent_a, parent_b, _ in self.family_links()})
+        style_combinations = [
+            {"color": color, "dash": dash}
+            for color in FAMILY_LINE_COLORS
+            for dash in FAMILY_LINE_DASHES
+        ]
+        rng = random.Random(seed)
+        rng.shuffle(style_combinations)
         styles = {}
 
         for index, pair in enumerate(parent_pairs):
-            styles[pair] = {
-                "color": FAMILY_LINE_COLORS[index % len(FAMILY_LINE_COLORS)],
-                "dash": FAMILY_LINE_DASHES[(index // len(FAMILY_LINE_COLORS)) % len(FAMILY_LINE_DASHES)],
-            }
+            styles[pair] = dict(style_combinations[index % len(style_combinations)])
 
         return styles
 
@@ -284,6 +289,8 @@ class TreeDrawer:
     rock_image_size: float = 1.35
     canvas_width: int = 1200
     canvas_height: int = 800
+    line_style_seed: int | None = None
+    line_clearance: float = 0.82
 
     def __post_init__(self):
         if self.helper is None:
@@ -305,7 +312,8 @@ class TreeDrawer:
         return fig
 
     def add_family_lines(self, fig: go.Figure, positions: dict[int, tuple[float, float]]) -> None:
-        family_styles = self.helper.family_styles()
+        family_styles = self.helper.family_styles(seed=self.line_style_seed)
+        lane_counts: dict[tuple[int, int], int] = {}
 
         for parent_a_id, parent_b_id, child_id in self.helper.family_links():
             family_key = tuple(sorted((parent_a_id, parent_b_id)))
@@ -313,37 +321,44 @@ class TreeDrawer:
             xa, ya = positions[parent_a_id]
             xb, yb = positions[parent_b_id]
             xc, yc = positions[child_id]
-            parent_bar_y = min(ya, yb) - 0.65
-            child_bar_y = yc + 0.75
+            parent_generation = int(getattr(self.helper.rocks[parent_a_id], "generation", 0))
+            child_generation = int(getattr(self.helper.rocks[child_id], "generation", parent_generation + 1))
+            lane_key = (parent_generation, child_generation)
+            lane_index = lane_counts.get(lane_key, 0)
+            lane_counts[lane_key] = lane_index + 1
+            lane_count = max(1, len([
+                link
+                for link in self.helper.family_links()
+                if int(getattr(self.helper.rocks[link[0]], "generation", 0)) == parent_generation
+                and int(getattr(self.helper.rocks[link[2]], "generation", child_generation)) == child_generation
+            ]))
+            lane_fraction = (lane_index + 1) / (lane_count + 1)
+            parent_bar_y = ya - self.line_clearance
+            child_bar_y = yc + self.line_clearance
+            lane_y = parent_bar_y + lane_fraction * (child_bar_y - parent_bar_y)
             parent_center_x = 0.5 * (xa + xb)
-
-            x_values = [
-                xa, xa, None,
-                xb, xb, None,
-                xa, xb, None,
-                parent_center_x, parent_center_x, None,
-                parent_center_x, xc, None,
-                xc, xc,
-            ]
-            y_values = [
-                ya - 0.45, parent_bar_y, None,
-                yb - 0.45, parent_bar_y, None,
-                parent_bar_y, parent_bar_y, None,
-                parent_bar_y, child_bar_y, None,
-                child_bar_y, child_bar_y, None,
-                child_bar_y, yc + 0.45,
+            segments = [
+                ((xa, ya - self.line_clearance), (xa, parent_bar_y)),
+                ((xb, yb - self.line_clearance), (xb, parent_bar_y)),
+                ((xa, parent_bar_y), (xb, parent_bar_y)),
+                ((parent_center_x, parent_bar_y), (parent_center_x, lane_y)),
+                ((parent_center_x, lane_y), (xc, lane_y)),
+                ((xc, lane_y), (xc, child_bar_y)),
+                ((xc, child_bar_y), (xc, yc + self.line_clearance)),
             ]
 
-            fig.add_trace(
-                go.Scatter(
-                    x=x_values,
-                    y=y_values,
-                    mode="lines",
+            for (x0, y0), (x1, y1) in segments:
+                fig.add_shape(
+                    type="line",
+                    xref="x",
+                    yref="y",
+                    x0=x0,
+                    y0=y0,
+                    x1=x1,
+                    y1=y1,
+                    layer="below",
                     line={"color": style["color"], "dash": style["dash"], "width": 3},
-                    hoverinfo="skip",
-                    showlegend=False,
                 )
-            )
 
     def add_rock_images(
         self,

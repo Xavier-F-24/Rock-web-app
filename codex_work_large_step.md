@@ -41,7 +41,7 @@
 ## Continuing Work: Split Prototype Integration
 
 - Added a Streamlit sidebar toggle, `Use split-module prototype`, that launches a compact `GameMaster`-backed playable loop in `app.py`.
-- Added relationship/inbreeding validation to `BreedingMaster` for self, same sex, inactive rocks, parent/child, siblings, ancestor/descendant, and shared ancestor cases when a game context is supplied.
+- Added relationship/inbreeding reporting to `BreedingMaster` for self, same sex, inactive rocks, parent/child, siblings, ancestor/descendant, and shared ancestor cases when a game context is supplied.
 - Locked first-pass potion mechanics:
   - `fertility`: adds one child to clutch size.
   - `reroll`: rolls clutch twice and keeps the larger clutch.
@@ -53,7 +53,7 @@
 ## New Questions / Possible Problems
 
 - The split-module Streamlit mode is intentionally compact and table-first. It proves the playable loop, but it does not yet use the richer rock cards/tree UI from the legacy app.
-- Relationship validation currently blocks any shared ancestor. That is conservative; if we later want cousins or distant relatives allowed with penalties, this should become a relatedness score instead of a hard block.
+- Relationship validation now warns on known relatedness instead of blocking it. The warning includes actual relationship text plus R and estimated child F values.
 - Pending market pods serialize full parent/child rock data. This is simple and robust, but it duplicates parent data that may also exist in `rock_list`.
 - Legacy save files from `rockgame_core.py` are not supported by the new serializer yet.
 

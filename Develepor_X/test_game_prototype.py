@@ -67,6 +67,46 @@ def test_market_pod_purchase_can_keep_one_child():
     assert game.pending_market_pod is None
 
 
+def test_game_master_queues_related_pair_with_warning_event():
+    game = GameMaster(seed=17, auto_start=False)
+    parent_a = genetics.Rock(
+        id=1,
+        name=game.name_generator.generate_name(genetics.Sex.MALE),
+        sex=genetics.Sex.MALE,
+        genotype=game.genome_factory.make_random_rock_genome(),
+        death_genes=game.genome_factory.make_death_genes(),
+    )
+    parent_b = genetics.Rock(
+        id=2,
+        name=game.name_generator.generate_name(genetics.Sex.FEMALE),
+        sex=genetics.Sex.FEMALE,
+        genotype=game.genome_factory.make_random_rock_genome(),
+        death_genes=game.genome_factory.make_death_genes(),
+    )
+    sibling_a = genetics.Rock(
+        id=3,
+        name=game.name_generator.generate_name(genetics.Sex.MALE),
+        sex=genetics.Sex.MALE,
+        genotype=game.genome_factory.make_random_rock_genome(),
+        death_genes=game.genome_factory.make_death_genes(),
+        parent_ids=[parent_a.id, parent_b.id],
+    )
+    sibling_b = genetics.Rock(
+        id=4,
+        name=game.name_generator.generate_name(genetics.Sex.FEMALE),
+        sex=genetics.Sex.FEMALE,
+        genotype=game.genome_factory.make_random_rock_genome(),
+        death_genes=game.genome_factory.make_death_genes(),
+        parent_ids=[parent_a.id, parent_b.id],
+    )
+    game.rock_list = {rock.id: rock for rock in [parent_a, parent_b, sibling_a, sibling_b]}
+
+    game.add_pair_to_queue(sibling_a.id, sibling_b.id)
+
+    assert game.breeding_queue
+    assert any("Parents are related" in event and "R=0.5000" in event for event in game.events)
+
+
 def test_potion_settings_are_finalized_for_first_balance_pass():
     settings = GameMaster.potion_settings("fertility")
     assert settings["clutch_plus_one"] is True

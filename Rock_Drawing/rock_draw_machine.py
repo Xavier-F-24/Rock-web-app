@@ -125,39 +125,6 @@ class DrawMachine:
             mouth_info = self.mouth_info,
         )
 
-    def draw_craisen_overlay(
-        self
-    ):
-        ctx = self.ctx
-
-        if not ctx.v.get("is_craisen", False):
-            return
-
-        ctx.ax.plot(
-            [-0.75 * ctx.s, 0.75 * ctx.s],
-            [-0.75 * ctx.s, 0.75 * ctx.s],
-            color = "crimson",
-            linewidth = 4,
-            zorder = 20,
-        )
-        ctx.ax.plot(
-            [-0.75 * ctx.s, 0.75 * ctx.s],
-            [0.75 * ctx.s, -0.75 * ctx.s],
-            color = "crimson",
-            linewidth = 4,
-            zorder = 20,
-        )
-        ctx.ax.text(
-            0,
-            -1.25 * ctx.s,
-            "CRAISEN",
-            color = "crimson",
-            ha = "center",
-            va = "center",
-            fontsize = 10,
-            fontweight = "bold",
-        )
-
     def draw_identity_label(
         self
     ):
@@ -282,7 +249,6 @@ class DrawMachine:
         self.draw_body()
         self.draw_body_attached_traits()
         self.draw_face()
-        self.draw_craisen_overlay()
         self.draw_identity_label()
         self.finalize()
 

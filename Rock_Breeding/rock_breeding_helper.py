@@ -192,11 +192,15 @@ class BreedingMaster:
         parent_b: genetics.Rock,
         require_opposite_gender = True,
         game = None,
-        disallow_related = True,
+        warn_relatedness = True,
+        disallow_related = None,
     ):
         """
         Validate whether two rocks can breed.
         """
+
+        if disallow_related is not None:
+            warn_relatedness = bool(disallow_related)
 
         errors = []
         warnings = [] 
@@ -226,14 +230,15 @@ class BreedingMaster:
                 f"Rock #{parent_b.id} is {parent_b.sex}."
             )
 
-        if game is not None and disallow_related:
+        if game is not None and warn_relatedness:
             relationship = self.describe_relationship(game, parent_a, parent_b)
             if relationship is not None:
-                errors.append(f"Parents are too closely related: {relationship}.")
+                warnings.append(f"Parents are related: {relationship}.")
 
         return {
             "valid": len(errors) == 0,
             "errors": errors,
+            "warnings": warnings,
             "parent_a": parent_a,
             "parent_b": parent_b,
         }
@@ -269,6 +274,207 @@ class BreedingMaster:
         walk(rock, 0)
         return ancestors
 
+    def get_ancestor_path_distances(
+        self,
+        game,
+        rock: genetics.Rock,
+        include_self: bool = False,
+        max_depth: int = 12,
+    ) -> dict[int, list[int]]:
+        distances: dict[int, list[int]] = {}
+        stack = [(rock, 0, {int(rock.id)})]
+
+        while stack:
+            current, depth, seen = stack.pop()
+            if current is None or depth > max_depth:
+                continue
+
+            if include_self or depth > 0:
+                distances.setdefault(int(current.id), []).append(depth)
+
+            if depth == max_depth:
+                continue
+
+            for parent_id in self.get_parent_ids(current):
+                if parent_id in seen:
+                    continue
+
+                parent = self.get_game_rock(game, parent_id)
+                stack.append((parent, depth + 1, seen | {parent_id}))
+
+        return distances
+
+    def calculate_relatedness(
+        self,
+        game,
+        parent_a: genetics.Rock,
+        parent_b: genetics.Rock,
+        max_depth: int = 12,
+    ) -> tuple[float, dict[int, float]]:
+        if parent_a.id == parent_b.id:
+            return 1.0, {int(parent_a.id): 1.0}
+
+        ancestors_a = self.get_ancestor_path_distances(game, parent_a, include_self=True, max_depth=max_depth)
+        ancestors_b = self.get_ancestor_path_distances(game, parent_b, include_self=True, max_depth=max_depth)
+        shared_ancestors = set(ancestors_a) & set(ancestors_b)
+
+        relatedness = 0.0
+        contributions = {}
+        for ancestor_id in shared_ancestors:
+            subtotal = 0.0
+            for distance_a in ancestors_a[ancestor_id]:
+                for distance_b in ancestors_b[ancestor_id]:
+                    subtotal += 0.5 ** (distance_a + distance_b)
+
+            if subtotal > 0:
+                contributions[ancestor_id] = subtotal
+                relatedness += subtotal
+
+        return min(relatedness, 1.0), contributions
+
+    @staticmethod
+    def ordinal_word(value: int) -> str:
+        words = {
+            1: "first",
+            2: "second",
+            3: "third",
+            4: "fourth",
+            5: "fifth",
+            6: "sixth",
+            7: "seventh",
+            8: "eighth",
+        }
+        return words.get(int(value), f"{value}th")
+
+    @staticmethod
+    def removal_word(value: int) -> str:
+        words = {
+            1: "once removed",
+            2: "twice removed",
+            3: "three times removed",
+            4: "four times removed",
+        }
+        return words.get(int(value), f"{value} times removed")
+
+    @staticmethod
+    def great_prefix(count: int) -> str:
+        if count <= 0:
+            return ""
+        if count == 1:
+            return "great-"
+        return f"{count}x-great-"
+
+    @staticmethod
+    def parent_term(rock: genetics.Rock) -> str:
+        return "father" if rock.sex == genetics.Sex.MALE else "mother"
+
+    @staticmethod
+    def child_term(rock: genetics.Rock) -> str:
+        return "son" if rock.sex == genetics.Sex.MALE else "daughter"
+
+    @staticmethod
+    def sibling_term(rock: genetics.Rock) -> str:
+        return "brother" if rock.sex == genetics.Sex.MALE else "sister"
+
+    @staticmethod
+    def aunt_uncle_term(rock: genetics.Rock) -> str:
+        return "uncle" if rock.sex == genetics.Sex.MALE else "aunt"
+
+    @staticmethod
+    def niece_nephew_term(rock: genetics.Rock) -> str:
+        return "nephew" if rock.sex == genetics.Sex.MALE else "niece"
+
+    def describe_actual_relationship(
+        self,
+        game,
+        parent_a: genetics.Rock,
+        parent_b: genetics.Rock,
+        max_depth: int = 12,
+    ) -> str | None:
+        if parent_a.id == parent_b.id:
+            return "same rock"
+
+        ancestors_a = self.get_ancestor_path_distances(game, parent_a, include_self=True, max_depth=max_depth)
+        ancestors_b = self.get_ancestor_path_distances(game, parent_b, include_self=True, max_depth=max_depth)
+
+        if parent_a.id in ancestors_b:
+            distance = min(ancestors_b[parent_a.id])
+            if distance == 1:
+                return f"{self.parent_term(parent_a)} and {self.child_term(parent_b)}"
+            if distance == 2:
+                return "grandparent and grandchild"
+            return f"{self.great_prefix(distance - 2)}grandparent and {self.great_prefix(distance - 2)}grandchild"
+
+        if parent_b.id in ancestors_a:
+            distance = min(ancestors_a[parent_b.id])
+            if distance == 1:
+                return f"{self.child_term(parent_a)} and {self.parent_term(parent_b)}"
+            if distance == 2:
+                return "grandchild and grandparent"
+            return f"{self.great_prefix(distance - 2)}grandchild and {self.great_prefix(distance - 2)}grandparent"
+
+        shared_ancestors = set(ancestors_a) & set(ancestors_b)
+        if not shared_ancestors:
+            return None
+
+        best = None
+        for ancestor_id in shared_ancestors:
+            for distance_a in ancestors_a[ancestor_id]:
+                for distance_b in ancestors_b[ancestor_id]:
+                    if distance_a == 0 or distance_b == 0:
+                        continue
+
+                    score = distance_a + distance_b
+                    if best is None or score < best[0]:
+                        best = (score, distance_a, distance_b)
+
+        if best is None:
+            return None
+
+        _, distance_a, distance_b = best
+
+        if distance_a == 1 and distance_b == 1:
+            common_parent_count = sum(
+                1
+                for ancestor_id in shared_ancestors
+                if 1 in ancestors_a[ancestor_id] and 1 in ancestors_b[ancestor_id]
+            )
+            sibling_type = "full" if common_parent_count >= 2 else "half"
+            return f"{sibling_type} {self.sibling_term(parent_a)} and {self.sibling_term(parent_b)}"
+
+        min_distance = min(distance_a, distance_b)
+        max_distance = max(distance_a, distance_b)
+
+        if min_distance == 1:
+            if distance_a < distance_b:
+                older = parent_a
+                younger = parent_b
+            else:
+                older = parent_b
+                younger = parent_a
+
+            great_count = max_distance - 2
+            older_term = f"{self.great_prefix(great_count)}{self.aunt_uncle_term(older)}"
+            if great_count <= 0:
+                younger_term = self.niece_nephew_term(younger)
+            elif great_count == 1:
+                younger_term = f"grand{self.niece_nephew_term(younger)}"
+            else:
+                younger_term = f"{great_count - 1}x-great-grand{self.niece_nephew_term(younger)}"
+
+            if older is parent_a:
+                return f"{older_term} and {younger_term}"
+            return f"{younger_term} and {older_term}"
+
+        cousin_degree = min_distance - 1
+        removals = abs(distance_a - distance_b)
+        cousin_text = f"{self.ordinal_word(cousin_degree)} cousins"
+
+        if removals > 0:
+            cousin_text += f" {self.removal_word(removals)}"
+
+        return cousin_text
+
     @staticmethod
     def get_game_rock(game, rock_id):
         if hasattr(game, "get_rock"):
@@ -283,25 +489,13 @@ class BreedingMaster:
         parent_a: genetics.Rock,
         parent_b: genetics.Rock,
     ) -> str | None:
-        a_parents = set(self.get_parent_ids(parent_a))
-        b_parents = set(self.get_parent_ids(parent_b))
+        relatedness, _ = self.calculate_relatedness(game, parent_a, parent_b)
+        if relatedness <= 0:
+            return None
 
-        if parent_a.id in b_parents or parent_b.id in a_parents:
-            return "parent/child"
-
-        if a_parents and b_parents and a_parents.intersection(b_parents):
-            return "siblings"
-
-        a_ancestors = self.get_ancestors(game, parent_a)
-        b_ancestors = self.get_ancestors(game, parent_b)
-
-        if parent_a.id in b_ancestors or parent_b.id in a_ancestors:
-            return "ancestor/descendant"
-
-        if a_ancestors.intersection(b_ancestors):
-            return "shared ancestor"
-
-        return None
+        child_inbreeding = relatedness / 2.0
+        actual = self.describe_actual_relationship(game, parent_a, parent_b) or "related"
+        return f"{actual} (R={relatedness:.4f}, F={child_inbreeding:.4f})"
 
     def set_parents_as_bred(
         self,

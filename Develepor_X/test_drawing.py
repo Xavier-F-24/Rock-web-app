@@ -111,6 +111,20 @@ def test_identity_layout_normalizes_status_symbols():
         assert machine.get_status_symbol_and_color() == (symbol, color)
 
 
+def test_craisen_status_uses_identity_badge_without_body_overlay():
+    fig, ax = plt.subplots()
+    rock = make_rock(status=genetics.RockStatus.CRAISENED)
+
+    try:
+        DrawMachine(rock=rock, ax=ax).draw()
+
+        text_values = [text.get_text() for text in ax.texts]
+        assert "x" in text_values
+        assert "CRAISEN" not in text_values
+    finally:
+        plt.close(fig)
+
+
 def test_identity_layout_places_status_top_left_and_gender_top_right():
     fig, ax = plt.subplots()
     rock = make_rock(status=genetics.RockStatus.SOLD)
@@ -210,8 +224,8 @@ def test_tree_helper_assigns_distinct_family_styles():
     styles = helper.family_styles()
 
     assert len(styles) >= 2
-    assert len({style["color"] for style in styles.values()}) >= 2
-    assert all("dash" in style for style in styles.values())
+    assert len({(style["color"], style["dash"]) for style in styles.values()}) >= 2
+    assert all("color" in style and "dash" in style for style in styles.values())
 
 
 def test_tree_drawer_creates_plotly_figure_with_images_without_duplicate_labels():
@@ -224,6 +238,8 @@ def test_tree_drawer_creates_plotly_figure_with_images_without_duplicate_labels(
 
     assert len(fig.layout.images) == len(game.rocks)
     assert len(fig.data) >= len(game.rocks)
+    assert len(fig.layout.shapes) > 0
+    assert all(shape.layer == "below" for shape in fig.layout.shapes)
     assert fig.layout.dragmode == "pan"
     visible_texts = [
         text
