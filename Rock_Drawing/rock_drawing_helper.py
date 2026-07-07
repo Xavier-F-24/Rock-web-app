@@ -77,3 +77,57 @@ def rock_to_image_uri(rock, sprite_size=2.0, dpi=400):
 
     encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
     return "data:image/png;base64," + encoded
+
+def get_rock_render_signature(rock):
+    """
+    Stable-enough cache key for a rock image.
+    """
+    gene_bits = []
+
+    for gene_name, gene_pair in sorted(rock.genotype.genes.items()):
+        gene_bits.append(
+            (
+                gene_name,
+                gene_pair.allele_a.value,
+                gene_pair.allele_b.value,
+                gene_pair.phenotype,
+            )
+        )
+
+    return (
+        int(rock.id),
+        str(getattr(rock, "name", "")),
+        getattr(getattr(rock, "sex", None), "value", str(getattr(rock, "sex", ""))),
+        getattr(getattr(rock, "status", None), "value", str(getattr(rock, "status", ""))),
+        tuple(gene_bits),
+    )
+
+def ensure_rock_image_cache(game):
+    """
+    Runtime cache for id -> rendered data URI.
+    """
+    if not hasattr(game, "rock_image_cache") or game.rock_image_cache is None:
+        game.rock_image_cache = {}
+
+    return game.rock_image_cache
+
+def render_game_rock_images(game, sprite_size=2.0, dpi=220, force=False):
+    """
+    Render all game rocks to a cache and return {rock_id: image_uri}.
+    """
+    cache = ensure_rock_image_cache(game)
+    output = {}
+
+    for rock_id, rock in game.rocks.items():
+        signature = get_rock_render_signature(rock)
+        cached = cache.get(int(rock_id))
+
+        if force or cached is None or cached.get("signature") != signature:
+            cache[int(rock_id)] = {
+                "signature": signature,
+                "image_uri": rock_to_image_uri(rock, sprite_size=sprite_size, dpi=dpi),
+            }
+
+        output[int(rock_id)] = cache[int(rock_id)]["image_uri"]
+
+    return output

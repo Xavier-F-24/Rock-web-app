@@ -136,6 +136,37 @@ class DrawMachine:
             fontweight = "bold",
         )
 
+    def draw_identity_label(
+        self
+    ):
+        ctx = self.ctx
+        gender_symbol = "\u2642" if self.rock.sex == genetics.Sex.MALE else "\u2640"
+        gender_color = "royalblue" if self.rock.sex == genetics.Sex.MALE else "deeppink"
+        name = self.rock.name.full_name if hasattr(self.rock.name, "full_name") else str(self.rock.name)
+
+        ctx.ax.text(
+            0.62 * ctx.s,
+            1.10 * ctx.s,
+            gender_symbol,
+            color=gender_color,
+            ha="center",
+            va="center",
+            fontsize=18,
+            fontweight="bold",
+            zorder=30,
+        )
+        ctx.ax.text(
+            0,
+            -1.28 * ctx.s,
+            f"#{self.rock.id}: {name}",
+            color="black",
+            ha="center",
+            va="center",
+            fontsize=8,
+            fontweight="bold",
+            zorder=30,
+        )
+
     def finalize(
         self
     ):
@@ -151,6 +182,7 @@ class DrawMachine:
         self.draw_body_attached_traits()
         self.draw_face()
         self.draw_craisen_overlay()
+        self.draw_identity_label()
         self.finalize()
 
         return self.ctx.ax
