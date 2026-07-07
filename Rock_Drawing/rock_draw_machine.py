@@ -27,11 +27,11 @@ class IdentityLabelLayout:
     Controls identity-label placement in body-radius units.
     """
 
-    name_below_body_radius: float = 0.5
-    gender_right_body_radius: float = 0.5
-    gender_above_body_radius: float = 0.5
-    status_right_body_radius: float = 0.0
-    status_above_center_body_radius: float = 0.65
+    name_below_body_radius: float = 0.7
+    gender_right_body_radius: float = 0.7
+    gender_above_body_radius: float = 0.7
+    status_left_body_radius: float = 0.7
+    status_above_body_radius: float = 0.7
     name_font_size: int = 8
     gender_font_size: int = 18
     status_font_size: int = 16
@@ -172,8 +172,8 @@ class DrawMachine:
         gender_x = ctx.xmax + layout.gender_right_body_radius * body_radius
         gender_y = ctx.ymax + layout.gender_above_body_radius * body_radius
         name_y = ctx.ymin - layout.name_below_body_radius * body_radius
-        status_x = ctx.cx + layout.status_right_body_radius * body_radius
-        status_y = ctx.cy + layout.status_above_center_body_radius * body_radius
+        status_x = ctx.xmin - layout.status_left_body_radius * body_radius
+        status_y = ctx.ymax + layout.status_above_body_radius * body_radius
 
         ctx.ax.text(
             gender_x,
@@ -253,16 +253,18 @@ class DrawMachine:
     ) -> tuple[str, str]:
         status = self.rock.status
 
+        if bool(getattr(self.rock, "puffed", False)):
+            return "p", "royalblue"
         if status == genetics.RockStatus.SOLD:
             return "$", "green"
         if status == genetics.RockStatus.DEAD:
-            return "X", "black"
+            return "\u271d", "black"
         if status == genetics.RockStatus.CRAISENED:
-            return "!", "crimson"
+            return "x", "crimson"
         if status == genetics.RockStatus.BRED:
             return "o", "gray"
         if bool(getattr(self.rock, "is_market", False)):
-            return "NPC", "darkviolet"
+            return "I", "darkorange"
 
         return "", "black"
 

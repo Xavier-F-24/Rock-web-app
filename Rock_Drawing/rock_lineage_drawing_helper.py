@@ -21,6 +21,35 @@ from Rock_Drawing.rock_drawing_helper import (
 from Rock_Drawing.rock_draw_machine import draw_rock
 
 
+FAMILY_LINE_COLORS = (
+    "#4E79A7",
+    "#F28E2B",
+    "#59A14F",
+    "#E15759",
+    "#B07AA1",
+    "#76B7B2",
+    "#EDC948",
+    "#FF9DA7",
+    "#9C755F",
+    "#BAB0AC",
+    "#2F4B7C",
+    "#A05195",
+    "#D45087",
+    "#F95D6A",
+    "#665191",
+    "#003F5C",
+)
+
+FAMILY_LINE_DASHES = (
+    "solid",
+    "dash",
+    "dot",
+    "dashdot",
+    "longdash",
+    "longdashdot",
+)
+
+
 def rock_display_name(rock: genetics.Rock) -> str:
     if hasattr(rock.name, "full_name"):
         return rock.name.full_name
@@ -36,28 +65,34 @@ def get_gender_color(rock: genetics.Rock) -> str:
 
 
 def get_rock_status_symbol(rock: genetics.Rock) -> str:
+    if bool(getattr(rock, "puffed", False)):
+        return "p"
     if rock.status == genetics.RockStatus.SOLD:
         return "$"
     if rock.status == genetics.RockStatus.DEAD:
-        return "X"
+        return "\u271d"
     if rock.status == genetics.RockStatus.CRAISENED:
-        return "!"
+        return "x"
     if rock.status == genetics.RockStatus.BRED:
         return "o"
     if bool(getattr(rock, "is_market", False)):
-        return "NPC"
+        return "I"
     return ""
 
 
 def get_rock_status_color(rock: genetics.Rock) -> str:
+    if bool(getattr(rock, "puffed", False)):
+        return "royalblue"
     if rock.status == genetics.RockStatus.SOLD:
         return "green"
-    if rock.status in {genetics.RockStatus.DEAD, genetics.RockStatus.CRAISENED}:
+    if rock.status == genetics.RockStatus.DEAD:
+        return "black"
+    if rock.status == genetics.RockStatus.CRAISENED:
         return "crimson"
     if rock.status == genetics.RockStatus.BRED:
         return "gray"
     if bool(getattr(rock, "is_market", False)):
-        return "darkviolet"
+        return "darkorange"
     return "black"
 
 
@@ -210,6 +245,18 @@ class TreeHelper:
                 links.append((parents[0], parents[1], int(child_id)))
         return links
 
+    def family_styles(self) -> dict[tuple[int, int], dict[str, str]]:
+        parent_pairs = sorted({tuple(sorted((parent_a, parent_b))) for parent_a, parent_b, _ in self.family_links()})
+        styles = {}
+
+        for index, pair in enumerate(parent_pairs):
+            styles[pair] = {
+                "color": FAMILY_LINE_COLORS[index % len(FAMILY_LINE_COLORS)],
+                "dash": FAMILY_LINE_DASHES[(index // len(FAMILY_LINE_COLORS)) % len(FAMILY_LINE_DASHES)],
+            }
+
+        return styles
+
     @staticmethod
     def parent_ids(rock: genetics.Rock) -> list[int]:
         return [int(parent_id) for parent_id in getattr(rock, "parent_ids", []) if parent_id is not None]
@@ -258,7 +305,11 @@ class TreeDrawer:
         return fig
 
     def add_family_lines(self, fig: go.Figure, positions: dict[int, tuple[float, float]]) -> None:
+        family_styles = self.helper.family_styles()
+
         for parent_a_id, parent_b_id, child_id in self.helper.family_links():
+            family_key = tuple(sorted((parent_a_id, parent_b_id)))
+            style = family_styles[family_key]
             xa, ya = positions[parent_a_id]
             xb, yb = positions[parent_b_id]
             xc, yc = positions[child_id]
@@ -288,7 +339,7 @@ class TreeDrawer:
                     x=x_values,
                     y=y_values,
                     mode="lines",
-                    line={"color": "#4E79A7", "width": 3},
+                    line={"color": style["color"], "dash": style["dash"], "width": 3},
                     hoverinfo="skip",
                     showlegend=False,
                 )

@@ -45,6 +45,7 @@ def test_market_manager_can_sell_buy_potion_and_defined_trait_rock():
     )
 
     assert rock.id in game.rock_list
+    assert rock.is_market is True
     assert rock.sex == genetics.Sex.FEMALE
     assert rock.genotype.genes["color"].phenotype == "orange"
     assert rock.genotype.genes["eyes"].phenotype == "double eye"
@@ -61,6 +62,7 @@ def test_market_pod_purchase_can_keep_one_child():
     child = game.market_manager.choose_market_pod_child(game, 0)
 
     assert child.id in game.rock_list
+    assert child.is_market is True
     assert child.parent_ids == [pending.parent_a_id, pending.parent_b_id]
     assert game.pending_market_pod is None
 

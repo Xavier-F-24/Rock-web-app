@@ -56,3 +56,10 @@
 - Relationship validation currently blocks any shared ancestor. That is conservative; if we later want cousins or distant relatives allowed with penalties, this should become a relatedness score instead of a hard block.
 - Pending market pods serialize full parent/child rock data. This is simple and robust, but it duplicates parent data that may also exist in `rock_list`.
 - Legacy save files from `rockgame_core.py` are not supported by the new serializer yet.
+
+## Continuing Work: Tree Polishing
+
+- Market-origin rocks now retain `is_market=True` after random purchases, defined-trait purchases, and kept market-pod children.
+- Individual rock PNG badges now use `is_market` for the orange `I` symbol, with the render cache tracking market and puffed state changes.
+- Lineage tree family lines now cycle through a larger color and dash-style palette per parent pair.
+- Added notebook checkpoint 7B to generate and display a larger multi-generation tree.

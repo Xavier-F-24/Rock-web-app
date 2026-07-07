@@ -100,6 +100,8 @@ def get_rock_render_signature(rock):
         str(getattr(rock, "name", "")),
         getattr(getattr(rock, "sex", None), "value", str(getattr(rock, "sex", ""))),
         getattr(getattr(rock, "status", None), "value", str(getattr(rock, "status", ""))),
+        bool(getattr(rock, "is_market", False)),
+        bool(getattr(rock, "puffed", False)),
         tuple(gene_bits),
     )
 

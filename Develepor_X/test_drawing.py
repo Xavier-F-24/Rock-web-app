@@ -91,6 +91,45 @@ def test_identity_layout_formats_structured_names_and_status_symbol():
         plt.close(fig)
 
 
+def test_identity_layout_normalizes_status_symbols():
+    cases = [
+        (genetics.RockStatus.BRED, {}, "o", "gray"),
+        (genetics.RockStatus.DEAD, {}, "\u271d", "black"),
+        (genetics.RockStatus.CRAISENED, {}, "x", "crimson"),
+        (genetics.RockStatus.SOLD, {}, "$", "green"),
+        (genetics.RockStatus.ACTIVE, {"puffed": True}, "p", "royalblue"),
+        (genetics.RockStatus.ACTIVE, {"is_market": True}, "I", "darkorange"),
+    ]
+
+    for status, attrs, symbol, color in cases:
+        rock = make_rock(status=status)
+        for attr_name, attr_value in attrs.items():
+            setattr(rock, attr_name, attr_value)
+
+        machine = DrawMachine(rock=rock)
+
+        assert machine.get_status_symbol_and_color() == (symbol, color)
+
+
+def test_identity_layout_places_status_top_left_and_gender_top_right():
+    fig, ax = plt.subplots()
+    rock = make_rock(status=genetics.RockStatus.SOLD)
+
+    try:
+        machine = DrawMachine(rock=rock, ax=ax)
+        machine.draw()
+
+        gender_text = next(text for text in ax.texts if text.get_text() in {"\u2642", "\u2640"})
+        status_text = next(text for text in ax.texts if text.get_text() == "$")
+
+        assert status_text.get_position()[0] < machine.ctx.xmin
+        assert status_text.get_position()[1] > machine.ctx.ymax
+        assert gender_text.get_position()[0] > machine.ctx.xmax
+        assert gender_text.get_position()[1] > machine.ctx.ymax
+    finally:
+        plt.close(fig)
+
+
 def test_rock_to_image_uri_returns_png_data_uri():
     rock = make_rock()
 
@@ -131,6 +170,19 @@ def test_render_game_rock_images_returns_id_to_uri_cache():
     assert set(game.rock_image_cache) == set(game.rocks)
 
 
+def test_render_game_rock_images_cache_tracks_market_status():
+    game = GameMaster(seed=610)
+    rock = next(iter(game.rocks.values()))
+
+    render_game_rock_images(game, sprite_size=0.8, dpi=60)
+    first_signature = game.rock_image_cache[rock.id]["signature"]
+
+    rock.is_market = True
+    render_game_rock_images(game, sprite_size=0.8, dpi=60)
+
+    assert game.rock_image_cache[rock.id]["signature"] != first_signature
+
+
 def test_tree_helper_computes_positions_and_family_links():
     game = GameMaster(seed=62)
     ids = list(game.rocks)
@@ -143,6 +195,23 @@ def test_tree_helper_computes_positions_and_family_links():
     assert set(positions) == set(game.rocks)
     assert helper.family_links()
     assert helper.bounds()["x"][0] < helper.bounds()["x"][1]
+
+
+def test_tree_helper_assigns_distinct_family_styles():
+    game = GameMaster(seed=65, starting_money=80)
+    males = [rock for rock in game.rocks.values() if rock.sex == genetics.Sex.MALE]
+    females = [rock for rock in game.rocks.values() if rock.sex == genetics.Sex.FEMALE]
+
+    game.add_pair_to_queue(males[0].id, females[0].id)
+    game.add_pair_to_queue(males[1].id, females[1].id)
+    game.advance_generation()
+
+    helper = TreeHelper.from_game(game)
+    styles = helper.family_styles()
+
+    assert len(styles) >= 2
+    assert len({style["color"] for style in styles.values()}) >= 2
+    assert all("dash" in style for style in styles.values())
 
 
 def test_tree_drawer_creates_plotly_figure_with_images_without_duplicate_labels():

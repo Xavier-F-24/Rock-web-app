@@ -281,8 +281,8 @@ class MarketManager:
         child = pending.children[child_index]
         child.parent_ids = [pending.parent_a_id, pending.parent_b_id]
         child.generation = game.generation
-        child.is_market = False
         self.add_rock_to_game(game, child, owned=True)
+        child.is_market = True
 
         game.pending_market_pod = None
         game.events.append(f"Kept market child #{child.id} from {pending.offer.name}.")
@@ -337,6 +337,7 @@ class MarketManager:
 
         game.money -= cost
         rock = self.make_random_rock(game.reserve_rock_id(), sex=sex, generation=game.generation)
+        rock.is_market = True
         game.rock_list[rock.id] = rock
         game.events.append(f"Bought random rock #{rock.id} for ${cost}.")
         return rock
@@ -360,6 +361,7 @@ class MarketManager:
 
         game.money -= cost
         preview.id = game.reserve_rock_id()
+        preview.is_market = True
         game.rock_list[preview.id] = preview
         game.events.append(f"Bought defined-trait rock #{preview.id} for ${cost}.")
         return preview
