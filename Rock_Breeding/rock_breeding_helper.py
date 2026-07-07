@@ -191,6 +191,8 @@ class BreedingMaster:
         parent_a: genetics.Rock,
         parent_b: genetics.Rock,
         require_opposite_gender = True,
+        game = None,
+        disallow_related = True,
     ):
         """
         Validate whether two rocks can breed.
@@ -224,12 +226,82 @@ class BreedingMaster:
                 f"Rock #{parent_b.id} is {parent_b.sex}."
             )
 
+        if game is not None and disallow_related:
+            relationship = self.describe_relationship(game, parent_a, parent_b)
+            if relationship is not None:
+                errors.append(f"Parents are too closely related: {relationship}.")
+
         return {
             "valid": len(errors) == 0,
             "errors": errors,
             "parent_a": parent_a,
             "parent_b": parent_b,
         }
+
+    @staticmethod
+    def get_parent_ids(rock: genetics.Rock) -> list[int]:
+        return [
+            int(parent_id)
+            for parent_id in getattr(rock, "parent_ids", []) or []
+            if parent_id is not None
+        ]
+
+    def get_ancestors(
+        self,
+        game,
+        rock: genetics.Rock,
+        max_depth: int = 12,
+    ) -> set[int]:
+        ancestors: set[int] = set()
+
+        def walk(current, depth):
+            if current is None or depth > max_depth:
+                return
+
+            for parent_id in self.get_parent_ids(current):
+                if parent_id in ancestors:
+                    continue
+
+                ancestors.add(parent_id)
+                parent = self.get_game_rock(game, parent_id)
+                walk(parent, depth + 1)
+
+        walk(rock, 0)
+        return ancestors
+
+    @staticmethod
+    def get_game_rock(game, rock_id):
+        if hasattr(game, "get_rock"):
+            return game.get_rock(rock_id)
+
+        rocks = getattr(game, "rock_list", None) or getattr(game, "rocks", {})
+        return rocks.get(int(rock_id))
+
+    def describe_relationship(
+        self,
+        game,
+        parent_a: genetics.Rock,
+        parent_b: genetics.Rock,
+    ) -> str | None:
+        a_parents = set(self.get_parent_ids(parent_a))
+        b_parents = set(self.get_parent_ids(parent_b))
+
+        if parent_a.id in b_parents or parent_b.id in a_parents:
+            return "parent/child"
+
+        if a_parents and b_parents and a_parents.intersection(b_parents):
+            return "siblings"
+
+        a_ancestors = self.get_ancestors(game, parent_a)
+        b_ancestors = self.get_ancestors(game, parent_b)
+
+        if parent_a.id in b_ancestors or parent_b.id in a_ancestors:
+            return "ancestor/descendant"
+
+        if a_ancestors.intersection(b_ancestors):
+            return "shared ancestor"
+
+        return None
 
     def set_parents_as_bred(
         self,
@@ -472,6 +544,8 @@ class BreedingMaster:
         craisen_chance = None,
         spore_death_chance = None,
         spore_clone_count = None,
+        clutch_reroll = None,
+        clutch_plus_one = None,
 
         # MORE???
 
@@ -503,8 +577,8 @@ class BreedingMaster:
             std = None,
             max_clutch_size = None,
 
-            reroll = None,
-            plus_one = None,
+            reroll = clutch_reroll,
+            plus_one = clutch_plus_one,
         )
 
         mod_id = next_id + self.get_next_id()

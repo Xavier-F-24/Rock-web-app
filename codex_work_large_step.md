@@ -34,7 +34,25 @@
 
 ## Next Suggested Work
 
-- Wire `GameMaster` into `app.py` or a small notebook flow so the playable loop uses the new split modules.
-- Add relationship/inbreeding validation back into `BreedingMaster`.
-- Decide final potion mechanics before balancing money and market pricing.
-- Add serialization for `GameMaster`, `Inventory`, queued pairs, market pods, and pending pods.
+- Wire the split-module prototype mode deeper into the main Streamlit UI once the old `rockgame_core.py` flow is retired.
+- Add serialization tests for older save compatibility if we want to migrate legacy saves.
+- Tune potion prices and market prices after a few full playthroughs.
+
+## Continuing Work: Split Prototype Integration
+
+- Added a Streamlit sidebar toggle, `Use split-module prototype`, that launches a compact `GameMaster`-backed playable loop in `app.py`.
+- Added relationship/inbreeding validation to `BreedingMaster` for self, same sex, inactive rocks, parent/child, siblings, ancestor/descendant, and shared ancestor cases when a game context is supplied.
+- Locked first-pass potion mechanics:
+  - `fertility`: adds one child to clutch size.
+  - `reroll`: rolls clutch twice and keeps the larger clutch.
+  - `mutation`: raises child mutation chance from `0.01` to `0.12`.
+  - `anti_craisen`: reduces craisen chance to `0.0` for the pair.
+- Rebuilt split-module serialization in `Rock_Serialization/rock_serialization_helper.py` for `GameMaster`, `Inventory`, `QueuedPair`, `MarketPodOffer`, `PendingMarketPod`, rocks, genomes, and rock names.
+- Added tests for serialization, relationship validation, and final first-pass potion settings.
+
+## New Questions / Possible Problems
+
+- The split-module Streamlit mode is intentionally compact and table-first. It proves the playable loop, but it does not yet use the richer rock cards/tree UI from the legacy app.
+- Relationship validation currently blocks any shared ancestor. That is conservative; if we later want cousins or distant relatives allowed with penalties, this should become a relatedness score instead of a hard block.
+- Pending market pods serialize full parent/child rock data. This is simple and robust, but it duplicates parent data that may also exist in `rock_list`.
+- Legacy save files from `rockgame_core.py` are not supported by the new serializer yet.

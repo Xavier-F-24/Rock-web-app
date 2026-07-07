@@ -1,287 +1,296 @@
-#-----------------------------------------------------
 """
-Rock GAME Helper 
-
-This file answers:
-
-- How does the game run?
-- What are the rules of the game?
-
-- What data needs to be pushed to run a game?
-
+Serialization helpers for the split-module GameMaster prototype.
 """
-#-----------------------------------------------------
 
-# ============================================================
-# SAVE / LOAD SYSTEM
-# ============================================================
+from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
-SAVE_VERSION = "0.1.0"
+import Rock_Genetics.rock_genetic_helper as genetics
+from Rock_GameState.rock_game_state_helper import GameMaster, Inventory, QueuedPair
+from Rock_Market.rock_market_helper import MarketPodOffer, PendingMarketPod
 
-def rock_to_dict(rock):
-    """
-    Convert a Rock object into a JSON-safe dictionary.
 
-    We save core rock identity, genes, lineage, and gameplay flags.
-    Runtime-only calculated values are also saved for readability,
-    but are recalculated after loading.
-    """
-    ensure_rock_game_attributes(rock)
+SAVE_VERSION = "0.2.0"
 
-    parents = getattr(rock, "parents", None)
-    if parents is not None:
-        parents = list(parents)
 
+def allele_to_dict(allele: genetics.Allele) -> dict[str, int]:
+    return {"value": int(allele.value)}
+
+
+def allele_from_dict(data: dict[str, Any]) -> genetics.Allele:
+    return genetics.Allele(value=int(data["value"]))
+
+
+def gene_pair_to_dict(gene_pair: genetics.GenePair) -> dict[str, Any]:
+    return {
+        "allele_a": allele_to_dict(gene_pair.allele_a),
+        "allele_b": allele_to_dict(gene_pair.allele_b),
+        "name_of_gene": gene_pair.name_of_gene,
+        "dominance_type": gene_pair.dominance_type,
+        "money_value": int(gene_pair.money_value),
+        "phenotype": gene_pair.phenotype,
+    }
+
+
+def gene_pair_from_dict(data: dict[str, Any]) -> genetics.GenePair:
+    return genetics.GenePair(
+        allele_a=allele_from_dict(data["allele_a"]),
+        allele_b=allele_from_dict(data["allele_b"]),
+        name_of_gene=str(data["name_of_gene"]),
+        dominance_type=str(data["dominance_type"]),
+        money_value=int(data.get("money_value", 0)),
+        phenotype=data.get("phenotype"),
+    )
+
+
+def genome_to_dict(genome: genetics.Genome) -> dict[str, Any]:
+    return {
+        "genes": {
+            gene_name: gene_pair_to_dict(gene_pair)
+            for gene_name, gene_pair in genome.genes.items()
+        }
+    }
+
+
+def genome_from_dict(data: dict[str, Any]) -> genetics.Genome:
+    return genetics.Genome(
+        genes={
+            gene_name: gene_pair_from_dict(gene_data)
+            for gene_name, gene_data in data.get("genes", {}).items()
+        }
+    )
+
+
+def rock_name_to_dict(name: genetics.RockName | None) -> dict[str, Any] | None:
+    if name is None:
+        return None
+    return {
+        "given": name.given,
+        "family": name.family,
+        "honorific": name.honorific,
+        "epithet": name.epithet,
+    }
+
+
+def rock_name_from_dict(data: dict[str, Any] | str | None) -> genetics.RockName | None:
+    if data is None:
+        return None
+    if isinstance(data, str):
+        return genetics.RockName(given=data)
+    return genetics.RockName(
+        given=str(data.get("given", "Rock")),
+        family=data.get("family"),
+        honorific=data.get("honorific"),
+        epithet=data.get("epithet"),
+    )
+
+
+def rock_to_dict(rock: genetics.Rock) -> dict[str, Any]:
     return {
         "id": int(rock.id),
-        "name": str(rock.name),
-        "genes": dict(rock.genes),
-        "parents": parents,
-        "generation": int(getattr(rock, "generation", 0)),
-
-        # Gameplay state
-        "sold": bool(getattr(rock, "sold", False)),
-        "imported": bool(getattr(rock, "imported", False)),
-        "used_as_parent": bool(getattr(rock, "used_as_parent", False)),
-        "dead": bool(getattr(rock, "dead", False)),
-        "puffed": bool(getattr(rock, "puffed", False)),
-        "death_reason": getattr(rock, "death_reason", None),
-
-        # Cached values, recalculated on load
-        "base_value": int(getattr(rock, "base_value", 0)),
-        "sell_value": int(getattr(rock, "sell_value", 0)),
-        "score_value": int(getattr(rock, "score_value", 0)),
-        "is_craisen": int(getattr(rock, "is_craisen", 0)),
-        "rock_cost": int(getattr(rock, "rock_cost", 0)),
-
-        # Gender cache
-        "gender": getattr(rock, "gender", None),
+        "sex": rock.sex.value,
+        "name": rock_name_to_dict(rock.name),
+        "genotype": genome_to_dict(rock.genotype),
+        "death_genes": genome_to_dict(rock.death_genes),
+        "parent_ids": list(rock.parent_ids),
+        "generation": int(rock.generation),
+        "status": rock.status.value,
+        "has_split": bool(rock.has_split),
+        "checked_craisen": bool(rock.checked_craisen),
+        "death_reason": rock.death_reason,
+        "image_path": rock.image_path,
+        "value": int(rock.value),
+        "sell_value": int(rock.sell_value),
+        "score_value": int(rock.score_value),
+        "is_market": bool(rock.is_market),
     }
 
-def rock_from_dict(data):
-    """
-    Rebuild a Rock object from saved dictionary data.
-    """
-    parents = data.get("parents", None)
 
-    if parents is not None:
-        parents = tuple(int(p) for p in parents)
-
-    rock = Rock(
+def rock_from_dict(data: dict[str, Any]) -> genetics.Rock:
+    return genetics.Rock(
         id=int(data["id"]),
-        name=str(data.get("name", f"Rock_{data['id']}")),
-        genes=dict(data.get("genes", {})),
-        parents=parents,
-        generation=int(data.get("generation", 0))
+        sex=genetics.Sex(data["sex"]),
+        name=rock_name_from_dict(data.get("name")),
+        genotype=genome_from_dict(data.get("genotype", {})),
+        death_genes=genome_from_dict(data.get("death_genes", {})),
+        parent_ids=[int(parent_id) for parent_id in data.get("parent_ids", [])],
+        generation=int(data.get("generation", 0)),
+        status=genetics.RockStatus(data.get("status", genetics.RockStatus.ACTIVE.value)),
+        has_split=bool(data.get("has_split", False)),
+        checked_craisen=bool(data.get("checked_craisen", False)),
+        death_reason=data.get("death_reason"),
+        image_path=data.get("image_path"),
+        value=int(data.get("value", 0)),
+        sell_value=int(data.get("sell_value", 0)),
+        score_value=int(data.get("score_value", 0)),
+        is_market=bool(data.get("is_market", False)),
     )
 
-    ensure_rock_game_attributes(rock)
 
-    # Restore gameplay state
-    rock.sold = bool(data.get("sold", False))
-    rock.imported = bool(data.get("imported", False))
-    rock.used_as_parent = bool(data.get("used_as_parent", False))
-    rock.dead = bool(data.get("dead", False))
-    rock.puffed = bool(data.get("puffed", False))
-    rock.death_reason = data.get("death_reason", None)
-
-    # Restore cached values, then recalculate later
-    rock.base_value = int(data.get("base_value", 0))
-    rock.sell_value = int(data.get("sell_value", 0))
-    rock.score_value = int(data.get("score_value", 0))
-    rock.is_craisen = int(data.get("is_craisen", 0))
-    rock.rock_cost = int(data.get("rock_cost", 0))
-
-    # Restore/sync gender
-    if data.get("gender", None) is not None:
-        rock.gender = data.get("gender", None)
-
-    if "gender" in rock.genes:
-        try:
-            rock.gender = express_gender_from_gene(rock.genes["gender"])
-        except Exception:
-            pass
-
-    return rock
-
-def serialize_breeding_queue_entry(entry):
-    """
-    Convert breeding queue entry to JSON-safe format.
-
-    Supports:
-    - old tuple format: (a, b)
-    - new dict format: {"parents": (a, b), "potion": potion_key}
-    """
-    if isinstance(entry, dict):
-        a, b = get_queue_entry_pair(entry)
-        potion = get_queue_entry_potion(entry)
-
-        return {
-            "parents": [int(a), int(b)],
-            "potion": potion
-        }
-
-    a, b = entry
-
+def inventory_to_dict(inventory: Inventory) -> dict[str, Any]:
     return {
-        "parents": [int(a), int(b)],
-        "potion": None
+        "money": int(inventory.money),
+        "potions": dict(inventory.potions),
+        "specials": dict(inventory.specials),
     }
 
-def deserialize_breeding_queue_entry(data):
-    """
-    Rebuild breeding queue entry from JSON-safe format.
-    """
-    parents = data.get("parents", None)
 
-    if parents is None or len(parents) != 2:
+def inventory_from_dict(data: dict[str, Any]) -> Inventory:
+    return Inventory(
+        money=int(data.get("money", 0)),
+        potions=dict(data.get("potions", {})),
+        specials=dict(data.get("specials", {})),
+    )
+
+
+def queued_pair_to_dict(pair: QueuedPair) -> dict[str, Any]:
+    return {
+        "parent_a_id": int(pair.parent_a_id),
+        "parent_b_id": int(pair.parent_b_id),
+        "potion_key": pair.potion_key,
+    }
+
+
+def queued_pair_from_dict(data: dict[str, Any]) -> QueuedPair:
+    return QueuedPair(
+        parent_a_id=int(data["parent_a_id"]),
+        parent_b_id=int(data["parent_b_id"]),
+        potion_key=data.get("potion_key"),
+    )
+
+
+def market_pod_to_dict(offer: MarketPodOffer) -> dict[str, Any]:
+    return {
+        "offer_id": offer.offer_id,
+        "tier": offer.tier,
+        "name": offer.name,
+        "tagline": offer.tagline,
+        "price": int(offer.price),
+        "parent_a": rock_to_dict(offer.parent_a),
+        "parent_b": rock_to_dict(offer.parent_b),
+        "used": bool(offer.used),
+    }
+
+
+def market_pod_from_dict(data: dict[str, Any]) -> MarketPodOffer:
+    return MarketPodOffer(
+        offer_id=str(data["offer_id"]),
+        tier=str(data["tier"]),
+        name=str(data["name"]),
+        tagline=str(data.get("tagline", "")),
+        price=int(data["price"]),
+        parent_a=rock_from_dict(data["parent_a"]),
+        parent_b=rock_from_dict(data["parent_b"]),
+        used=bool(data.get("used", False)),
+    )
+
+
+def pending_market_pod_to_dict(pending: PendingMarketPod | None) -> dict[str, Any] | None:
+    if pending is None:
         return None
-
-    potion = data.get("potion", None)
-
     return {
-        "parents": (int(parents[0]), int(parents[1])),
-        "potion": potion
+        "offer": market_pod_to_dict(pending.offer),
+        "parent_a_id": int(pending.parent_a_id),
+        "parent_b_id": int(pending.parent_b_id),
+        "children": [rock_to_dict(child) for child in pending.children],
     }
 
-def game_to_dict(game):
-    """
-    Convert full GameState into a JSON-safe dictionary.
-    """
-    evaluate_all_rocks(game)
 
-    save_data = {
+def pending_market_pod_from_dict(data: dict[str, Any] | None) -> PendingMarketPod | None:
+    if data is None:
+        return None
+    return PendingMarketPod(
+        offer=market_pod_from_dict(data["offer"]),
+        parent_a_id=int(data["parent_a_id"]),
+        parent_b_id=int(data["parent_b_id"]),
+        children=[rock_from_dict(child) for child in data.get("children", [])],
+    )
+
+
+def game_to_dict(game: GameMaster) -> dict[str, Any]:
+    game.evaluate_all_rocks()
+    return {
         "save_version": SAVE_VERSION,
         "saved_at": datetime.now().isoformat(timespec="seconds"),
-
         "game": {
-            "player_name": getattr(game, "player_name", ""),
-            "cabal_curse_enabled": bool(getattr(game, "cabal_curse_enabled", False)),
-            "market_pod_used_generations": list(getattr(game, "market_pod_used_generations", [])),
-            "generation": int(game.generation),
+            "starting_money": int(game.starting_money),
             "max_generation": int(game.max_generation),
-            "money": int(game.money),
-            "next_id": int(game.next_id),
             "max_pairs_per_generation": int(game.max_pairs_per_generation),
+            "seed": game.seed,
+            "generation": int(game.generation),
+            "next_rock_id": int(game.next_rock_id),
             "game_over": bool(game.game_over),
-
-            "potions": dict(game.potions),
+            "inventory": inventory_to_dict(game.inventory),
+            "breeding_queue": [queued_pair_to_dict(pair) for pair in game.breeding_queue],
             "events": list(game.events),
-
-            "breeding_queue": [
-                serialize_breeding_queue_entry(entry)
-                for entry in game.breeding_queue
-            ],
-
-            "rocks": [
-                rock_to_dict(rock)
-                for _, rock in sorted(game.rocks.items())
-            ],
-        }
+            "rocks": [rock_to_dict(rock) for _, rock in sorted(game.rock_list.items())],
+            "market_pods": [market_pod_to_dict(offer) for offer in game.market_pods],
+            "pending_market_pod": pending_market_pod_to_dict(game.pending_market_pod),
+        },
     }
 
-    return save_data
 
-def game_from_dict(save_data):
-    """
-    Rebuild GameState from a saved dictionary.
-    """
+def game_from_dict(save_data: dict[str, Any]) -> GameMaster:
     if "game" not in save_data:
-        raise ValueError("Invalid save file: missing 'game' field.")
+        raise ValueError("Invalid save data: missing game.")
 
-    g = save_data["game"]
-
-    game = GameState(
-        rocks={},
-        next_id=int(g.get("next_id", 1)),
-        generation=int(g.get("generation", 0)),
-        max_generation=int(g.get("max_generation", DEFAULT_MAX_GENERATION)),
-        money=int(g.get("money", DEFAULT_STARTING_MONEY)),
-        max_pairs_per_generation=int(
-            g.get("max_pairs_per_generation", DEFAULT_MAX_PAIRS_PER_GENERATION)
-        ),
-        breeding_queue=[],
-        potions=dict(g.get("potions", {})),
-        events=list(g.get("events", [])),
-        game_over=bool(g.get("game_over", False))
+    data = save_data["game"]
+    game = GameMaster(
+        starting_money=int(data.get("starting_money", 0)),
+        max_generation=int(data.get("max_generation", 7)),
+        max_pairs_per_generation=int(data.get("max_pairs_per_generation", 3)),
+        seed=data.get("seed"),
+        auto_start=False,
     )
 
-    #game.player_name = data.get("player_name", "")
-    #game.cabal_curse_enabled = bool(data.get("cabal_curse_enabled", False))
-    #game.market_pod_used_generations = data.get("market_pod_used_generations", [])
+    game.generation = int(data.get("generation", 0))
+    game.next_rock_id = int(data.get("next_rock_id", 1))
+    game.game_over = bool(data.get("game_over", False))
+    game.inventory = inventory_from_dict(data.get("inventory", {}))
+    game.breeding_queue = [
+        queued_pair_from_dict(pair_data)
+        for pair_data in data.get("breeding_queue", [])
+    ]
+    game.events = list(data.get("events", []))
+    game.rock_list = {
+        int(rock_data["id"]): rock_from_dict(rock_data)
+        for rock_data in data.get("rocks", [])
+    }
+    game.market_pods = [
+        market_pod_from_dict(offer_data)
+        for offer_data in data.get("market_pods", [])
+    ]
+    game.pending_market_pod = pending_market_pod_from_dict(data.get("pending_market_pod"))
 
-    ensure_market_state(game)
-    ensure_player_profile_state(game)
+    if game.rock_list:
+        game.next_rock_id = max(game.next_rock_id, max(game.rock_list) + 1)
 
-    # Rebuild rocks
-    for rock_data in g.get("rocks", []):
-        rock = rock_from_dict(rock_data)
-        game.rocks[int(rock.id)] = rock
-
-    # Rebuild queue
-    queue = []
-
-    for entry_data in g.get("breeding_queue", []):
-        entry = deserialize_breeding_queue_entry(entry_data)
-        if entry is not None:
-            queue.append(entry)
-
-    game.breeding_queue = queue
-
-    # Safety: ensure next_id is above all rock IDs
-    if len(game.rocks) > 0:
-        game.next_id = max(game.next_id, max(game.rocks.keys()) + 1)
-
-    # Recalculate values and parent flags
-    evaluate_all_rocks(game)
-
-    game.events.append("Game loaded from save file.")
-
+    game.evaluate_all_rocks()
     return game
 
-def game_to_json_string(game, indent=2):
-    """
-    Convert game to pretty JSON string.
-    """
-    return json.dumps(
-        game_to_dict(game),
-        indent=indent,
-        sort_keys=False
-    )
 
-def game_from_json_string(json_string):
-    """
-    Load game from JSON string.
-    """
-    save_data = json.loads(json_string)
-    return game_from_dict(save_data)
+def game_to_json_string(game: GameMaster, indent: int = 2) -> str:
+    return json.dumps(game_to_dict(game), indent=indent)
 
-def save_game_json(game, filepath):
-    """
-    Save game to a JSON file path.
-    Useful outside Streamlit.
-    """
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(game_to_json_string(game))
 
-    return filepath
+def game_from_json_string(json_string: str) -> GameMaster:
+    return game_from_dict(json.loads(json_string))
 
-def load_game_json(filepath):
-    """
-    Load game from a JSON file path.
-    Useful outside Streamlit.
-    """
-    with open(filepath, "r", encoding="utf-8") as f:
-        json_string = f.read()
 
-    return game_from_json_string(json_string)
+def save_game_json(game: GameMaster, filepath: str | Path) -> Path:
+    path = Path(filepath)
+    path.write_text(game_to_json_string(game), encoding="utf-8")
+    return path
 
-def make_save_filename(game):
-    """
-    Create a friendly save filename.
-    """
+
+def load_game_json(filepath: str | Path) -> GameMaster:
+    return game_from_json_string(Path(filepath).read_text(encoding="utf-8"))
+
+
+def make_save_filename(game: GameMaster) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"rock_game_gen{game.generation}_money{game.money}_{timestamp}.json"

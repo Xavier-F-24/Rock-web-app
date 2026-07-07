@@ -4,6 +4,11 @@ import contextlib
 import streamlit as st
 
 from rockgame_core import *
+from Rock_GameState.rock_game_state_helper import GameMaster as SplitGameMaster
+from Rock_Serialization.rock_serialization_helper import (
+    game_from_json_string as split_game_from_json_string,
+    game_to_json_string as split_game_to_json_string,
+)
 
 st.set_page_config(
     page_title="Rock Game",
@@ -13,6 +18,164 @@ st.set_page_config(
 
 
 #streamlit run app.py
+
+
+def render_split_module_prototype_app():
+    """
+    Minimal playable loop backed by the split GameMaster modules.
+    """
+    st.title("Rock Game Prototype")
+
+    if "split_game" not in st.session_state:
+        st.session_state.split_game = SplitGameMaster(seed=None)
+
+    game = st.session_state.split_game
+
+    with st.sidebar:
+        st.header("Prototype")
+        if st.button("New Prototype Game"):
+            st.session_state.split_game = SplitGameMaster(seed=None)
+            st.rerun()
+
+        save_json = split_game_to_json_string(game)
+        st.download_button(
+            "Download Prototype Save",
+            save_json,
+            file_name=f"rock_game_prototype_gen{game.generation}.json",
+            mime="application/json",
+        )
+
+        uploaded = st.file_uploader("Load Prototype Save", type=["json"], key="split_save_upload")
+        if uploaded is not None and st.button("Load Prototype Save"):
+            st.session_state.split_game = split_game_from_json_string(
+                uploaded.getvalue().decode("utf-8")
+            )
+            st.rerun()
+
+    status = game.update_display()
+    col_a, col_b, col_c, col_d = st.columns(4)
+    col_a.metric("Generation", status["generation"])
+    col_b.metric("Money", status["money"])
+    col_c.metric("Rocks", status["rock_count"])
+    col_d.metric("Market Pods", status["market_pods"])
+
+    st.subheader("Rocks")
+    st.dataframe(
+        [
+            {
+                "id": rock.id,
+                "name": rock.name.full_name if hasattr(rock.name, "full_name") else str(rock.name),
+                "sex": rock.sex.value,
+                "generation": rock.generation,
+                "status": rock.status.value,
+                "sell_value": rock.sell_value,
+            }
+            for rock in game.rocks.values()
+        ],
+        use_container_width=True,
+    )
+
+    active_rocks = [
+        rock
+        for rock in game.rocks.values()
+        if getattr(rock.status, "value", rock.status) == "active"
+    ]
+
+    st.subheader("Breed")
+    if len(active_rocks) >= 2:
+        labels = {
+            rock.id: f"#{rock.id} {rock.name.full_name if hasattr(rock.name, 'full_name') else rock.name} ({rock.sex.value})"
+            for rock in active_rocks
+        }
+        values = list(labels)
+
+        breed_col_a, breed_col_b, breed_col_c = st.columns(3)
+        parent_a_id = breed_col_a.selectbox("Parent A", values, format_func=lambda rid: labels[rid])
+        parent_b_id = breed_col_b.selectbox("Parent B", values, format_func=lambda rid: labels[rid])
+        potion_key = breed_col_c.selectbox("Potion", [None] + sorted(game.potions), format_func=lambda key: "None" if key is None else key)
+
+        if st.button("Queue Pair"):
+            try:
+                game.add_pair_to_queue(parent_a_id, parent_b_id, potion_key=potion_key)
+                st.success("Pair queued.")
+            except Exception as exc:
+                st.error(str(exc))
+
+    st.write(f"Queued pairs: {len(game.breeding_queue)}")
+    if st.button("Advance Generation"):
+        try:
+            children = game.advance_generation()
+            st.success(f"Advanced generation with {len(children)} child rock(s).")
+            st.rerun()
+        except Exception as exc:
+            st.error(str(exc))
+
+    st.subheader("Market")
+    market_col_a, market_col_b, market_col_c = st.columns(3)
+    with market_col_a:
+        potion_to_buy = st.selectbox("Buy Potion", ["fertility", "reroll", "mutation", "anti_craisen"])
+        if st.button("Buy Potion"):
+            try:
+                game.buy_potion(potion_to_buy)
+                st.success(f"Bought {potion_to_buy}.")
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+    with market_col_b:
+        if st.button("Buy Random Rock"):
+            try:
+                rock = game.buy_random_rock()
+                st.success(f"Bought rock #{rock.id}.")
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+    with market_col_c:
+        if st.button("Buy Orange Double-Eye Rock"):
+            try:
+                rock = game.buy_defined_trait_rock(
+                    {"gender": "female", "color": "34", "eyes": "11"},
+                    random_fill=False,
+                )
+                st.success(f"Bought rock #{rock.id}.")
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+    if game.market_pods:
+        offer_labels = {
+            offer.offer_id: f"{offer.name} (${offer.price})"
+            for offer in game.market_pods
+            if not offer.used
+        }
+        if offer_labels:
+            offer_id = st.selectbox("Market Pod", list(offer_labels), format_func=lambda oid: offer_labels[oid])
+            if st.button("Buy Selected Pod"):
+                try:
+                    pending = game.market_manager.buy_market_pod(game, offer_id)
+                    st.success(f"Pod bought with {len(pending.children)} child candidate(s).")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
+
+    if game.pending_market_pod is not None:
+        pending = game.pending_market_pod
+        child_options = list(range(len(pending.children)))
+        child_index = st.selectbox("Keep Market Child", child_options)
+        if st.button("Keep Child"):
+            child = game.market_manager.choose_market_pod_child(game, child_index)
+            st.success(f"Kept child #{child.id}.")
+            st.rerun()
+
+    st.subheader("Recent Events")
+    for event in game.events[-10:]:
+        st.write(f"- {event}")
+
+
+if st.sidebar.checkbox("Use split-module prototype", value=False):
+    render_split_module_prototype_app()
+    st.stop()
 
 
 # -----------------------------

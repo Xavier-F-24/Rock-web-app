@@ -16,6 +16,13 @@ from Rock_Market.rock_market_helper import MarketManager
 DEFAULT_STARTING_MONEY = 10
 DEFAULT_MAX_GENERATION = 7
 DEFAULT_MAX_PAIRS_PER_GENERATION = 3
+BASE_MUTATION_CHANCE = 0.01
+MUTATION_POTION_CHANCE = 0.12
+BASE_CHILD_DEATH_CHANCE = 0.05
+BASE_CRAISEN_CHANCE = 0.50
+ANTI_CRAISEN_CHANCE = 0.0
+BASE_SPORE_DEATH_CHANCE = 0.25
+BASE_SPORE_CLONE_COUNT = 3
 STARTER_SEXES = (
     genetics.Sex.MALE,
     genetics.Sex.FEMALE,
@@ -178,7 +185,7 @@ class GameMaster:
 
         parent_a = self.get_rock(parent_a_id)
         parent_b = self.get_rock(parent_b_id)
-        validation = self.breeding_master.validate_breeding_pair(parent_a, parent_b)
+        validation = self.breeding_master.validate_breeding_pair(parent_a, parent_b, game=self)
         if not validation["valid"]:
             raise ValueError("Invalid breeding pair: " + "; ".join(validation["errors"]))
 
@@ -223,18 +230,9 @@ class GameMaster:
                 craisen_chance=potion_settings["craisen_chance"],
                 spore_death_chance=potion_settings["spore_death_chance"],
                 spore_clone_count=potion_settings["spore_clone_count"],
+                clutch_reroll=potion_settings["clutch_reroll"],
+                clutch_plus_one=potion_settings["clutch_plus_one"],
             )
-
-            if pair.potion_key == "fertility" and clutch:
-                extra_child = self.breeding_master.breed_child_from_parents(
-                    parent_a=parent_a,
-                    parent_b=parent_b,
-                    next_id=self.next_rock_id + len(clutch),
-                    child_generation=next_generation,
-                    mutation_chance=potion_settings["mutation_chance"],
-                )
-                self.finalize_rock(extra_child)
-                clutch.append(extra_child)
 
             for child in clutch:
                 child.id = self.reserve_rock_id()
@@ -249,18 +247,22 @@ class GameMaster:
 
     @staticmethod
     def potion_settings(potion_key: str | None) -> dict[str, Any]:
-        mutation_chance = 0.01
-        death_chance = 0.05
-        craisen_chance = 0.50
-        spore_death_chance = 0.25
-        spore_clone_count = 3
+        mutation_chance = BASE_MUTATION_CHANCE
+        death_chance = BASE_CHILD_DEATH_CHANCE
+        craisen_chance = BASE_CRAISEN_CHANCE
+        spore_death_chance = BASE_SPORE_DEATH_CHANCE
+        spore_clone_count = BASE_SPORE_CLONE_COUNT
+        clutch_reroll = None
+        clutch_plus_one = None
 
         if potion_key == "mutation":
-            mutation_chance = 0.12
+            mutation_chance = MUTATION_POTION_CHANCE
         elif potion_key == "anti_craisen":
-            craisen_chance = 0.10
+            craisen_chance = ANTI_CRAISEN_CHANCE
         elif potion_key == "reroll":
-            death_chance = 0.0
+            clutch_reroll = True
+        elif potion_key == "fertility":
+            clutch_plus_one = True
 
         return {
             "mutation_chance": mutation_chance,
@@ -268,6 +270,8 @@ class GameMaster:
             "craisen_chance": craisen_chance,
             "spore_death_chance": spore_death_chance,
             "spore_clone_count": spore_clone_count,
+            "clutch_reroll": clutch_reroll,
+            "clutch_plus_one": clutch_plus_one,
         }
 
     def advance_generation(self) -> list[genetics.Rock]:

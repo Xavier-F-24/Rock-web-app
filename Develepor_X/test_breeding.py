@@ -139,3 +139,44 @@ def test_maybe_craisen_child_does_not_craisen_without_matching_death_gene(male_r
 
     assert child.status == genetics.RockStatus.ACTIVE
     assert child.checked_craisen is False
+
+
+def test_relationship_validation_rejects_siblings():
+    class MiniGame:
+        def __init__(self, rocks):
+            self.rocks = rocks
+
+        def get_rock(self, rock_id):
+            return self.rocks.get(int(rock_id))
+
+    parent_a = make_rock(rock_id=1, sex=genetics.Sex.MALE)
+    parent_b = make_rock(rock_id=2, sex=genetics.Sex.FEMALE)
+    sibling_a = make_rock(rock_id=3, sex=genetics.Sex.MALE)
+    sibling_b = make_rock(rock_id=4, sex=genetics.Sex.FEMALE)
+    sibling_a.parent_ids = [parent_a.id, parent_b.id]
+    sibling_b.parent_ids = [parent_a.id, parent_b.id]
+    game = MiniGame({rock.id: rock for rock in [parent_a, parent_b, sibling_a, sibling_b]})
+
+    result = make_master().validate_breeding_pair(sibling_a, sibling_b, game=game)
+
+    assert result["valid"] is False
+    assert any("siblings" in error for error in result["errors"])
+
+
+def test_relationship_validation_rejects_parent_child():
+    class MiniGame:
+        def __init__(self, rocks):
+            self.rocks = rocks
+
+        def get_rock(self, rock_id):
+            return self.rocks.get(int(rock_id))
+
+    parent = make_rock(rock_id=1, sex=genetics.Sex.MALE)
+    child = make_rock(rock_id=2, sex=genetics.Sex.FEMALE)
+    child.parent_ids = [parent.id]
+    game = MiniGame({parent.id: parent, child.id: child})
+
+    result = make_master().validate_breeding_pair(parent, child, game=game)
+
+    assert result["valid"] is False
+    assert any("parent/child" in error for error in result["errors"])

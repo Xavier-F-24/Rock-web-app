@@ -63,3 +63,19 @@ def test_market_pod_purchase_can_keep_one_child():
     assert child.id in game.rock_list
     assert child.parent_ids == [pending.parent_a_id, pending.parent_b_id]
     assert game.pending_market_pod is None
+
+
+def test_potion_settings_are_finalized_for_first_balance_pass():
+    settings = GameMaster.potion_settings("fertility")
+    assert settings["clutch_plus_one"] is True
+    assert settings["clutch_reroll"] is None
+
+    settings = GameMaster.potion_settings("reroll")
+    assert settings["clutch_reroll"] is True
+    assert settings["clutch_plus_one"] is None
+
+    settings = GameMaster.potion_settings("mutation")
+    assert settings["mutation_chance"] > GameMaster.potion_settings(None)["mutation_chance"]
+
+    settings = GameMaster.potion_settings("anti_craisen")
+    assert settings["craisen_chance"] == 0.0
