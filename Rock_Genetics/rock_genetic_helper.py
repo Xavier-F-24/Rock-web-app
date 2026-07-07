@@ -740,6 +740,77 @@ class GenomeFactory:
             genes[gene] = rand_gene_pair
 
         return (Genome(genes))
+
+    def make_selected_rock_genome(
+        self,
+        selected_traits: dict[str, object] | None = None,
+        random_fill: bool = True,
+    ) -> Genome:
+        """
+        Build a genome with explicit allele pairs for selected genes.
+
+        selected_traits accepts values like:
+        - {"color": (3, 4)}
+        - {"eyes": [1, 1]}
+        - {"shape": "22"}
+        Unspecified genes are random by default, or zeroed when random_fill=False.
+        """
+        selected_traits = selected_traits or {}
+
+        if random_fill:
+            genome = self.make_random_rock_genome()
+        else:
+            genes: dict[str, GenePair] = {}
+            for gene_name, spec in self.genome_spec_list.items():
+                genes[gene_name] = GenePair(
+                    allele_a=Allele(0),
+                    allele_b=Allele(0),
+                    name_of_gene=gene_name,
+                    dominance_type=spec.expression_rule,
+                )
+            genome = Genome(genes)
+
+        for gene_name, raw_pair in selected_traits.items():
+            if gene_name not in self.genome_spec_list:
+                raise KeyError(f"Unknown gene: {gene_name}")
+
+            allele_a, allele_b = self.parse_selected_allele_pair(raw_pair)
+            spec = self.genome_spec_list[gene_name]
+
+            if allele_a not in spec.options:
+                raise ValueError(f"{gene_name}: invalid allele {allele_a}")
+            if allele_b not in spec.options:
+                raise ValueError(f"{gene_name}: invalid allele {allele_b}")
+
+            genome.genes[gene_name] = GenePair(
+                allele_a=Allele(allele_a),
+                allele_b=Allele(allele_b),
+                name_of_gene=gene_name,
+                dominance_type=spec.expression_rule,
+            )
+
+        return genome
+
+    @staticmethod
+    def parse_selected_allele_pair(raw_pair: object) -> tuple[int, int]:
+        if isinstance(raw_pair, str):
+            cleaned = raw_pair.strip()
+            if len(cleaned) != 2 or not cleaned.isdigit():
+                raise ValueError(f"Selected allele string must look like '01', not {raw_pair!r}")
+            return int(cleaned[0]), int(cleaned[1])
+
+        if isinstance(raw_pair, int):
+            return raw_pair, raw_pair
+
+        try:
+            values = list(raw_pair)  # type: ignore[arg-type]
+        except TypeError as exc:
+            raise ValueError(f"Selected allele pair must be a string, int, or two values: {raw_pair!r}") from exc
+
+        if len(values) != 2:
+            raise ValueError(f"Selected allele pair must contain exactly two values: {raw_pair!r}")
+
+        return int(values[0]), int(values[1])
     
     def make_death_genes(
         self,
