@@ -323,16 +323,14 @@ class TreeDrawer:
     def add_node_text(self, fig: go.Figure, positions: dict[int, tuple[float, float]]) -> None:
         for rock_id, rock in self.helper.rocks.items():
             x, y = positions[rock_id]
-            label = f"{get_gender_symbol(rock)}<br>#{rock.id}: {rock_display_name(rock)}"
             status_symbol = get_rock_status_symbol(rock)
 
             fig.add_trace(
                 go.Scatter(
                     x=[x],
-                    y=[y - 1.0],
-                    mode="text",
-                    text=[label],
-                    textfont={"size": 12, "color": get_gender_color(rock)},
+                    y=[y],
+                    mode="markers",
+                    marker={"size": 28, "color": "rgba(0,0,0,0)"},
                     hovertext=[self.hover_text(rock)],
                     hoverinfo="text",
                     showlegend=False,

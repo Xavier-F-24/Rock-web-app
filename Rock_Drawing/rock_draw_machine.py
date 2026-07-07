@@ -20,6 +20,22 @@ from Rock_Drawing.rock_feature_drawers import (
     draw_nose, draw_patchwork, draw_stones, draw_tail, draw_wings, draw_wrinkles,
 )
 
+@dataclass(frozen=True)
+class IdentityLabelLayout:
+    """
+    Controls identity-label placement in body-radius units.
+    """
+
+    name_below_body_radius: float = 0.5
+    gender_right_body_radius: float = 0.5
+    gender_above_body_radius: float = 0.5
+    name_font_size: int = 8
+    gender_font_size: int = 18
+    font_weight: str = "bold"
+
+
+DEFAULT_IDENTITY_LABEL_LAYOUT = IdentityLabelLayout()
+
 @dataclass
 class DrawMachine:
     """
@@ -30,6 +46,7 @@ class DrawMachine:
     ax: Axes | None = None
     show_genes: bool = False
     normalize_size: bool = True
+    identity_layout: IdentityLabelLayout = DEFAULT_IDENTITY_LABEL_LAYOUT
 
     ctx: RockRenderContext | None = None
     drawn_eye_positions: list[tuple[float, float, float]] = field(default_factory = list)
@@ -143,27 +160,33 @@ class DrawMachine:
         gender_symbol = "\u2642" if self.rock.sex == genetics.Sex.MALE else "\u2640"
         gender_color = "royalblue" if self.rock.sex == genetics.Sex.MALE else "deeppink"
         name = self.rock.name.full_name if hasattr(self.rock.name, "full_name") else str(self.rock.name)
+        body_radius = 0.5 * ctx.unit
+        layout = self.identity_layout
+
+        gender_x = ctx.xmax + layout.gender_right_body_radius * body_radius
+        gender_y = ctx.ymax + layout.gender_above_body_radius * body_radius
+        name_y = ctx.ymin - layout.name_below_body_radius * body_radius
 
         ctx.ax.text(
-            0.62 * ctx.s,
-            1.10 * ctx.s,
+            gender_x,
+            gender_y,
             gender_symbol,
             color=gender_color,
             ha="center",
             va="center",
-            fontsize=18,
-            fontweight="bold",
+            fontsize=layout.gender_font_size,
+            fontweight=layout.font_weight,
             zorder=30,
         )
         ctx.ax.text(
-            0,
-            -1.28 * ctx.s,
+            ctx.cx,
+            name_y,
             f"#{self.rock.id}: {name}",
-            color="black",
+            color=gender_color,
             ha="center",
             va="center",
-            fontsize=8,
-            fontweight="bold",
+            fontsize=layout.name_font_size,
+            fontweight=layout.font_weight,
             zorder=30,
         )
 
@@ -187,7 +210,7 @@ class DrawMachine:
 
         return self.ctx.ax
 
-def draw_rock(rock, ax=None, show_genes=False, normalize_size=True):
+def draw_rock(rock, ax=None, show_genes=False, normalize_size=True, identity_layout=DEFAULT_IDENTITY_LABEL_LAYOUT):
     """
     Trait-based rock renderer.
     """
@@ -197,6 +220,7 @@ def draw_rock(rock, ax=None, show_genes=False, normalize_size=True):
         ax = ax,
         show_genes = show_genes,
         normalize_size = normalize_size,
+        identity_layout = identity_layout,
     )
 
     return machine.draw()

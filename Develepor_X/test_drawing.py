@@ -6,7 +6,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 
-from Rock_Drawing.rock_draw_machine import DrawMachine, draw_rock
+from Rock_Drawing.rock_draw_machine import DrawMachine, IdentityLabelLayout, draw_rock
 from Rock_Drawing.rock_drawing_helper import render_game_rock_images, rock_to_image_uri
 from Rock_Drawing.rock_lineage_drawing_helper import TreeDrawer, TreeHelper, draw_game_tree, show_rocks
 from Rock_Drawing.rock_render_context import RockRenderContext
@@ -45,6 +45,7 @@ def test_draw_machine_draw_returns_axis_and_adds_artists():
         assert result_ax is ax
         assert len(ax.patches) > 0
         assert len(ax.texts) >= 2
+        assert ax.texts[-1].get_color() == "royalblue"
         assert ax.get_aspect() == 1.0
         assert not ax.axison
     finally:
@@ -54,12 +55,14 @@ def test_draw_machine_draw_returns_axis_and_adds_artists():
 def test_draw_rock_returns_axis_and_adds_body_patch():
     fig, ax = plt.subplots()
     rock = make_rock()
+    layout = IdentityLabelLayout(name_below_body_radius=0.75, gender_right_body_radius=0.75)
 
     try:
-        result_ax = draw_rock(rock, ax=ax)
+        result_ax = draw_rock(rock, ax=ax, identity_layout=layout)
 
         assert result_ax is ax
         assert len(ax.patches) >= 1
+        assert ax.texts[-1].get_position()[1] < 0
     finally:
         plt.close(fig)
 
@@ -99,7 +102,7 @@ def test_tree_helper_computes_positions_and_family_links():
     assert helper.bounds()["x"][0] < helper.bounds()["x"][1]
 
 
-def test_tree_drawer_creates_plotly_figure_with_images_and_labels():
+def test_tree_drawer_creates_plotly_figure_with_images_without_duplicate_labels():
     game = GameMaster(seed=63)
     ids = list(game.rocks)
     game.add_pair_to_queue(ids[0], ids[1])
@@ -110,6 +113,14 @@ def test_tree_drawer_creates_plotly_figure_with_images_and_labels():
     assert len(fig.layout.images) == len(game.rocks)
     assert len(fig.data) >= len(game.rocks)
     assert fig.layout.dragmode == "pan"
+    visible_texts = [
+        text
+        for trace in fig.data
+        if getattr(trace, "mode", None) == "text"
+        for text in (trace.text or [])
+    ]
+    assert not any("#" in str(text) for text in visible_texts)
+    assert not any("\u2642" in str(text) or "\u2640" in str(text) for text in visible_texts)
 
 
 def test_draw_game_tree_wrapper_returns_figure():

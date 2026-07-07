@@ -47,14 +47,17 @@ def pad_rock_axis(ax, pad_frac=PAD_FRAC):
     ax.set_ylim(y0 - pad_frac * dy, y1 + pad_frac * dy)
     ax.set_aspect("equal")
 
-def rock_to_image_uri(rock, sprite_size=2.0, dpi=400):
+def rock_to_image_uri(rock, sprite_size=2.0, dpi=400, identity_layout=None):
     """
     Render a rock to a transparent PNG and return it as a base64 image URI
     that Plotly can place on the graph.
     """
     fig, ax = plt.subplots(figsize=(sprite_size, sprite_size), dpi=dpi)
 
-    draw_rock(rock, ax=ax)
+    if identity_layout is None:
+        draw_rock(rock, ax=ax)
+    else:
+        draw_rock(rock, ax=ax, identity_layout=identity_layout)
 
     pad_rock_axis(ax, pad_frac=PAD_FRAC)
 
@@ -111,7 +114,7 @@ def ensure_rock_image_cache(game):
 
     return game.rock_image_cache
 
-def render_game_rock_images(game, sprite_size=2.0, dpi=220, force=False):
+def render_game_rock_images(game, sprite_size=2.0, dpi=220, force=False, identity_layout=None):
     """
     Render all game rocks to a cache and return {rock_id: image_uri}.
     """
@@ -125,7 +128,12 @@ def render_game_rock_images(game, sprite_size=2.0, dpi=220, force=False):
         if force or cached is None or cached.get("signature") != signature:
             cache[int(rock_id)] = {
                 "signature": signature,
-                "image_uri": rock_to_image_uri(rock, sprite_size=sprite_size, dpi=dpi),
+                "image_uri": rock_to_image_uri(
+                    rock,
+                    sprite_size=sprite_size,
+                    dpi=dpi,
+                    identity_layout=identity_layout,
+                ),
             }
 
         output[int(rock_id)] = cache[int(rock_id)]["image_uri"]
