@@ -12,9 +12,10 @@ from Rock_Serialization.rock_serialization_helper import (
 def test_game_master_serialization_round_trips_core_state():
     game = GameMaster(seed=31, starting_money=30, rock_farm_cost=90)
     game.buy_potion("fertility")
+    game.buy_potion("mutation")
 
     ids = list(game.rocks)
-    game.add_pair_to_queue(ids[0], ids[1], potion_key="fertility")
+    game.add_pair_to_queue(ids[0], ids[1], potion_keys=["fertility", "mutation"])
     game.advance_generation()
 
     json_string = game_to_json_string(game)
@@ -26,6 +27,33 @@ def test_game_master_serialization_round_trips_core_state():
     assert loaded.rock_farm_cost == 90
     assert set(loaded.rocks) == set(game.rocks)
     assert loaded.update_display()["rock_count"] == game.update_display()["rock_count"]
+
+
+def test_serialization_round_trips_queued_pair_multiple_potions():
+    game = GameMaster(seed=33, starting_money=80)
+    game.buy_potion("fertility")
+    game.buy_potion("mutation")
+    ids = list(game.rocks)
+
+    game.add_pair_to_queue(ids[0], ids[1], potion_keys=["fertility", "mutation"])
+    save_data = game_to_dict(game)
+    loaded = game_from_json_string(json.dumps(save_data))
+
+    assert save_data["game"]["breeding_queue"][0]["potion_keys"] == ["fertility", "mutation"]
+    assert loaded.breeding_queue[0].potion_keys == ["fertility", "mutation"]
+
+
+def test_serialization_loads_old_single_potion_queue_entries():
+    game = GameMaster(seed=34, starting_money=80)
+    game.buy_potion("fertility")
+    ids = list(game.rocks)
+    game.add_pair_to_queue(ids[0], ids[1], potion_key="fertility")
+    save_data = game_to_dict(game)
+    save_data["game"]["breeding_queue"][0].pop("potion_keys")
+
+    loaded = game_from_json_string(json.dumps(save_data))
+
+    assert loaded.breeding_queue[0].potion_keys == ["fertility"]
 
 
 def test_serialization_defaults_rock_farm_cost_for_old_saves():

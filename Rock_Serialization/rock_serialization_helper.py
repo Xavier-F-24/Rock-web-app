@@ -150,15 +150,23 @@ def queued_pair_to_dict(pair: QueuedPair) -> dict[str, Any]:
     return {
         "parent_a_id": int(pair.parent_a_id),
         "parent_b_id": int(pair.parent_b_id),
+        "potion_keys": list(pair.potion_keys),
         "potion_key": pair.potion_key,
     }
 
 
 def queued_pair_from_dict(data: dict[str, Any]) -> QueuedPair:
+    potion_keys = data.get("potion_keys")
+    if potion_keys is None:
+        old_potion_key = data.get("potion_key")
+        potion_keys = [] if old_potion_key is None else [old_potion_key]
+    elif isinstance(potion_keys, str):
+        potion_keys = [potion_keys]
+
     return QueuedPair(
         parent_a_id=int(data["parent_a_id"]),
         parent_b_id=int(data["parent_b_id"]),
-        potion_key=data.get("potion_key"),
+        potion_keys=list(potion_keys),
     )
 
 

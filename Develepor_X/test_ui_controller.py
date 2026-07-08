@@ -114,6 +114,34 @@ def test_controller_queues_breeding_pair_with_clean_result():
     assert game_controller.get_queue_summary(game)["queued_pairs"] == 1
 
 
+def test_controller_removes_queued_pair_and_refunds_potion():
+    game = game_controller.start_new_game(seed=711, starting_money=80)
+    game.buy_potion("fertility")
+    game.buy_potion("mutation")
+    breeders = game_controller.get_available_breeding_candidates(game)
+    male = next(rock for rock in breeders if rock.sex.value == "male")
+    female = next(rock for rock in breeders if rock.sex.value == "female")
+
+    queue_result = game_controller.breed_pair(
+        game,
+        male.id,
+        female.id,
+        options={"potion_keys": ["fertility", "mutation"]},
+    )
+    badge_map = game_controller.get_queued_parent_badges(game)
+    remove_result = game_controller.remove_queued_pair(game, 1)
+
+    assert queue_result.ok is True
+    assert queue_result.payload.potion_keys == ["fertility", "mutation"]
+    assert male.id in badge_map
+    assert female.id in badge_map
+    assert badge_map[male.id]["text"] == "\u2665"
+    assert remove_result.ok is True
+    assert game_controller.get_queue_summary(game)["queued_pairs"] == 0
+    assert game.potions["fertility"] == 1
+    assert game.potions["mutation"] == 1
+
+
 def test_controller_advances_queued_breeding_and_returns_children():
     game = game_controller.start_new_game(seed=706)
     breeders = game_controller.get_available_breeding_candidates(game)

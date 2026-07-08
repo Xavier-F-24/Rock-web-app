@@ -43,7 +43,19 @@ class Inventory:
 class QueuedPair:
     parent_a_id: int
     parent_b_id: int
-    potion_key: str | None = None
+    potion_keys: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.potion_keys is None:
+            self.potion_keys = []
+        elif isinstance(self.potion_keys, str):
+            self.potion_keys = [self.potion_keys]
+        else:
+            self.potion_keys = [str(key) for key in self.potion_keys if key is not None]
+
+    @property
+    def potion_key(self) -> str | None:
+        return self.potion_keys[0] if self.potion_keys else None
 
 
 @dataclass
@@ -181,6 +193,7 @@ class GameMaster:
         parent_a_id: int,
         parent_b_id: int,
         potion_key: str | None = None,
+        potion_keys: list[str] | tuple[str, ...] | None = None,
     ) -> QueuedPair:
         if len(self.breeding_queue) >= self.max_pairs_per_generation:
             raise ValueError("Breeding queue is full for this generation.")
@@ -196,19 +209,34 @@ class GameMaster:
         if parent_a.id in queued_ids or parent_b.id in queued_ids:
             raise ValueError("One or both parents are already queued this generation.")
 
-        if potion_key is not None:
-            if self.potions.get(potion_key, 0) <= 0:
-                raise ValueError(f"Potion not owned: {potion_key}")
-            self.potions[potion_key] -= 1
-            if self.potions[potion_key] <= 0:
-                del self.potions[potion_key]
+        selected_potions = self.normalize_potion_keys(potion_key=potion_key, potion_keys=potion_keys)
+        potion_counts = {key: selected_potions.count(key) for key in set(selected_potions)}
+        for key, count in potion_counts.items():
+            if self.potions.get(key, 0) < count:
+                raise ValueError(f"Potion not owned: {key}")
 
-        pair = QueuedPair(parent_a.id, parent_b.id, potion_key)
+        for key in selected_potions:
+            self.potions[key] -= 1
+            if self.potions[key] <= 0:
+                del self.potions[key]
+
+        pair = QueuedPair(parent_a.id, parent_b.id, selected_potions)
         self.breeding_queue.append(pair)
         self.events.append(f"Queued #{parent_a.id} x #{parent_b.id}.")
         for warning in validation.get("warnings", []):
             self.events.append(warning)
         return pair
+
+    def remove_pair_from_queue(self, slot_index: int) -> QueuedPair:
+        if slot_index < 0 or slot_index >= len(self.breeding_queue):
+            raise IndexError(f"Unknown queued pair slot: {slot_index + 1}")
+
+        removed = self.breeding_queue.pop(slot_index)
+        for potion_key in removed.potion_keys:
+            self.potions[potion_key] = self.potions.get(potion_key, 0) + 1
+
+        self.events.append(f"Removed queued pair #{removed.parent_a_id} x #{removed.parent_b_id}.")
+        return removed
 
     def breed_queue(self) -> list[genetics.Rock]:
         if self.game_over:
@@ -223,7 +251,7 @@ class GameMaster:
             parent_a = self.get_rock(pair.parent_a_id)
             parent_b = self.get_rock(pair.parent_b_id)
 
-            potion_settings = self.potion_settings(pair.potion_key)
+            potion_settings = self.potion_settings(pair.potion_keys)
             clutch = self.breeding_master.breed_parent_set(
                 parent_a=parent_a,
                 parent_b=parent_b,
@@ -250,7 +278,20 @@ class GameMaster:
         return children
 
     @staticmethod
-    def potion_settings(potion_key: str | None) -> dict[str, Any]:
+    @staticmethod
+    def normalize_potion_keys(
+        potion_key: str | None = None,
+        potion_keys: list[str] | tuple[str, ...] | None = None,
+    ) -> list[str]:
+        selected: list[str] = []
+        if potion_key is not None:
+            selected.append(str(potion_key))
+        if potion_keys is not None:
+            selected.extend(str(key) for key in potion_keys if key is not None)
+        return selected
+
+    @staticmethod
+    def potion_settings(potion_keys: str | list[str] | tuple[str, ...] | None) -> dict[str, Any]:
         mutation_chance = BASE_MUTATION_CHANCE
         death_chance = BASE_CHILD_DEATH_CHANCE
         craisen_chance = BASE_CRAISEN_CHANCE
@@ -259,13 +300,20 @@ class GameMaster:
         clutch_reroll = None
         clutch_plus_one = None
 
-        if potion_key == "mutation":
+        if potion_keys is None:
+            selected = set()
+        elif isinstance(potion_keys, str):
+            selected = {potion_keys}
+        else:
+            selected = set(potion_keys)
+
+        if "mutation" in selected:
             mutation_chance = MUTATION_POTION_CHANCE
-        elif potion_key == "anti_craisen":
+        if "anti_craisen" in selected:
             craisen_chance = ANTI_CRAISEN_CHANCE
-        elif potion_key == "reroll":
+        if "reroll" in selected:
             clutch_reroll = True
-        elif potion_key == "fertility":
+        if "fertility" in selected:
             clutch_plus_one = True
 
         return {

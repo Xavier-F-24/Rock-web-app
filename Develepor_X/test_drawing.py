@@ -310,6 +310,22 @@ def test_tree_helper_uses_import_lane_for_market_founders_without_changing_game_
     assert imported.id in groups[-1]
 
 
+def test_tree_helper_uses_current_generation_minus_one_for_later_imports():
+    game = GameMaster(seed=71, starting_money=80)
+    males = [rock for rock in game.rocks.values() if rock.sex == genetics.Sex.MALE]
+    females = [rock for rock in game.rocks.values() if rock.sex == genetics.Sex.FEMALE]
+    game.add_pair_to_queue(males[0].id, females[0].id)
+    game.advance_generation()
+
+    imported = game.buy_random_rock()
+    helper = TreeHelper.from_game(game)
+    graph_generations = helper.graph_generations()
+
+    assert game.generation == 1
+    assert imported.generation == game.generation
+    assert graph_generations[imported.id] == game.generation - 1
+
+
 def test_tree_helper_visually_places_market_pod_parents_above_kept_child():
     game = GameMaster(seed=70, starting_money=80)
     offer_id = game.market_pods[0].offer_id
@@ -431,6 +447,78 @@ def test_tree_drawer_creates_plotly_figure_with_images_without_duplicate_labels(
     ]
     assert not any("#" in str(text) for text in visible_texts)
     assert not any("\u2642" in str(text) or "\u2640" in str(text) for text in visible_texts)
+
+
+def test_tree_drawer_node_markers_expose_clickable_rock_ids_and_highlights():
+    game = GameMaster(seed=631)
+    highlighted_id = next(iter(game.rocks))
+
+    fig = TreeDrawer(
+        game=game,
+        canvas_width=600,
+        canvas_height=400,
+        highlighted_rock_ids=(highlighted_id,),
+    ).draw()
+
+    marker_traces = [
+        trace
+        for trace in fig.data
+        if getattr(trace, "mode", None) == "markers" and getattr(trace, "customdata", None) is not None
+    ]
+    customdata_ids = {
+        int(trace.customdata[0])
+        for trace in marker_traces
+    }
+    highlighted_trace = next(trace for trace in marker_traces if int(trace.customdata[0]) == highlighted_id)
+
+    assert customdata_ids == set(game.rocks)
+    assert highlighted_trace.marker.line.color == "#8B5A2B"
+    assert highlighted_trace.marker.line.width == 4
+
+
+def test_tree_drawer_renders_queued_parent_badges():
+    game = GameMaster(seed=632)
+    ids = list(game.rocks)
+    badge_id = ids[0]
+
+    fig = TreeDrawer(
+        game=game,
+        canvas_width=600,
+        canvas_height=400,
+        rock_badges={badge_id: {"text": "\u2665", "color": "#E15759"}},
+    ).draw()
+
+    badge_traces = [
+        trace
+        for trace in fig.data
+        if getattr(trace, "mode", None) == "text" and list(trace.text or []) == ["\u2665"]
+    ]
+
+    assert badge_traces
+    assert badge_traces[0].textfont.color == "#E15759"
+
+
+def test_tree_drawer_renders_tree_checkbox_marks():
+    game = GameMaster(seed=633)
+    ids = list(game.rocks)
+    unchecked_id, checked_id = ids[:2]
+
+    fig = TreeDrawer(
+        game=game,
+        canvas_width=600,
+        canvas_height=400,
+        tree_checkbox_ids=(unchecked_id, checked_id),
+        tree_checked_ids=(checked_id,),
+    ).draw()
+
+    checkbox_texts = [
+        list(trace.text or [])[0]
+        for trace in fig.data
+        if getattr(trace, "mode", None) == "text" and list(trace.text or []) in (["\u2610"], ["\u2611"])
+    ]
+
+    assert "\u2610" in checkbox_texts
+    assert "\u2611" in checkbox_texts
 
 
 def test_draw_game_tree_wrapper_returns_figure():

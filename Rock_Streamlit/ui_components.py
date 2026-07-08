@@ -75,20 +75,3 @@ def action_message(result) -> None:
     else:
         st.error(result.message)
 
-
-def rock_card(card: dict, key_prefix: str, selected: bool = False) -> bool:
-    css_class = "rock-card rock-card-selected" if selected else "rock-card"
-    st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
-    st.image(card["image_uri"], width=150)
-    st.markdown(f"**#{card['id']} {card['name']}**")
-    st.caption(
-        f"{card['sex']} | gen {card['generation']} | {card['status']} | value ${card['value']}"
-    )
-    clicked = st.button(
-        "Selected" if selected else "Select",
-        key=f"{key_prefix}_{card['id']}",
-        disabled=selected,
-        width="stretch",
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-    return clicked

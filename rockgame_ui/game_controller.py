@@ -169,10 +169,32 @@ def get_breeding_queue_rows(game: GameMaster) -> list[dict[str, Any]]:
                 "slot": index,
                 "parent_a": rock_label(parent_a) if parent_a is not None else f"Unknown #{pair.parent_a_id}",
                 "parent_b": rock_label(parent_b) if parent_b is not None else f"Unknown #{pair.parent_b_id}",
-                "potion": pair.potion_key or "None",
+                "potion": ", ".join(pair.potion_keys) if pair.potion_keys else "None",
             }
         )
     return rows
+
+
+def get_queued_parent_badges(game: GameMaster) -> dict[int, dict[str, str]]:
+    colors = [
+        "#E15759",
+        "#4E79A7",
+        "#59A14F",
+        "#B07AA1",
+        "#F28E2B",
+        "#76B7B2",
+    ]
+    badges: dict[int, dict[str, str]] = {}
+
+    for index, pair in enumerate(game.breeding_queue):
+        color = colors[index % len(colors)]
+        for rock_id in (pair.parent_a_id, pair.parent_b_id):
+            badges[int(rock_id)] = {
+                "text": "\u2665",
+                "color": color,
+            }
+
+    return badges
 
 
 def get_active_score_total(game: GameMaster) -> int:
@@ -194,18 +216,6 @@ def is_game_finished(game: GameMaster | None) -> bool:
     return bool(game is not None and game.game_over)
 
 
-def get_breeding_candidate_cards(game: GameMaster) -> list[dict[str, Any]]:
-    game.evaluate_all_rocks()
-    return [
-        {
-            **rock_summary_row(rock),
-            "label": rock_label(rock),
-            "image_uri": render_rock(rock, sprite_size=1.35, dpi=140),
-        }
-        for rock in sorted(get_available_breeding_candidates(game), key=lambda candidate: candidate.id)
-    ]
-
-
 def get_potion_options(game: GameMaster) -> list[str | None]:
     return [None] + sorted(game.potions)
 
@@ -225,7 +235,7 @@ def get_raw_state_summary(game: GameMaster) -> dict[str, Any]:
             {
                 "parent_a_id": pair.parent_a_id,
                 "parent_b_id": pair.parent_b_id,
-                "potion_key": pair.potion_key,
+                "potion_keys": list(pair.potion_keys),
             }
             for pair in game.breeding_queue
         ],
@@ -365,13 +375,30 @@ def breed_pair(
 ) -> ActionResult:
     options = dict(options or {})
     potion_key = options.get("potion_key")
+    potion_keys = options.get("potion_keys")
 
     try:
-        pair = game.add_pair_to_queue(parent_a_id, parent_b_id, potion_key=potion_key)
+        pair = game.add_pair_to_queue(
+            parent_a_id,
+            parent_b_id,
+            potion_key=potion_key,
+            potion_keys=potion_keys,
+        )
     except Exception as exc:
         return ActionResult(False, str(exc))
 
-    return ActionResult(True, f"Queued #{pair.parent_a_id} x #{pair.parent_b_id}.", pair)
+    potion_text = f" with {', '.join(pair.potion_keys)}" if pair.potion_keys else ""
+    return ActionResult(True, f"Queued #{pair.parent_a_id} x #{pair.parent_b_id}{potion_text}.", pair)
+
+
+def remove_queued_pair(game: GameMaster, slot: int) -> ActionResult:
+    try:
+        removed = game.remove_pair_from_queue(slot - 1)
+    except Exception as exc:
+        return ActionResult(False, str(exc))
+
+    refund = f" Refunded {', '.join(removed.potion_keys)}." if removed.potion_keys else ""
+    return ActionResult(True, f"Removed queued pair #{removed.parent_a_id} x #{removed.parent_b_id}.{refund}", removed)
 
 
 def advance_breeding_generation(game: GameMaster) -> ActionResult:

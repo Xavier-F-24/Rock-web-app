@@ -178,10 +178,12 @@ class TreeHelper:
     branch_clearance: float = 0.28
     generation_gap_rocks: float = 1.8
     route_fudge: float = 0.25
+    current_generation: int = 0
     positions: dict[int, tuple[float, float]] = field(default_factory=dict)
 
     @classmethod
     def from_game(cls, game, **kwargs) -> "TreeHelper":
+        kwargs.setdefault("current_generation", int(getattr(game, "generation", 0)))
         return cls(rocks=dict(game.rocks), **kwargs)
 
     def graph_generations(self) -> dict[int, int]:
@@ -197,7 +199,7 @@ class TreeHelper:
         for rock_id, rock in self.rocks.items():
             generation = int(getattr(rock, "generation", 0))
             if bool(getattr(rock, "is_market", False)) and not self.parent_ids(rock):
-                generation = min(generation, -1)
+                generation = min(generation, self.current_generation - 1)
             graph_generations[int(rock_id)] = generation
 
         for _ in range(max(1, len(self.rocks))):
@@ -558,6 +560,10 @@ class TreeDrawer:
     generation_gap_rocks: float = 1.8
     route_fudge: float = 0.25
     debug_connectors: bool = False
+    highlighted_rock_ids: tuple[int, ...] = ()
+    rock_badges: dict[int, dict[str, str]] = field(default_factory=dict)
+    tree_checkbox_ids: tuple[int, ...] = ()
+    tree_checked_ids: tuple[int, ...] = ()
 
     def __post_init__(self):
         if self.helper is None:
@@ -576,6 +582,8 @@ class TreeDrawer:
         self.add_family_lines(fig, positions)
         self.add_rock_images(fig, positions, image_by_id)
         self.add_node_text(fig, positions)
+        self.add_rock_badges(fig, positions)
+        self.add_tree_checkboxes(fig, positions)
         self.apply_layout(fig)
 
         if show:
@@ -741,17 +749,75 @@ class TreeDrawer:
             )
 
     def add_node_text(self, fig: go.Figure, positions: dict[int, tuple[float, float]]) -> None:
+        highlighted = {int(rock_id) for rock_id in self.highlighted_rock_ids}
         for rock_id, rock in self.helper.rocks.items():
             x, y = positions[rock_id]
+            is_highlighted = int(rock_id) in highlighted
 
             fig.add_trace(
                 go.Scatter(
                     x=[x],
                     y=[y],
                     mode="markers",
-                    marker={"size": 28, "color": "rgba(0,0,0,0)"},
+                    marker={
+                        "size": 36 if is_highlighted else 28,
+                        "color": "rgba(255,255,255,0.01)" if is_highlighted else "rgba(0,0,0,0)",
+                        "line": {
+                            "color": "#8B5A2B" if is_highlighted else "rgba(0,0,0,0)",
+                            "width": 4 if is_highlighted else 0,
+                        },
+                    },
+                    customdata=[int(rock_id)],
                     hovertext=[self.hover_text(rock)],
                     hoverinfo="text",
+                    showlegend=False,
+                )
+            )
+
+    def add_rock_badges(self, fig: go.Figure, positions: dict[int, tuple[float, float]]) -> None:
+        for rock_id, badge in self.rock_badges.items():
+            if int(rock_id) not in positions:
+                continue
+
+            x, y = positions[int(rock_id)]
+            fig.add_trace(
+                go.Scatter(
+                    x=[x - 0.42 * self.rock_image_size],
+                    y=[y + 0.42 * self.rock_image_size],
+                    mode="text",
+                    text=[badge.get("text", "\u2665")],
+                    textfont={
+                        "size": 24,
+                        "color": badge.get("color", "#E15759"),
+                    },
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+
+    def add_tree_checkboxes(self, fig: go.Figure, positions: dict[int, tuple[float, float]]) -> None:
+        checkbox_ids = {int(rock_id) for rock_id in self.tree_checkbox_ids}
+        checked_ids = {int(rock_id) for rock_id in self.tree_checked_ids}
+        if not checkbox_ids:
+            return
+
+        for rock_id in sorted(checkbox_ids):
+            if rock_id not in positions:
+                continue
+
+            x, y = positions[rock_id]
+            is_checked = rock_id in checked_ids
+            fig.add_trace(
+                go.Scatter(
+                    x=[x],
+                    y=[y - 0.76 * self.rock_image_size],
+                    mode="text",
+                    text=["\u2611" if is_checked else "\u2610"],
+                    textfont={
+                        "size": 24,
+                        "color": "#8B5A2B" if is_checked else "#6F6258",
+                    },
+                    hoverinfo="skip",
                     showlegend=False,
                 )
             )

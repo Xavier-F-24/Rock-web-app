@@ -51,6 +51,24 @@ def test_market_manager_can_sell_buy_potion_and_defined_trait_rock():
     assert rock.genotype.genes["eyes"].phenotype == "double eye"
 
 
+def test_game_master_can_queue_pair_with_multiple_potion_types_and_refund_them():
+    game = GameMaster(seed=37, starting_money=80)
+    game.buy_potion("fertility")
+    game.buy_potion("mutation")
+    ids = list(game.rocks)
+
+    pair = game.add_pair_to_queue(ids[0], ids[1], potion_keys=["fertility", "mutation"])
+
+    assert pair.potion_keys == ["fertility", "mutation"]
+    assert "fertility" not in game.potions
+    assert "mutation" not in game.potions
+
+    game.remove_pair_from_queue(0)
+
+    assert game.potions["fertility"] == 1
+    assert game.potions["mutation"] == 1
+
+
 def test_market_pod_purchase_can_keep_one_child():
     game = create_new_game(seed=13, starting_money=30)
     offer = game.market_pods[0]
