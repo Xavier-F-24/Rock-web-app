@@ -14,12 +14,12 @@ from Rock_Streamlit.sections import breeding, debug, home, market, save_load, tr
 
 
 PAGES = {
-    "Home": home.render,
-    "Market": market.render,
-    "Breeding": breeding.render,
-    "Tree": tree.render,
-    "Save / Load": save_load.render,
-    "Debug": debug.render,
+    "Home": ("home", home.render),
+    "Market": ("market", market.render),
+    "Breeding": ("breeding", breeding.render),
+    "Tree": ("tree", tree.render),
+    "Save / Load": ("save-load", save_load.render),
+    "Debug": ("debug", debug.render),
 }
 
 
@@ -34,8 +34,8 @@ def render_with_page_navigation() -> bool:
 
     try:
         pages = [
-            st.Page(page_fn, title=title)
-            for title, page_fn in PAGES.items()
+            st.Page(page_fn, title=title, url_path=url_path)
+            for title, (url_path, page_fn) in PAGES.items()
         ]
         selected_page = st.navigation(pages)
     except (AttributeError, TypeError):
@@ -48,7 +48,8 @@ def render_with_page_navigation() -> bool:
 def render_with_sidebar_navigation() -> None:
     st.sidebar.title("Rock Game")
     page_title = st.sidebar.radio("Navigate", list(PAGES), label_visibility="collapsed")
-    PAGES[page_title]()
+    _, page_fn = PAGES[page_title]
+    page_fn()
 
 
 def main() -> None:

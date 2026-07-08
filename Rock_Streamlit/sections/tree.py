@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import streamlit as st
 
-from Rock_Drawing.rock_lineage_drawing_helper import TreeDrawer
 from Rock_Streamlit.app_state import get_game_state
+from rockgame_ui import game_controller
 
 
 def render() -> None:
@@ -19,14 +19,14 @@ def render() -> None:
     canvas_height = col_b.slider("Height", 500, 1200, 800, step=50)
     debug_connectors = col_c.checkbox("Debug connectors", value=False)
 
-    if not game.rocks:
+    if not game_controller.has_rocks(game):
         st.info("No rocks to draw yet.")
         return
 
-    fig = TreeDrawer(
+    fig = game_controller.render_tree_for_streamlit(
         game=game,
         canvas_width=canvas_width,
         canvas_height=canvas_height,
         debug_connectors=debug_connectors,
-    ).draw()
+    )
     st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True})

@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import streamlit as st
 
-from Rock_GameState.rock_game_state_helper import GameMaster
+from rockgame_ui.game_controller import start_new_game
+
+if TYPE_CHECKING:
+    from Rock_GameState.rock_game_state_helper import GameMaster
 
 
 GAME_STATE_KEY = "rock_game"
 
 
 def make_new_game(seed: int | None = None) -> GameMaster:
-    return GameMaster(seed=seed)
+    return start_new_game(seed=seed)
 
 
 def init_session_state() -> None:

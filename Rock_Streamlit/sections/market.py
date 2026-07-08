@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import streamlit as st
 
-from Rock_Market.rock_market_helper import POTION_SHOP
 from Rock_Streamlit.app_state import get_game_state
+from rockgame_ui import game_controller
 
 
 def render() -> None:
@@ -22,32 +22,22 @@ def render() -> None:
     st.write("- Sell rocks")
 
     st.subheader("Potion Shop")
-    potion_rows = [
-        {
-            "key": key,
-            "name": potion["name"],
-            "cost": potion["cost"],
-            "description": potion["description"],
-            "owned": game.potions.get(key, 0),
-        }
-        for key, potion in POTION_SHOP.items()
-    ]
-    st.dataframe(potion_rows, use_container_width=True, hide_index=True)
+    st.dataframe(game_controller.get_potion_rows(game), use_container_width=True, hide_index=True)
+
+    st.subheader("Quick Actions")
+    if st.button("Buy Random Rock"):
+        result = game_controller.buy_random_rock(game)
+        if result.ok:
+            st.success(result.message)
+            st.rerun()
+        else:
+            st.error(result.message)
 
     st.subheader("Market Pods")
-    if game.market_pods:
+    market_rows = game_controller.get_market_pod_rows(game)
+    if market_rows:
         st.dataframe(
-            [
-                {
-                    "offer_id": offer.offer_id,
-                    "name": offer.name,
-                    "tier": offer.tier,
-                    "price": offer.price,
-                    "used": offer.used,
-                    "tagline": offer.tagline,
-                }
-                for offer in game.market_pods
-            ],
+            market_rows,
             use_container_width=True,
             hide_index=True,
         )
