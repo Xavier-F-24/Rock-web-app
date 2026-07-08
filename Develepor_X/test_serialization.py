@@ -1,4 +1,5 @@
 from Rock_GameState.rock_game_state_helper import GameMaster
+from Rock_Drawing.rock_drawing_helper import render_game_rock_images
 from Rock_Serialization.rock_serialization_helper import (
     game_from_json_string,
     game_to_dict,
@@ -41,3 +42,31 @@ def test_serialization_includes_queue_market_pods_and_pending_pod():
     assert loaded.market_pods
     assert loaded.pending_market_pod is not None
     assert loaded.pending_market_pod.children
+
+
+def test_serialization_does_not_store_rendered_images_or_runtime_cache():
+    game = GameMaster(seed=42, starting_money=30)
+    render_game_rock_images(game, dpi=40)
+
+    save_data = game_to_dict(game)
+    json_string = game_to_json_string(game)
+
+    assert hasattr(game, "rock_image_cache")
+    assert "rock_image_cache" not in save_data["game"]
+    assert "image_uri" not in json_string
+    assert "data:image/png;base64" not in json_string
+    assert "image_path" not in json_string
+    assert all("image_path" not in rock_data for rock_data in save_data["game"]["rocks"])
+
+
+def test_loaded_game_regenerates_rock_images_on_demand():
+    game = GameMaster(seed=43, starting_money=30)
+    loaded = game_from_json_string(game_to_json_string(game))
+
+    assert not hasattr(loaded, "rock_image_cache")
+
+    image_by_id = render_game_rock_images(loaded, dpi=40)
+
+    assert set(image_by_id) == set(loaded.rocks)
+    assert hasattr(loaded, "rock_image_cache")
+    assert all(uri.startswith("data:image/png;base64,") for uri in image_by_id.values())
