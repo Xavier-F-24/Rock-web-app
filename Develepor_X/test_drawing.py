@@ -10,7 +10,13 @@ from PIL import Image
 
 from Rock_Drawing.rock_draw_machine import DrawMachine, IdentityLabelLayout, draw_rock
 from Rock_Drawing.rock_drawing_helper import render_game_rock_images, rock_to_image_uri
-from Rock_Drawing.rock_lineage_drawing_helper import TreeDrawer, TreeHelper, draw_game_tree, show_rocks
+from Rock_Drawing.rock_lineage_drawing_helper import (
+    TreeDrawer,
+    TreeHelper,
+    draw_game_tree,
+    show_rocks,
+    shuffled_family_colors,
+)
 from Rock_Drawing.rock_render_context import RockRenderContext
 from Rock_GameState.rock_game_state_helper import GameMaster
 
@@ -211,6 +217,68 @@ def test_tree_helper_computes_positions_and_family_links():
     assert helper.bounds()["x"][0] < helper.bounds()["x"][1]
 
 
+def test_tree_helper_accounts_for_rock_occupied_bounds():
+    game = GameMaster(seed=621)
+    ids = list(game.rocks)
+    game.add_pair_to_queue(ids[0], ids[1])
+    children = game.advance_generation()
+
+    helper = TreeHelper.from_game(
+        game,
+        node_width=2.0,
+        node_height=2.0,
+        node_margin_x=0.6,
+        branch_clearance=0.4,
+        route_fudge=0.5,
+    )
+    positions = helper.compute_positions()
+    parent_ids = tuple(sorted(children[0].parent_ids))
+    child_ids = helper.family_groups()[parent_ids]
+    branch_y = helper.child_branch_y(parent_ids, child_ids, positions)
+    child_top = max(helper.occupied_bounds(child_id, positions)["top"] for child_id in child_ids)
+    parent_bottom = min(helper.occupied_bounds(parent_id, positions)["bottom"] for parent_id in parent_ids)
+    first_generation_ids = helper.generation_groups()[0]
+    first_gap = abs(positions[first_generation_ids[1]][0] - positions[first_generation_ids[0]][0])
+    first_bounds = helper.occupied_bounds(first_generation_ids[0], positions)
+
+    assert first_gap >= helper.required_x_gap()
+    assert child_top < branch_y < parent_bottom
+    assert first_bounds["right"] - first_bounds["left"] == 3.0
+
+
+def test_tree_helper_routes_orthogonal_segments_around_obstacles():
+    obstacle = make_rock(rock_id=1)
+    helper = TreeHelper(
+        rocks={1: obstacle},
+        node_width=2.0,
+        node_height=2.0,
+        branch_clearance=0.25,
+        route_fudge=0.25,
+    )
+    positions = {1: (0.0, 0.0)}
+
+    segments = helper.route_orthogonal(
+        start=(-3.0, 0.0),
+        end=(3.0, 0.0),
+        positions=positions,
+        ignore_ids=set(),
+    )
+
+    assert len(segments) > 1
+    assert all(
+        not helper.segment_hits_obstacle(start, end, positions, ignore_ids=set())
+        for start, end in segments
+    )
+
+
+def test_shuffled_family_colors_picks_three_distinct_non_red_colors():
+    colors = shuffled_family_colors(3, seed=5)
+
+    assert len(colors) == 3
+    assert len(set(colors)) == 3
+    assert not any(color.lower() in {"#e15759", "#ff9da7", "#d45087", "#f95d6a"} for color in colors)
+
+
 def test_tree_helper_assigns_distinct_family_styles():
     game = GameMaster(seed=65, starting_money=80)
     males = [rock for rock in game.rocks.values() if rock.sex == genetics.Sex.MALE]
@@ -221,11 +289,95 @@ def test_tree_helper_assigns_distinct_family_styles():
     game.advance_generation()
 
     helper = TreeHelper.from_game(game)
-    styles = helper.family_styles()
+    styles = helper.family_styles(seed=8)
 
     assert len(styles) >= 2
-    assert len({(style["color"], style["dash"]) for style in styles.values()}) >= 2
+    assert len({style["color"] for style in styles.values()}) >= 2
     assert all("color" in style and "dash" in style for style in styles.values())
+    assert all(style["dash"] == "solid" for style in styles.values())
+
+
+def test_tree_helper_can_opt_into_dash_styles():
+    game = GameMaster(seed=66, starting_money=80)
+    males = [rock for rock in game.rocks.values() if rock.sex == genetics.Sex.MALE]
+    females = [rock for rock in game.rocks.values() if rock.sex == genetics.Sex.FEMALE]
+
+    game.add_pair_to_queue(males[0].id, females[0].id)
+    game.add_pair_to_queue(males[1].id, females[1].id)
+    game.advance_generation()
+
+    helper = TreeHelper.from_game(game)
+    styles = helper.family_styles(seed=8, use_dash_styles=True)
+
+    assert any(style["dash"] != "solid" for style in styles.values())
+
+
+def test_tree_drawer_horizontal_spans_meet_at_route_spine():
+    inside_segments = TreeDrawer.horizontal_spans_to_spine([0.0, 4.0], 2.0, -1.0)
+    outside_segments = TreeDrawer.horizontal_spans_to_spine([0.0, 4.0], 6.0, -1.0)
+
+    assert inside_segments == [((0.0, -1.0), (2.0, -1.0)), ((2.0, -1.0), (4.0, -1.0))]
+    assert outside_segments == [((0.0, -1.0), (6.0, -1.0))]
+
+
+def test_tree_drawer_parent_pair_connector_uses_only_parent_anchors():
+    connector = TreeDrawer.parent_pair_connector_segments(
+        parent_a_pos=(6.0, 1.0),
+        parent_b_pos=(2.0, 1.0),
+        parent_connector_y=-0.5,
+        child_connector_y=-2.0,
+    )
+
+    assert connector["horizontal"] == ((2.0, -0.5), (6.0, -0.5))
+    assert connector["vertical_drop"] == ((4.0, -0.5), (4.0, -2.0))
+    assert connector["midpoint"] == (4.0, -0.5)
+    assert connector["endpoints"] == [(2.0, -0.5), (6.0, -0.5)]
+
+
+def test_parent_pair_connector_can_route_c_shape_around_blocking_rock():
+    blocking_rock = make_rock(rock_id=1)
+    helper = TreeHelper(
+        rocks={1: blocking_rock},
+        node_width=2.0,
+        node_height=2.0,
+        branch_clearance=0.25,
+        route_fudge=0.25,
+    )
+    positions = {1: (0.0, -0.5)}
+    connector = TreeDrawer.parent_pair_connector_segments(
+        parent_a_pos=(-3.0, 1.0),
+        parent_b_pos=(3.0, 1.0),
+        parent_connector_y=-0.5,
+        child_connector_y=-2.0,
+    )
+
+    routed = helper.route_orthogonal(
+        start=connector["horizontal"][0],
+        end=connector["horizontal"][1],
+        positions=positions,
+        ignore_ids=set(),
+    )
+
+    assert len(routed) > 1
+    assert routed[0][0] == (-3.0, -0.5)
+    assert routed[-1][1] == (3.0, -0.5)
+    assert all(
+        not helper.segment_hits_obstacle(start, end, positions, ignore_ids=set())
+        for start, end in routed
+    )
+
+
+def test_tree_drawer_debug_connector_markers_are_optional():
+    game = GameMaster(seed=68)
+    ids = list(game.rocks)
+    game.add_pair_to_queue(ids[0], ids[1])
+    game.advance_generation()
+
+    plain_fig = TreeDrawer(game=game, canvas_width=600, canvas_height=400).draw()
+    debug_fig = TreeDrawer(game=game, canvas_width=600, canvas_height=400, debug_connectors=True).draw()
+
+    assert len(debug_fig.data) > len(plain_fig.data)
+    assert any(getattr(trace, "mode", None) == "markers" for trace in debug_fig.data)
 
 
 def test_tree_drawer_creates_plotly_figure_with_images_without_duplicate_labels():
@@ -240,6 +392,7 @@ def test_tree_drawer_creates_plotly_figure_with_images_without_duplicate_labels(
     assert len(fig.data) >= len(game.rocks)
     assert len(fig.layout.shapes) > 0
     assert all(shape.layer == "below" for shape in fig.layout.shapes)
+    assert all(shape.line.dash == "solid" for shape in fig.layout.shapes)
     assert fig.layout.dragmode == "pan"
     visible_texts = [
         text

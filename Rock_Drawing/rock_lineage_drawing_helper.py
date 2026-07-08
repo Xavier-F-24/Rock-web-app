@@ -24,21 +24,22 @@ from Rock_Drawing.rock_draw_machine import draw_rock
 
 FAMILY_LINE_COLORS = (
     "#4E79A7",
-    "#F28E2B",
     "#59A14F",
-    "#E15759",
     "#B07AA1",
     "#76B7B2",
     "#EDC948",
-    "#FF9DA7",
     "#9C755F",
     "#BAB0AC",
     "#2F4B7C",
     "#A05195",
-    "#D45087",
-    "#F95D6A",
     "#665191",
     "#003F5C",
+    "#1B9E77",
+    "#66A61E",
+    "#3288BD",
+    "#5E4FA2",
+    "#8DA0CB",
+    "#A6D854",
 )
 
 FAMILY_LINE_DASHES = (
@@ -49,6 +50,18 @@ FAMILY_LINE_DASHES = (
     "longdash",
     "longdashdot",
 )
+
+
+def shuffled_family_colors(count: int, seed: int | None = None) -> list[str]:
+    """
+    Pick visually distinct non-red family colors for one generation's pods.
+    """
+    colors = list(FAMILY_LINE_COLORS)
+    random.Random(seed).shuffle(colors)
+    if count <= len(colors):
+        return colors[:count]
+
+    return [colors[index % len(colors)] for index in range(count)]
 
 
 def rock_display_name(rock: genetics.Rock) -> str:
@@ -159,6 +172,12 @@ class TreeHelper:
     x_gap: float = 3.2
     y_gap: float = 3.2
     min_node_gap: float = 2.2
+    node_width: float = 1.35
+    node_height: float = 1.35
+    node_margin_x: float = 0.85
+    branch_clearance: float = 0.28
+    generation_gap_rocks: float = 1.8
+    route_fudge: float = 0.25
     positions: dict[int, tuple[float, float]] = field(default_factory=dict)
 
     @classmethod
@@ -178,12 +197,14 @@ class TreeHelper:
     def compute_positions(self) -> dict[int, tuple[float, float]]:
         groups = self.generation_groups()
         positions: dict[int, tuple[float, float]] = {}
+        x_gap = max(self.x_gap, self.required_x_gap())
+        y_gap = max(self.y_gap, self.required_y_gap())
 
         for generation, rock_ids in groups.items():
             count = len(rock_ids)
-            start_x = -0.5 * (count - 1) * self.x_gap
+            start_x = -0.5 * (count - 1) * x_gap
             for index, rock_id in enumerate(rock_ids):
-                positions[rock_id] = (start_x + index * self.x_gap, -generation * self.y_gap)
+                positions[rock_id] = (start_x + index * x_gap, -generation * y_gap)
 
         for _ in range(3):
             positions = self.pull_children_toward_parent_centers(positions)
@@ -191,6 +212,12 @@ class TreeHelper:
 
         self.positions = positions
         return positions
+
+    def required_x_gap(self) -> float:
+        return self.node_width + self.node_margin_x
+
+    def required_y_gap(self) -> float:
+        return self.node_height * self.generation_gap_rocks
 
     def pull_children_toward_parent_centers(
         self,
@@ -228,8 +255,9 @@ class TreeHelper:
                 current_id = ordered[index]
                 previous_x = updated[previous_id][0]
                 current_x, current_y = updated[current_id]
-                if current_x - previous_x < self.min_node_gap:
-                    updated[current_id] = (previous_x + self.min_node_gap, current_y)
+                required_gap = max(self.min_node_gap, self.required_x_gap())
+                if current_x - previous_x < required_gap:
+                    updated[current_id] = (previous_x + required_gap, current_y)
 
             mean_x = sum(updated[rock_id][0] for rock_id in ordered) / len(ordered)
             for rock_id in ordered:
@@ -246,21 +274,220 @@ class TreeHelper:
                 links.append((parents[0], parents[1], int(child_id)))
         return links
 
-    def family_styles(self, seed: int | None = None) -> dict[tuple[int, int], dict[str, str]]:
+    def family_groups(self) -> dict[tuple[int, int], list[int]]:
+        groups: dict[tuple[int, int], list[int]] = {}
+
+        for parent_a_id, parent_b_id, child_id in self.family_links():
+            key = tuple(sorted((parent_a_id, parent_b_id)))
+            groups.setdefault(key, []).append(child_id)
+
+        for child_ids in groups.values():
+            child_ids.sort(key=lambda rock_id: (self.rocks[rock_id].generation, rock_id))
+
+        return dict(sorted(groups.items()))
+
+    def family_styles(
+        self,
+        seed: int | None = None,
+        use_dash_styles: bool = False,
+    ) -> dict[tuple[int, int], dict[str, str]]:
         parent_pairs = sorted({tuple(sorted((parent_a, parent_b))) for parent_a, parent_b, _ in self.family_links()})
-        style_combinations = [
-            {"color": color, "dash": dash}
-            for color in FAMILY_LINE_COLORS
-            for dash in FAMILY_LINE_DASHES
-        ]
-        rng = random.Random(seed)
-        rng.shuffle(style_combinations)
+        colors = shuffled_family_colors(len(parent_pairs), seed=seed)
+        dashes = list(FAMILY_LINE_DASHES)
+        random.Random(seed).shuffle(dashes)
         styles = {}
 
         for index, pair in enumerate(parent_pairs):
-            styles[pair] = dict(style_combinations[index % len(style_combinations)])
+            styles[pair] = {
+                "color": colors[index],
+                "dash": dashes[index % len(dashes)] if use_dash_styles else "solid",
+            }
 
         return styles
+
+    def occupied_bounds(
+        self,
+        rock_id: int,
+        positions: dict[int, tuple[float, float]] | None = None,
+    ) -> dict[str, float]:
+        if positions is None:
+            positions = self.positions or self.compute_positions()
+
+        x, y = positions[int(rock_id)]
+        half_width = 0.5 * self.node_width + self.route_fudge
+        half_height = 0.5 * self.node_height + self.route_fudge
+        return {
+            "left": x - half_width,
+            "right": x + half_width,
+            "bottom": y - half_height,
+            "top": y + half_height,
+        }
+
+    def child_branch_y(
+        self,
+        parent_ids: tuple[int, int],
+        child_ids: list[int],
+        positions: dict[int, tuple[float, float]],
+    ) -> float:
+        child_top = max(self.occupied_bounds(child_id, positions)["top"] for child_id in child_ids)
+        parent_bottom = min(self.occupied_bounds(parent_id, positions)["bottom"] for parent_id in parent_ids)
+        desired_y = child_top + self.branch_clearance
+        highest_open_y = parent_bottom - self.branch_clearance
+
+        if desired_y < highest_open_y:
+            return desired_y
+
+        return 0.5 * (child_top + parent_bottom)
+
+    def parent_branch_y(
+        self,
+        parent_ids: tuple[int, int],
+        positions: dict[int, tuple[float, float]],
+    ) -> float:
+        parent_bottom = min(self.occupied_bounds(parent_id, positions)["bottom"] for parent_id in parent_ids)
+        return parent_bottom - self.branch_clearance
+
+    def clear_vertical_route_x(
+        self,
+        desired_x: float,
+        y0: float,
+        y1: float,
+        positions: dict[int, tuple[float, float]],
+        ignore_ids: set[int],
+    ) -> float:
+        low_y = min(y0, y1)
+        high_y = max(y0, y1)
+
+        def intersects_any(candidate_x: float) -> bool:
+            for rock_id in self.rocks:
+                if rock_id in ignore_ids:
+                    continue
+
+                bounds = self.occupied_bounds(rock_id, positions)
+                overlaps_y = bounds["bottom"] <= high_y and bounds["top"] >= low_y
+                inside_x = bounds["left"] <= candidate_x <= bounds["right"]
+                if overlaps_y and inside_x:
+                    return True
+
+            return False
+
+        if not intersects_any(desired_x):
+            return desired_x
+
+        step = max(self.required_x_gap() * 0.5, self.node_width)
+        for distance in range(1, 8):
+            for direction in (1, -1):
+                candidate_x = desired_x + direction * distance * step
+                if not intersects_any(candidate_x):
+                    return candidate_x
+
+        return desired_x
+
+    def segment_hits_obstacle(
+        self,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        positions: dict[int, tuple[float, float]],
+        ignore_ids: set[int],
+    ) -> bool:
+        x0, y0 = start
+        x1, y1 = end
+        low_x, high_x = sorted((x0, x1))
+        low_y, high_y = sorted((y0, y1))
+
+        for rock_id in self.rocks:
+            if rock_id in ignore_ids:
+                continue
+
+            bounds = self.occupied_bounds(rock_id, positions)
+
+            if x0 == x1:
+                overlaps_y = bounds["bottom"] <= high_y and bounds["top"] >= low_y
+                if bounds["left"] <= x0 <= bounds["right"] and overlaps_y:
+                    return True
+
+            elif y0 == y1:
+                overlaps_x = bounds["left"] <= high_x and bounds["right"] >= low_x
+                if bounds["bottom"] <= y0 <= bounds["top"] and overlaps_x:
+                    return True
+
+        return False
+
+    def route_orthogonal(
+        self,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        positions: dict[int, tuple[float, float]],
+        ignore_ids: set[int],
+    ) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+        """
+        Route an orthogonal connector around inflated rock image bounds.
+        """
+        if start == end:
+            return []
+
+        def clean_points(points):
+            cleaned = [points[0]]
+            for point in points[1:]:
+                if point != cleaned[-1]:
+                    cleaned.append(point)
+            return cleaned
+
+        def path_is_clear(points) -> bool:
+            points = clean_points(points)
+            return all(
+                not self.segment_hits_obstacle(points[index - 1], points[index], positions, ignore_ids)
+                for index in range(1, len(points))
+            )
+
+        def path_length(points) -> float:
+            points = clean_points(points)
+            return sum(
+                abs(points[index][0] - points[index - 1][0]) + abs(points[index][1] - points[index - 1][1])
+                for index in range(1, len(points))
+            )
+
+        candidates = []
+        start_x, start_y = start
+        end_x, end_y = end
+
+        if start_x == end_x or start_y == end_y:
+            candidates.append([start, end])
+
+        candidates.extend(
+            [
+                [start, (end_x, start_y), end],
+                [start, (start_x, end_y), end],
+            ]
+        )
+
+        candidate_ys = {start_y, end_y}
+        candidate_xs = {start_x, end_x}
+        for rock_id in self.rocks:
+            if rock_id in ignore_ids:
+                continue
+            bounds = self.occupied_bounds(rock_id, positions)
+            candidate_ys.add(bounds["top"] + self.branch_clearance)
+            candidate_ys.add(bounds["bottom"] - self.branch_clearance)
+            candidate_xs.add(bounds["left"] - self.branch_clearance)
+            candidate_xs.add(bounds["right"] + self.branch_clearance)
+
+        for route_y in sorted(candidate_ys, key=lambda value: abs(value - 0.5 * (start_y + end_y))):
+            candidates.append([start, (start_x, route_y), (end_x, route_y), end])
+
+        for route_x in sorted(candidate_xs, key=lambda value: abs(value - 0.5 * (start_x + end_x))):
+            candidates.append([start, (route_x, start_y), (route_x, end_y), end])
+
+        clear_paths = [clean_points(points) for points in candidates if path_is_clear(points)]
+        if clear_paths:
+            best = min(clear_paths, key=lambda points: (len(points), path_length(points)))
+            return [
+                (best[index - 1], best[index])
+                for index in range(1, len(best))
+                if best[index - 1] != best[index]
+            ]
+
+        return [(start, end)]
 
     @staticmethod
     def parent_ids(rock: genetics.Rock) -> list[int]:
@@ -290,11 +517,20 @@ class TreeDrawer:
     canvas_width: int = 1200
     canvas_height: int = 800
     line_style_seed: int | None = None
-    line_clearance: float = 0.82
+    use_dash_styles: bool = False
+    line_clearance: float = 0.28
+    generation_gap_rocks: float = 1.8
+    route_fudge: float = 0.25
+    debug_connectors: bool = False
 
     def __post_init__(self):
         if self.helper is None:
             self.helper = TreeHelper.from_game(self.game)
+        self.helper.node_width = self.rock_image_size
+        self.helper.node_height = self.rock_image_size
+        self.helper.branch_clearance = self.line_clearance
+        self.helper.generation_gap_rocks = self.generation_gap_rocks
+        self.helper.route_fudge = self.route_fudge
 
     def draw(self, show: bool = False) -> go.Figure:
         positions = self.helper.compute_positions()
@@ -312,42 +548,58 @@ class TreeDrawer:
         return fig
 
     def add_family_lines(self, fig: go.Figure, positions: dict[int, tuple[float, float]]) -> None:
-        family_styles = self.helper.family_styles(seed=self.line_style_seed)
-        lane_counts: dict[tuple[int, int], int] = {}
+        family_styles = self.helper.family_styles(
+            seed=self.line_style_seed,
+            use_dash_styles=self.use_dash_styles,
+        )
 
-        for parent_a_id, parent_b_id, child_id in self.helper.family_links():
-            family_key = tuple(sorted((parent_a_id, parent_b_id)))
+        for family_key, child_ids in self.helper.family_groups().items():
+            parent_a_id, parent_b_id = family_key
             style = family_styles[family_key]
             xa, ya = positions[parent_a_id]
             xb, yb = positions[parent_b_id]
-            xc, yc = positions[child_id]
-            parent_generation = int(getattr(self.helper.rocks[parent_a_id], "generation", 0))
-            child_generation = int(getattr(self.helper.rocks[child_id], "generation", parent_generation + 1))
-            lane_key = (parent_generation, child_generation)
-            lane_index = lane_counts.get(lane_key, 0)
-            lane_counts[lane_key] = lane_index + 1
-            lane_count = max(1, len([
-                link
-                for link in self.helper.family_links()
-                if int(getattr(self.helper.rocks[link[0]], "generation", 0)) == parent_generation
-                and int(getattr(self.helper.rocks[link[2]], "generation", child_generation)) == child_generation
-            ]))
-            lane_fraction = (lane_index + 1) / (lane_count + 1)
-            parent_bar_y = ya - self.line_clearance
-            child_bar_y = yc + self.line_clearance
-            lane_y = parent_bar_y + lane_fraction * (child_bar_y - parent_bar_y)
             parent_center_x = 0.5 * (xa + xb)
-            segments = [
-                ((xa, ya - self.line_clearance), (xa, parent_bar_y)),
-                ((xb, yb - self.line_clearance), (xb, parent_bar_y)),
-                ((xa, parent_bar_y), (xb, parent_bar_y)),
-                ((parent_center_x, parent_bar_y), (parent_center_x, lane_y)),
-                ((parent_center_x, lane_y), (xc, lane_y)),
-                ((xc, lane_y), (xc, child_bar_y)),
-                ((xc, child_bar_y), (xc, yc + self.line_clearance)),
+            parent_bar_y = self.helper.parent_branch_y(family_key, positions)
+            child_branch_y = self.helper.child_branch_y(family_key, child_ids, positions)
+            route_x = parent_center_x
+            child_xs = [positions[child_id][0] for child_id in child_ids]
+
+            ignore_ids = {parent_a_id, parent_b_id, *child_ids}
+            parent_connector = self.parent_pair_connector_segments(
+                parent_a_pos=(xa, ya),
+                parent_b_pos=(xb, yb),
+                parent_connector_y=parent_bar_y,
+                child_connector_y=child_branch_y,
+            )
+            parent_segments = [
+                ((xa, self.helper.occupied_bounds(parent_a_id, positions)["bottom"]), (xa, parent_bar_y)),
+                ((xb, self.helper.occupied_bounds(parent_b_id, positions)["bottom"]), (xb, parent_bar_y)),
+                parent_connector["horizontal"],
+                parent_connector["vertical_drop"],
             ]
+            segment_requests = []
+            segment_requests.extend(self.horizontal_spans_to_spine(child_xs, route_x, child_branch_y))
+
+            for child_id in child_ids:
+                child_x, _ = positions[child_id]
+                child_top = self.helper.occupied_bounds(child_id, positions)["top"]
+                segment_requests.append(((child_x, child_branch_y), (child_x, child_top)))
+
+            segments = []
+            for start, end in [*parent_segments, *segment_requests]:
+                segments.extend(
+                    self.helper.route_orthogonal(
+                        start=start,
+                        end=end,
+                        positions=positions,
+                        ignore_ids=ignore_ids,
+                    )
+                )
 
             for (x0, y0), (x1, y1) in segments:
+                if x0 == x1 and y0 == y1:
+                    continue
+
                 fig.add_shape(
                     type="line",
                     xref="x",
@@ -359,6 +611,72 @@ class TreeDrawer:
                     layer="below",
                     line={"color": style["color"], "dash": style["dash"], "width": 3},
                 )
+
+            if self.debug_connectors:
+                self.add_debug_connector_markers(
+                    fig=fig,
+                    endpoints=parent_connector["endpoints"],
+                    color=style["color"],
+                )
+
+    @staticmethod
+    def parent_pair_connector_segments(
+        parent_a_pos: tuple[float, float],
+        parent_b_pos: tuple[float, float],
+        parent_connector_y: float,
+        child_connector_y: float,
+    ) -> dict[str, object]:
+        parent_a_x, _ = parent_a_pos
+        parent_b_x, _ = parent_b_pos
+        x_start = min(parent_a_x, parent_b_x)
+        x_end = max(parent_a_x, parent_b_x)
+        couple_mid_x = 0.5 * (parent_a_x + parent_b_x)
+
+        return {
+            "horizontal": ((x_start, parent_connector_y), (x_end, parent_connector_y)),
+            "vertical_drop": ((couple_mid_x, parent_connector_y), (couple_mid_x, child_connector_y)),
+            "midpoint": (couple_mid_x, parent_connector_y),
+            "endpoints": [(x_start, parent_connector_y), (x_end, parent_connector_y)],
+        }
+
+    @staticmethod
+    def add_debug_connector_markers(
+        fig: go.Figure,
+        endpoints: list[tuple[float, float]],
+        color: str,
+    ) -> None:
+        fig.add_trace(
+            go.Scatter(
+                x=[point[0] for point in endpoints],
+                y=[point[1] for point in endpoints],
+                mode="markers",
+                marker={"size": 7, "color": color, "symbol": "x"},
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    @staticmethod
+    def horizontal_spans_to_spine(
+        anchor_xs: list[float],
+        spine_x: float,
+        y: float,
+    ) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+        if not anchor_xs:
+            return []
+
+        left = min(anchor_xs)
+        right = max(anchor_xs)
+
+        if spine_x <= left:
+            return [((spine_x, y), (right, y))]
+        if spine_x >= right:
+            return [((left, y), (spine_x, y))]
+
+        return [
+            ((left, y), (spine_x, y)),
+            ((spine_x, y), (right, y)),
+        ]
 
     def add_rock_images(
         self,
