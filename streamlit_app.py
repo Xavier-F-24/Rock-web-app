@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import streamlit as st
 
-from Rock_Streamlit.app_state import init_session_state
-from Rock_Streamlit.sections import breeding, debug, home, market, save_load, tree
+from Rock_Streamlit.app_state import get_game_state, has_game_state, init_session_state
+from Rock_Streamlit.sections import breeding, debug, ending, home, market, save_load, start, tree
+from Rock_Streamlit.ui_components import apply_cozy_lab_style
 
 
 PAGES = {
@@ -53,12 +54,17 @@ def render_with_sidebar_navigation() -> None:
 
 
 def main() -> None:
-    st.set_page_config(
-        page_title="Rock Genetics Game",
-        page_icon="🪨",
-        layout="wide",
-    )
+    st.set_page_config(page_title="Rock Genetics Game", page_icon="R", layout="wide")
     init_session_state()
+    apply_cozy_lab_style()
+
+    if not has_game_state():
+        start.render()
+        return
+
+    if get_game_state().game_over:
+        ending.render()
+        return
 
     if render_with_page_navigation():
         return

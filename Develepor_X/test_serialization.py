@@ -1,3 +1,5 @@
+import json
+
 from Rock_GameState.rock_game_state_helper import GameMaster
 from Rock_Drawing.rock_drawing_helper import render_game_rock_images
 from Rock_Serialization.rock_serialization_helper import (
@@ -8,7 +10,7 @@ from Rock_Serialization.rock_serialization_helper import (
 
 
 def test_game_master_serialization_round_trips_core_state():
-    game = GameMaster(seed=31, starting_money=30)
+    game = GameMaster(seed=31, starting_money=30, rock_farm_cost=90)
     game.buy_potion("fertility")
 
     ids = list(game.rocks)
@@ -21,8 +23,21 @@ def test_game_master_serialization_round_trips_core_state():
     assert loaded.generation == game.generation
     assert loaded.money == game.money
     assert loaded.next_rock_id == game.next_rock_id
+    assert loaded.rock_farm_cost == 90
     assert set(loaded.rocks) == set(game.rocks)
     assert loaded.update_display()["rock_count"] == game.update_display()["rock_count"]
+
+
+def test_serialization_defaults_rock_farm_cost_for_old_saves():
+    game = GameMaster(seed=32, starting_money=30)
+    save_data = game_to_dict(game)
+    del save_data["game"]["rock_farm_cost"]
+
+    loaded = game_from_json_string(game_to_json_string(game))
+    old_loaded = game_from_json_string(json.dumps(save_data))
+
+    assert loaded.rock_farm_cost == 75
+    assert old_loaded.rock_farm_cost == 75
 
 
 def test_serialization_includes_queue_market_pods_and_pending_pod():

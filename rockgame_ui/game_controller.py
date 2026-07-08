@@ -25,8 +25,37 @@ class ActionResult:
     payload: Any = None
 
 
-def start_new_game(seed: int | None = None) -> GameMaster:
-    return GameMaster(seed=seed)
+@dataclass(frozen=True)
+class GameStartSettings:
+    seed: int | None = None
+    starting_money: int = 10
+    max_generation: int = 7
+    max_pairs_per_generation: int = 3
+    rock_farm_cost: int = 75
+
+
+def start_new_game(
+    seed: int | None = None,
+    settings: GameStartSettings | dict[str, Any] | None = None,
+    **overrides: Any,
+) -> GameMaster:
+    if settings is None:
+        settings_data: dict[str, Any] = {}
+    elif isinstance(settings, GameStartSettings):
+        settings_data = {
+            "seed": settings.seed,
+            "starting_money": settings.starting_money,
+            "max_generation": settings.max_generation,
+            "max_pairs_per_generation": settings.max_pairs_per_generation,
+            "rock_farm_cost": settings.rock_farm_cost,
+        }
+    else:
+        settings_data = dict(settings)
+
+    if seed is not None:
+        settings_data["seed"] = seed
+    settings_data.update(overrides)
+    return GameMaster(**settings_data)
 
 
 def rock_name(rock: genetics.Rock) -> str:
@@ -144,6 +173,37 @@ def get_breeding_queue_rows(game: GameMaster) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def get_active_score_total(game: GameMaster) -> int:
+    game.evaluate_all_rocks()
+    return sum(rock.score_value for rock in get_active_rocks(game))
+
+
+def get_final_score_summary(game: GameMaster) -> dict[str, int]:
+    active_score = get_active_score_total(game)
+    return {
+        "active_rock_score": active_score,
+        "money": int(game.money),
+        "rock_farm_cost": int(game.rock_farm_cost),
+        "final_score": active_score + int(game.money) - int(game.rock_farm_cost),
+    }
+
+
+def is_game_finished(game: GameMaster | None) -> bool:
+    return bool(game is not None and game.game_over)
+
+
+def get_breeding_candidate_cards(game: GameMaster) -> list[dict[str, Any]]:
+    game.evaluate_all_rocks()
+    return [
+        {
+            **rock_summary_row(rock),
+            "label": rock_label(rock),
+            "image_uri": render_rock(rock, sprite_size=1.35, dpi=140),
+        }
+        for rock in sorted(get_available_breeding_candidates(game), key=lambda candidate: candidate.id)
+    ]
 
 
 def get_potion_options(game: GameMaster) -> list[str | None]:

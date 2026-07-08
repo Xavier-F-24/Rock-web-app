@@ -1,4 +1,4 @@
-"""Debug page scaffold."""
+"""Debug page for inspecting active game state."""
 
 from __future__ import annotations
 

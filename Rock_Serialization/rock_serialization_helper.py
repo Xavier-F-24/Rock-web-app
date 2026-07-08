@@ -11,6 +11,7 @@ from typing import Any
 
 import Rock_Genetics.rock_genetic_helper as genetics
 from Rock_GameState.rock_game_state_helper import GameMaster, Inventory, QueuedPair
+from Rock_GameState.rock_game_state_helper import DEFAULT_ROCK_FARM_COST
 from Rock_Market.rock_market_helper import MarketPodOffer, PendingMarketPod
 
 
@@ -218,6 +219,7 @@ def game_to_dict(game: GameMaster) -> dict[str, Any]:
             "starting_money": int(game.starting_money),
             "max_generation": int(game.max_generation),
             "max_pairs_per_generation": int(game.max_pairs_per_generation),
+            "rock_farm_cost": int(game.rock_farm_cost),
             "seed": game.seed,
             "generation": int(game.generation),
             "next_rock_id": int(game.next_rock_id),
@@ -241,6 +243,7 @@ def game_from_dict(save_data: dict[str, Any]) -> GameMaster:
         starting_money=int(data.get("starting_money", 0)),
         max_generation=int(data.get("max_generation", 7)),
         max_pairs_per_generation=int(data.get("max_pairs_per_generation", 3)),
+        rock_farm_cost=int(data.get("rock_farm_cost", DEFAULT_ROCK_FARM_COST)),
         seed=data.get("seed"),
         auto_start=False,
     )

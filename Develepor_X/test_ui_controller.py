@@ -20,6 +20,48 @@ def test_controller_starts_game_and_returns_ui_rows():
     assert all(row["sell_value"] > 0 for row in sellable_rows)
 
 
+def test_controller_starts_game_with_custom_settings_and_scores():
+    settings = game_controller.GameStartSettings(
+        seed=709,
+        starting_money=55,
+        max_generation=2,
+        max_pairs_per_generation=1,
+        rock_farm_cost=80,
+    )
+
+    game = game_controller.start_new_game(settings=settings)
+    score = game_controller.get_final_score_summary(game)
+
+    assert game.seed == 709
+    assert game.money == 55
+    assert game.max_generation == 2
+    assert game.max_pairs_per_generation == 1
+    assert game.rock_farm_cost == 80
+    assert score["final_score"] == score["active_rock_score"] + score["money"] - 80
+    assert game_controller.is_game_finished(game) is False
+
+
+def test_controller_detects_finished_game_after_max_generation():
+    game = game_controller.start_new_game(
+        settings={
+            "seed": 710,
+            "starting_money": 80,
+            "max_generation": 1,
+            "max_pairs_per_generation": 1,
+            "rock_farm_cost": 75,
+        }
+    )
+    breeders = game_controller.get_available_breeding_candidates(game)
+    male = next(rock for rock in breeders if rock.sex.value == "male")
+    female = next(rock for rock in breeders if rock.sex.value == "female")
+
+    game_controller.breed_pair(game, male.id, female.id)
+    result = game_controller.advance_breeding_generation(game)
+
+    assert result.ok is True
+    assert game_controller.is_game_finished(game) is True
+
+
 def test_controller_wraps_basic_actions():
     game = game_controller.start_new_game(seed=702)
 

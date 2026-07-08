@@ -16,6 +16,7 @@ from Rock_Market.rock_market_helper import MarketManager
 DEFAULT_STARTING_MONEY = 10
 DEFAULT_MAX_GENERATION = 7
 DEFAULT_MAX_PAIRS_PER_GENERATION = 3
+DEFAULT_ROCK_FARM_COST = 75
 BASE_MUTATION_CHANCE = 0.01
 MUTATION_POTION_CHANCE = 0.12
 BASE_CHILD_DEATH_CHANCE = 0.05
@@ -57,6 +58,7 @@ class GameMaster:
     starting_money: int = DEFAULT_STARTING_MONEY
     max_generation: int = DEFAULT_MAX_GENERATION
     max_pairs_per_generation: int = DEFAULT_MAX_PAIRS_PER_GENERATION
+    rock_farm_cost: int = DEFAULT_ROCK_FARM_COST
     seed: int | None = None
     auto_start: bool = True
 
