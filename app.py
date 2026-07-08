@@ -72,7 +72,7 @@ def render_split_module_prototype_app():
             }
             for rock in game.rocks.values()
         ],
-        use_container_width=True,
+        width="stretch",
     )
 
     active_rocks = [

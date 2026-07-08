@@ -297,6 +297,35 @@ def test_tree_helper_assigns_distinct_family_styles():
     assert all(style["dash"] == "solid" for style in styles.values())
 
 
+def test_tree_helper_uses_import_lane_for_market_founders_without_changing_game_generation():
+    game = GameMaster(seed=69, starting_money=80)
+    imported = game.buy_random_rock()
+
+    helper = TreeHelper.from_game(game)
+    graph_generations = helper.graph_generations()
+    groups = helper.generation_groups()
+
+    assert imported.generation == game.generation
+    assert graph_generations[imported.id] == -1
+    assert imported.id in groups[-1]
+
+
+def test_tree_helper_visually_places_market_pod_parents_above_kept_child():
+    game = GameMaster(seed=70, starting_money=80)
+    offer_id = game.market_pods[0].offer_id
+
+    pending = game.market_manager.buy_market_pod(game, offer_id)
+    child = game.market_manager.choose_market_pod_child(game, 0)
+    helper = TreeHelper.from_game(game)
+    graph_generations = helper.graph_generations()
+
+    assert child.generation == game.generation
+    assert all(game.get_rock(parent_id).generation == game.generation for parent_id in child.parent_ids)
+    assert all(graph_generations[parent_id] == -1 for parent_id in child.parent_ids)
+    assert graph_generations[child.id] == 0
+    assert len(pending.children) > 0
+
+
 def test_tree_helper_can_opt_into_dash_styles():
     game = GameMaster(seed=66, starting_money=80)
     males = [rock for rock in game.rocks.values() if rock.sex == genetics.Sex.MALE]

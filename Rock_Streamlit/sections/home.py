@@ -26,7 +26,7 @@ def render() -> None:
     col_d.metric("Queued", summary["queued_pairs"])
 
     st.subheader("Current Rocks")
-    st.dataframe(game_controller.get_rock_rows(game), use_container_width=True, hide_index=True)
+    st.dataframe(game_controller.get_rock_rows(game), width="stretch", hide_index=True)
 
     st.subheader("Recent Events")
     events = game_controller.get_recent_events(game, limit=8)

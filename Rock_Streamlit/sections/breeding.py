@@ -20,7 +20,7 @@ def _show_last_action_message() -> None:
         st.success(result.message)
         if result.payload:
             st.subheader("Children Created")
-            st.dataframe(result.payload, use_container_width=True, hide_index=True)
+            st.dataframe(result.payload, width="stretch", hide_index=True)
     else:
         st.error(result.message)
 
@@ -60,7 +60,7 @@ def render() -> None:
     queue_rows = game_controller.get_breeding_queue_rows(game)
     st.subheader("Queued Pairs")
     if queue_rows:
-        st.dataframe(queue_rows, use_container_width=True, hide_index=True)
+        st.dataframe(queue_rows, width="stretch", hide_index=True)
     else:
         st.info("No pairs queued yet.")
 

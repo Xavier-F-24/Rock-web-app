@@ -29,4 +29,4 @@ def render() -> None:
         canvas_height=canvas_height,
         debug_connectors=debug_connectors,
     )
-    st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True})
+    st.plotly_chart(fig, width="stretch", config={"scrollZoom": True})

@@ -184,10 +184,43 @@ class TreeHelper:
     def from_game(cls, game, **kwargs) -> "TreeHelper":
         return cls(rocks=dict(game.rocks), **kwargs)
 
+    def graph_generations(self) -> dict[int, int]:
+        """
+        Calculate visual-only generations for lineage layout.
+
+        Gameplay generation stays untouched. Market/import founders with no
+        parents render one lane above generation 0, and parent-child links are
+        forced to move downward visually even when imported market pod records
+        share the same gameplay generation.
+        """
+        graph_generations: dict[int, int] = {}
+        for rock_id, rock in self.rocks.items():
+            generation = int(getattr(rock, "generation", 0))
+            if bool(getattr(rock, "is_market", False)) and not self.parent_ids(rock):
+                generation = min(generation, -1)
+            graph_generations[int(rock_id)] = generation
+
+        for _ in range(max(1, len(self.rocks))):
+            changed = False
+            for parent_a_id, parent_b_id, child_id in self.family_links():
+                required_generation = max(
+                    graph_generations[parent_a_id],
+                    graph_generations[parent_b_id],
+                ) + 1
+                if graph_generations[child_id] < required_generation:
+                    graph_generations[child_id] = required_generation
+                    changed = True
+
+            if not changed:
+                break
+
+        return graph_generations
+
     def generation_groups(self) -> dict[int, list[int]]:
         groups: dict[int, list[int]] = {}
+        graph_generations = self.graph_generations()
         for rock_id, rock in self.rocks.items():
-            groups.setdefault(int(getattr(rock, "generation", 0)), []).append(int(rock_id))
+            groups.setdefault(graph_generations[int(rock_id)], []).append(int(rock_id))
 
         for ids in groups.values():
             ids.sort()
@@ -225,11 +258,14 @@ class TreeHelper:
     ) -> dict[int, tuple[float, float]]:
         updated = dict(positions)
 
+        graph_generations = self.graph_generations()
         for child_id, rock in self.rocks.items():
             parents = self.parent_ids(rock)
             if len(parents) != 2:
                 continue
             if parents[0] not in positions or parents[1] not in positions or child_id not in positions:
+                continue
+            if graph_generations[child_id] <= max(graph_generations[parents[0]], graph_generations[parents[1]]):
                 continue
 
             parent_center = 0.5 * (positions[parents[0]][0] + positions[parents[1]][0])

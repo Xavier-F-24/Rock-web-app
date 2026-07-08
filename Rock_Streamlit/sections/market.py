@@ -34,7 +34,7 @@ def _render_potion_shop(game) -> None:
         st.info("No potions available.")
         return
 
-    st.dataframe(potion_rows, use_container_width=True, hide_index=True)
+    st.dataframe(potion_rows, width="stretch", hide_index=True)
 
     st.caption("Choose quantities, then purchase them together.")
     columns = st.columns(len(potion_rows))
@@ -70,7 +70,7 @@ def _render_market_pods(game) -> None:
     pending_rows = game_controller.get_pending_market_pod_rows(game)
     if pending_rows:
         st.warning("Choose one child from the pending market pod before buying another pod.")
-        st.dataframe(pending_rows, use_container_width=True, hide_index=True)
+        st.dataframe(pending_rows, width="stretch", hide_index=True)
 
         child_options = {
             f"{row['index']}: {row['name']} ({row['sex']}, value ${row['value']})": row["index"]
@@ -94,7 +94,7 @@ def _render_market_pods(game) -> None:
         st.info("No market pods available yet.")
         return
 
-    st.dataframe(market_rows, use_container_width=True, hide_index=True)
+    st.dataframe(market_rows, width="stretch", hide_index=True)
     available_rows = [row for row in market_rows if not row["used"]]
     if not available_rows:
         st.info("All current market pods have been used.")
@@ -129,13 +129,13 @@ def render() -> None:
 
     st.subheader("Owned Active Rocks")
     if active_rows:
-        st.dataframe(active_rows, use_container_width=True, hide_index=True)
+        st.dataframe(active_rows, width="stretch", hide_index=True)
     else:
         st.info("No active rocks owned yet.")
 
     st.subheader("Sell Rocks")
     if sellable_rows:
-        st.dataframe(sellable_rows, use_container_width=True, hide_index=True)
+        st.dataframe(sellable_rows, width="stretch", hide_index=True)
 
         sell_options = {
             f"#{row['id']} {row['name']} - ${row['sell_value']}": row["id"]
