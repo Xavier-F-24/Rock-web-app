@@ -8,11 +8,16 @@ def test_controller_starts_game_and_returns_ui_rows():
 
     summary = game_controller.get_game_summary(game)
     rows = game_controller.get_rock_rows(game)
+    active_rows = game_controller.get_active_rock_rows(game)
+    sellable_rows = game_controller.get_sellable_rock_rows(game)
 
     assert summary["rock_count"] == 4
     assert summary["max_generation"] == game.max_generation
     assert len(rows) == 4
+    assert len(active_rows) == 4
     assert {"id", "name", "sex", "generation", "status", "sell_value"}.issubset(rows[0])
+    assert {"id", "name", "sex", "generation", "value", "sell_value"}.issubset(active_rows[0])
+    assert all(row["sell_value"] > 0 for row in sellable_rows)
 
 
 def test_controller_wraps_basic_actions():
@@ -21,10 +26,12 @@ def test_controller_wraps_basic_actions():
     buy_result = game_controller.buy_random_rock(game)
     sellable = game_controller.get_sellable_rocks(game)
     sell_result = game_controller.sell_rock(game, sellable[0].id)
+    sellable_after_sale = game_controller.get_sellable_rock_rows(game)
 
     assert buy_result.ok is True
     assert buy_result.payload.id in game.rocks
     assert sell_result.ok is True
+    assert sellable[0].id not in {row["id"] for row in sellable_after_sale}
 
 
 def test_controller_queues_breeding_pair_with_clean_result():

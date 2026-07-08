@@ -77,6 +77,36 @@ def get_rock_rows(game: GameMaster) -> list[dict[str, Any]]:
     ]
 
 
+def get_active_rock_rows(game: GameMaster) -> list[dict[str, Any]]:
+    game.evaluate_all_rocks()
+    return [
+        {
+            "id": rock.id,
+            "name": rock_name(rock),
+            "sex": rock.sex.value,
+            "generation": rock.generation,
+            "value": rock.value,
+            "sell_value": rock.sell_value,
+            "parents": ", ".join(str(parent_id) for parent_id in rock.parent_ids),
+        }
+        for rock in sorted(get_active_rocks(game), key=lambda owned_rock: owned_rock.id)
+    ]
+
+
+def get_sellable_rock_rows(game: GameMaster) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": rock.id,
+            "name": rock_name(rock),
+            "sex": rock.sex.value,
+            "generation": rock.generation,
+            "status": rock.status.value,
+            "sell_value": rock.sell_value,
+        }
+        for rock in sorted(get_sellable_rocks(game), key=lambda sellable_rock: sellable_rock.id)
+    ]
+
+
 def get_game_summary(game: GameMaster) -> dict[str, Any]:
     summary = game.update_display()
     summary["max_generation"] = game.max_generation
