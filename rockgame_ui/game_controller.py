@@ -39,6 +39,19 @@ def rock_label(rock: genetics.Rock) -> str:
     return f"#{rock.id} {rock_name(rock)} ({rock.sex.value}, gen {rock.generation})"
 
 
+def rock_summary_row(rock: genetics.Rock) -> dict[str, Any]:
+    return {
+        "id": rock.id,
+        "name": rock_name(rock),
+        "sex": rock.sex.value,
+        "generation": rock.generation,
+        "status": rock.status.value,
+        "value": rock.value,
+        "sell_value": rock.sell_value,
+        "parents": ", ".join(str(parent_id) for parent_id in rock.parent_ids),
+    }
+
+
 def get_active_rocks(game: GameMaster) -> list[genetics.Rock]:
     return [
         rock
@@ -49,6 +62,16 @@ def get_active_rocks(game: GameMaster) -> list[genetics.Rock]:
 
 def get_breedable_rocks(game: GameMaster) -> list[genetics.Rock]:
     return get_active_rocks(game)
+
+
+def get_available_breeding_candidates(game: GameMaster) -> list[genetics.Rock]:
+    queued_ids = {pair.parent_a_id for pair in game.breeding_queue}
+    queued_ids.update(pair.parent_b_id for pair in game.breeding_queue)
+    return [
+        rock
+        for rock in get_breedable_rocks(game)
+        if rock.id not in queued_ids
+    ]
 
 
 def get_sellable_rocks(game: GameMaster) -> list[genetics.Rock]:
@@ -63,16 +86,7 @@ def get_sellable_rocks(game: GameMaster) -> list[genetics.Rock]:
 def get_rock_rows(game: GameMaster) -> list[dict[str, Any]]:
     game.evaluate_all_rocks()
     return [
-        {
-            "id": rock.id,
-            "name": rock_name(rock),
-            "sex": rock.sex.value,
-            "generation": rock.generation,
-            "status": rock.status.value,
-            "value": rock.value,
-            "sell_value": rock.sell_value,
-            "parents": ", ".join(str(parent_id) for parent_id in rock.parent_ids),
-        }
+        rock_summary_row(rock)
         for _, rock in sorted(game.rocks.items())
     ]
 
@@ -80,15 +94,7 @@ def get_rock_rows(game: GameMaster) -> list[dict[str, Any]]:
 def get_active_rock_rows(game: GameMaster) -> list[dict[str, Any]]:
     game.evaluate_all_rocks()
     return [
-        {
-            "id": rock.id,
-            "name": rock_name(rock),
-            "sex": rock.sex.value,
-            "generation": rock.generation,
-            "value": rock.value,
-            "sell_value": rock.sell_value,
-            "parents": ", ".join(str(parent_id) for parent_id in rock.parent_ids),
-        }
+        rock_summary_row(rock)
         for rock in sorted(get_active_rocks(game), key=lambda owned_rock: owned_rock.id)
     ]
 
@@ -122,6 +128,22 @@ def get_queue_summary(game: GameMaster) -> dict[str, int]:
         "queued_pairs": len(game.breeding_queue),
         "max_pairs": game.max_pairs_per_generation,
     }
+
+
+def get_breeding_queue_rows(game: GameMaster) -> list[dict[str, Any]]:
+    rows = []
+    for index, pair in enumerate(game.breeding_queue, start=1):
+        parent_a = game.get_rock(pair.parent_a_id)
+        parent_b = game.get_rock(pair.parent_b_id)
+        rows.append(
+            {
+                "slot": index,
+                "parent_a": rock_label(parent_a) if parent_a is not None else f"Unknown #{pair.parent_a_id}",
+                "parent_b": rock_label(parent_b) if parent_b is not None else f"Unknown #{pair.parent_b_id}",
+                "potion": pair.potion_key or "None",
+            }
+        )
+    return rows
 
 
 def get_potion_options(game: GameMaster) -> list[str | None]:
@@ -168,6 +190,35 @@ def get_potion_rows(game: GameMaster) -> list[dict[str, Any]]:
     ]
 
 
+def buy_potions(game: GameMaster, quantities: dict[str, int]) -> ActionResult:
+    requested = {
+        potion_key: int(quantity)
+        for potion_key, quantity in quantities.items()
+        if int(quantity) > 0
+    }
+    if not requested:
+        return ActionResult(False, "Choose at least one potion to buy.")
+
+    unknown = sorted(set(requested) - set(POTION_SHOP))
+    if unknown:
+        return ActionResult(False, f"Unknown potion(s): {', '.join(unknown)}.")
+
+    total_cost = sum(POTION_SHOP[potion_key]["cost"] * quantity for potion_key, quantity in requested.items())
+    if game.money < total_cost:
+        return ActionResult(False, f"Not enough money. Need ${total_cost}, have ${game.money}.")
+
+    bought_count = 0
+    try:
+        for potion_key, quantity in requested.items():
+            for _ in range(quantity):
+                game.buy_potion(potion_key)
+                bought_count += 1
+    except Exception as exc:
+        return ActionResult(False, str(exc))
+
+    return ActionResult(True, f"Bought {bought_count} potion(s) for ${total_cost}.", dict(requested))
+
+
 def get_market_pod_rows(game: GameMaster) -> list[dict[str, Any]]:
     return [
         {
@@ -180,6 +231,48 @@ def get_market_pod_rows(game: GameMaster) -> list[dict[str, Any]]:
         }
         for offer in game.market_pods
     ]
+
+
+def get_pending_market_pod_rows(game: GameMaster) -> list[dict[str, Any]]:
+    pending = game.pending_market_pod
+    if pending is None:
+        return []
+
+    return [
+        {
+            "index": index,
+            "name": rock_name(child),
+            "sex": child.sex.value,
+            "generation": child.generation,
+            "status": child.status.value,
+            "value": child.value,
+            "sell_value": child.sell_value,
+            "parents": ", ".join(str(parent_id) for parent_id in child.parent_ids),
+        }
+        for index, child in enumerate(pending.children)
+    ]
+
+
+def buy_market_pod(game: GameMaster, offer_id: str) -> ActionResult:
+    try:
+        pending = game.market_manager.buy_market_pod(game, offer_id)
+    except Exception as exc:
+        return ActionResult(False, str(exc))
+
+    return ActionResult(
+        True,
+        f"Bought {pending.offer.name} pod. Choose one child to keep.",
+        get_pending_market_pod_rows(game),
+    )
+
+
+def choose_market_pod_child(game: GameMaster, child_index: int) -> ActionResult:
+    try:
+        child = game.market_manager.choose_market_pod_child(game, child_index)
+    except Exception as exc:
+        return ActionResult(False, str(exc))
+
+    return ActionResult(True, f"Kept market child #{child.id} {rock_name(child)}.", rock_summary_row(child))
 
 
 def validate_breeding_pair(game: GameMaster, parent_a_id: int, parent_b_id: int) -> dict[str, Any]:
@@ -219,6 +312,23 @@ def breed_pair(
         return ActionResult(False, str(exc))
 
     return ActionResult(True, f"Queued #{pair.parent_a_id} x #{pair.parent_b_id}.", pair)
+
+
+def advance_breeding_generation(game: GameMaster) -> ActionResult:
+    if not game.breeding_queue:
+        return ActionResult(False, "No breeding pairs are queued.")
+
+    try:
+        children = game.advance_generation()
+    except Exception as exc:
+        return ActionResult(False, str(exc))
+
+    child_rows = [rock_summary_row(child) for child in children]
+    return ActionResult(
+        True,
+        f"Bred {len(children)} child rock(s) and advanced to generation {game.generation}.",
+        child_rows,
+    )
 
 
 def render_tree_for_streamlit(game: GameMaster, **kwargs):
