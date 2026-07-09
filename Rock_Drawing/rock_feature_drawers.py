@@ -1003,6 +1003,13 @@ def draw_patchwork(ctx):
         BODY_COLOR_MAP["purple"],
     ]
 
+    # NEW I ADDED< SAFFAN LIKES DOTS - NEED TO VERIFY BEFORE PUSHING!
+    if random.random() < 0.90:
+        wanted_shape = "circle"
+    else:
+        wanted_shape = "polygon"
+    
+
     n_patches = int(rng.integers(1, 6)) * int(rng.integers(1, 5)) + int(rng.integers(1, 7))
 
     for i in range(n_patches):
@@ -1024,15 +1031,25 @@ def draw_patchwork(ctx):
                 cy + rr * np.sin(a)
             ])
 
-        patch = Polygon(
-            points,
-            closed=True,
-            facecolor=patch_palette[i % len(patch_palette)],
-            edgecolor="black",
-            linewidth=0.35,
-            alpha=0.55,
-            zorder=2.5
-        )
+        if wanted_shape == "polygon":
+            patch = Polygon(
+                points,
+                closed=True,
+                facecolor=patch_palette[i % len(patch_palette)],
+                edgecolor="black",
+                linewidth=0.35,
+                alpha=0.55,
+                zorder=2.5
+            )
+        else:
+            patch = Circle(
+                xy=(cx, cy), 
+                radius=r, 
+                facecolor=patch_palette[i % len(patch_palette)],
+                edgecolor="black",
+                linewidth=0.0, 
+                alpha=0.55,
+            )
 
         patch.set_clip_path(ctx.body)
         ctx.ax.add_patch(patch)
