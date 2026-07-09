@@ -105,7 +105,7 @@ def get_rock_render_signature(rock):
         tuple(gene_bits),
     )
 
-def get_render_variant_key(sprite_size=2.0, dpi=140, identity_layout=None):
+def get_render_variant_key(sprite_size=2.0, dpi=280, identity_layout=None):
     """
     Cache key for render settings that affect the generated PNG bytes.
     """
@@ -124,7 +124,7 @@ def ensure_rock_image_cache(game):
 
     return game.rock_image_cache
 
-def render_game_rock_images(game, sprite_size=2.0, dpi=140, force=False, identity_layout=None):
+def render_game_rock_images(game, sprite_size=2.0, dpi=280, force=False, identity_layout=None):
     """
     Render all game rocks to a cache and return {rock_id: image_uri}.
     """
