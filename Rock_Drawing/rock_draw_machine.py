@@ -21,7 +21,7 @@ from Rock_Drawing.rock_feature_drawers import (
     draw_nose, draw_patchwork, draw_stones, draw_tail, draw_wings, draw_wrinkles,
 )
 
-@dataclass #(frozen=True)
+@dataclass(frozen=True)
 class IdentityLabelLayout:
     """
     Controls identity-label placement in body-radius units.
