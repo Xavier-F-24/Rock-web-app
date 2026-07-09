@@ -554,7 +554,7 @@ class TreeDrawer:
     helper: TreeHelper | None = None
     rock_image_size: float = 1.35
     rock_image_sprite_size: float = 1.4
-    rock_image_dpi: int = 100
+    rock_image_dpi: int = 400
     adaptive_image_resolution: bool = True
     render_images: bool = True
     canvas_width: int = 1200
@@ -609,9 +609,9 @@ class TreeDrawer:
 
         rock_count = len(self.helper.rocks)
         if rock_count > 150:
-            return min(self.rock_image_sprite_size, 1.0), min(self.rock_image_dpi, 70)
+            return min(self.rock_image_sprite_size, 1.0), min(self.rock_image_dpi, 100)
         if rock_count > 70:
-            return min(self.rock_image_sprite_size, 1.2), min(self.rock_image_dpi, 80)
+            return min(self.rock_image_sprite_size, 1.2), min(self.rock_image_dpi, 250)
         return self.rock_image_sprite_size, self.rock_image_dpi
 
     def geometry_cache_key(self) -> tuple:
