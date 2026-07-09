@@ -605,7 +605,7 @@ def test_tree_hover_text_includes_requested_fields_and_phenotypes():
         "status:",
         "value: $12",
         "sell value: $7",
-        "phenotypes:",
+        "phenotype list:",
         "eyes:",
     ]
     positions = [hover.index(text) for text in expected_order]

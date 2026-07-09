@@ -27,16 +27,16 @@ class IdentityLabelLayout:
     Controls identity-label placement in body-radius units.
     """
 
-    name_below_body_radius: float = 0.85
-    gender_right_body_radius: float = 1.0
-    gender_above_body_radius: float = 0.95
-    status_left_body_radius: float = 1.0
-    status_above_body_radius: float = 0.95
+    name_below_body_radius: float = 1.1
+    gender_right_body_radius: float = 1.3
+    gender_above_body_radius: float = 1.2
+    status_left_body_radius: float = 1.3
+    status_above_body_radius: float = 1.2
     name_font_size: int = 8
     gender_font_size: int = 18
     status_font_size: int = 16
-    fallback_name_line_chars: int = 20
-    structured_name_line_chars: int = 24
+    fallback_name_line_chars: int = 16
+    structured_name_line_chars: int = 18
     font_weight: str = "bold"
 
 

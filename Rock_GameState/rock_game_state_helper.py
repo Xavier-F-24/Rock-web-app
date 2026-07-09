@@ -278,7 +278,6 @@ class GameMaster:
         return children
 
     @staticmethod
-    @staticmethod
     def normalize_potion_keys(
         potion_key: str | None = None,
         potion_keys: list[str] | tuple[str, ...] | None = None,

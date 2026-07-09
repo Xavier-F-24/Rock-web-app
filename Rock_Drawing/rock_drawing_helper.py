@@ -25,7 +25,7 @@ from Rock_Drawing.rock_render_context import *
 from Rock_Drawing.rock_feature_drawers import *
 from Rock_Drawing.rock_draw_machine import DrawMachine, draw_rock
 
-PAD_FRAC = 0.2
+PAD_FRAC = 0.32
 
 # -----------------------------
 # SAVING ROCK AS AN IMAGE FOR ROCK

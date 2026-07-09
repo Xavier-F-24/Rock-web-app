@@ -1026,7 +1026,8 @@ class TreeDrawer:
         for gene_name in genetics.GENE_SPECS:
             gene_pair = rock.genotype.genes.get(gene_name)
             phenotype = "n/a" if gene_pair is None or gene_pair.phenotype is None else str(gene_pair.phenotype)
-            phenotype_lines.append(f"{html.escape(gene_name)}: {html.escape(phenotype)}")
+            label = gene_name.replace("_", " ")
+            phenotype_lines.append(f"{html.escape(label)}: {html.escape(phenotype)}")
 
         return (
             f"id: {int(rock.id)}<br>"
@@ -1036,7 +1037,7 @@ class TreeDrawer:
             f"status: {html.escape(rock.status.value)}<br>"
             f"value: ${int(rock.value)}<br>"
             f"sell value: ${int(rock.sell_value)}<br>"
-            f"phenotypes:<br>"
+            f"phenotype list:<br>"
             + "<br>".join(phenotype_lines)
         )
 
