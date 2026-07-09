@@ -21,13 +21,13 @@ from Rock_Drawing.rock_feature_drawers import (
     draw_nose, draw_patchwork, draw_stones, draw_tail, draw_wings, draw_wrinkles,
 )
 
-@dataclass(frozen=True)
+@dataclass #(frozen=True)
 class IdentityLabelLayout:
     """
     Controls identity-label placement in body-radius units.
     """
 
-    name_below_body_radius: float = 0.85
+    name_below_body_radius: float = 1.0
     gender_right_body_radius: float = 1.0
     gender_above_body_radius: float = 0.95
     status_left_body_radius: float = 1.0
