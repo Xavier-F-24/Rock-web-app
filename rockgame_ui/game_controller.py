@@ -447,7 +447,7 @@ def render_tree_for_streamlit(game: GameMaster, **kwargs):
 
 def render_rock(rock: genetics.Rock, **kwargs) -> str:
     kwargs.setdefault("sprite_size", 1.4)
-    kwargs.setdefault("dpi", 120)
+    kwargs.setdefault("dpi", 400)
     return rock_to_image_uri(rock, **kwargs)
 
 
