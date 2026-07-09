@@ -16,6 +16,7 @@ from Rock_Drawing.rock_lineage_drawing_helper import TreeDrawer
 from Rock_GameState.rock_game_state_helper import GameMaster
 from Rock_Market.rock_market_helper import POTION_SHOP
 from Rock_Serialization.rock_serialization_helper import game_from_json_string, game_to_json_string
+from Rock_World.rock_world_manager_helper import get_or_create_world
 
 
 @dataclass(frozen=True)
@@ -55,7 +56,9 @@ def start_new_game(
     if seed is not None:
         settings_data["seed"] = seed
     settings_data.update(overrides)
-    return GameMaster(**settings_data)
+    game = GameMaster(**settings_data)
+    get_or_create_world(game)
+    return game
 
 
 def rock_name(rock: genetics.Rock) -> str:

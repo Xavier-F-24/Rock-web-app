@@ -83,6 +83,7 @@ class GameMaster:
     game_over: bool = False
     market_pods: list[Any] = field(default_factory=list)
     pending_market_pod: Any = None
+    world: Any = None
 
     rng: random.Random = field(default_factory=random.Random)
     genome_factory: genetics.GenomeFactory = field(default_factory=genetics.GenomeFactory)
@@ -386,4 +387,7 @@ class GameMaster:
 
 def create_new_game(**kwargs) -> GameMaster:
     game = GameMaster(**kwargs)
+    from Rock_World.rock_world_manager_helper import get_or_create_world
+
+    get_or_create_world(game)
     return game

@@ -3,9 +3,12 @@
 from Rock_World.rock_farm_profile_helper import FarmProfile, create_default_farm_profiles
 from Rock_World.rock_farmer_policy_helper import FarmerPolicy
 from Rock_World.rock_world_manager_helper import (
+    attach_starter_world,
     create_empty_default_world,
     create_starter_world,
     first_world_rock_id,
+    game_has_world,
+    get_or_create_world,
 )
 from Rock_World.rock_world_state_helper import (
     FARM_OWNER_PREFIX,
@@ -35,11 +38,14 @@ __all__ = [
     "MarketListing",
     "TradeOffer",
     "WorldState",
+    "attach_starter_world",
     "create_default_farm_profiles",
     "create_empty_default_world",
     "create_starter_world",
     "farm_owner_id",
     "first_world_rock_id",
+    "game_has_world",
+    "get_or_create_world",
     "get_rock_owner",
     "is_farm_owner",
     "set_rock_owner",

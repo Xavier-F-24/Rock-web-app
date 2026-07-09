@@ -60,6 +60,30 @@ def create_starter_world(
     return world
 
 
+def game_has_world(game: GameMaster) -> bool:
+    return getattr(game, "world", None) is not None
+
+
+def attach_starter_world(
+    game: GameMaster,
+    profiles: list[FarmProfile] | None = None,
+    founder_count: int = 6,
+) -> WorldState:
+    if game_has_world(game):
+        return game.world
+
+    game.world = create_starter_world(
+        game=game,
+        profiles=profiles,
+        founder_count=founder_count,
+    )
+    return game.world
+
+
+def get_or_create_world(game: GameMaster) -> WorldState:
+    return attach_starter_world(game)
+
+
 def first_world_rock_id(game: GameMaster) -> int:
     player_ids = [int(rock_id) for rock_id in getattr(game, "rocks", {})]
     next_player_id = int(getattr(game, "next_rock_id", 1))

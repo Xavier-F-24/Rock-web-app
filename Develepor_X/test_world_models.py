@@ -13,11 +13,14 @@ from Rock_World import (
     create_empty_default_world,
     create_starter_world,
     farm_owner_id,
+    game_has_world,
     get_rock_owner,
+    get_or_create_world,
     is_farm_owner,
 )
-from Rock_GameState.rock_game_state_helper import GameMaster
+from Rock_GameState.rock_game_state_helper import GameMaster, create_new_game
 import Rock_Genetics.rock_genetic_helper as genetics
+from rockgame_ui import game_controller
 
 
 def test_default_farm_profiles_create_three_distinct_npc_farms():
@@ -129,6 +132,55 @@ def test_create_starter_world_uses_generation_ahead_offsets():
     assert farm_generations["value-focused breeder"] == 1
     assert farm_generations["rare trait specialist"] == 1
     assert farm_generations["lineage/title collector"] == 2
+
+
+def test_controller_new_game_attaches_starter_world_without_changing_player_state():
+    game = game_controller.start_new_game(seed=903, starting_money=30)
+
+    assert game_has_world(game) is True
+    assert len(game.world.farms) == 3
+    assert len(game.rocks) == 4
+    assert game.money == 30
+    assert game.next_rock_id == 5
+
+    player_rock_ids = set(game.rocks)
+    farm_rock_ids = {
+        rock_id
+        for farm in game.world.farms.values()
+        for rock_id in farm.rocks
+    }
+    assert not player_rock_ids & farm_rock_ids
+    assert all(rock_id >= NPC_ROCK_ID_START for rock_id in farm_rock_ids)
+
+
+def test_get_or_create_world_is_idempotent_for_streamlit_reruns():
+    game = game_controller.start_new_game(seed=904)
+    first_world = game.world
+    first_farm_ids = {
+        farm_id: set(farm.rocks)
+        for farm_id, farm in first_world.farms.items()
+    }
+
+    second_world = get_or_create_world(game)
+
+    assert second_world is first_world
+    assert {
+        farm_id: set(farm.rocks)
+        for farm_id, farm in second_world.farms.items()
+    } == first_farm_ids
+
+
+def test_non_streamlit_create_new_game_attaches_world():
+    game = create_new_game(seed=905, starting_money=35)
+
+    assert game_has_world(game) is True
+    assert len(game.world.farms) == 3
+    assert game.money == 35
+    assert set(game.rocks).isdisjoint(
+        rock_id
+        for farm in game.world.farms.values()
+        for rock_id in farm.rocks
+    )
 
 
 def test_world_core_modules_do_not_import_streamlit():
