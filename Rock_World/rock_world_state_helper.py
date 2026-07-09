@@ -12,6 +12,8 @@ from Rock_World.rock_farm_profile_helper import FarmProfile
 
 PLAYER_OWNER_ID = "player"
 FARM_OWNER_PREFIX = "farm:"
+ROCK_OWNER_ATTRIBUTE = "current_owner_id"
+NPC_ROCK_ID_START = 10_000
 
 
 def farm_owner_id(farm_id: str) -> str:
@@ -20,6 +22,15 @@ def farm_owner_id(farm_id: str) -> str:
 
 def is_farm_owner(owner_id: str) -> bool:
     return str(owner_id).startswith(FARM_OWNER_PREFIX)
+
+
+def set_rock_owner(rock: genetics.Rock, owner_id: str) -> genetics.Rock:
+    setattr(rock, ROCK_OWNER_ATTRIBUTE, str(owner_id))
+    return rock
+
+
+def get_rock_owner(rock: genetics.Rock, default: str | None = None) -> str | None:
+    return getattr(rock, ROCK_OWNER_ATTRIBUTE, default)
 
 
 @dataclass
@@ -67,6 +78,12 @@ class FarmState:
         if hasattr(rock_id, "id"):
             rock_id = rock_id.id
         return self.rocks.get(int(rock_id))
+
+    def add_rock(self, rock: genetics.Rock) -> genetics.Rock:
+        set_rock_owner(rock, self.owner_id)
+        self.rocks[int(rock.id)] = rock
+        self.next_rock_id = max(self.next_rock_id, int(rock.id) + 1)
+        return rock
 
 
 @dataclass

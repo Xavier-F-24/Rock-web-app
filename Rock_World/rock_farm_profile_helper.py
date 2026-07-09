@@ -26,6 +26,7 @@ class FarmProfile:
     risk_tolerance: float = 0.5
     market_aggression: float = 0.5
     cash_reserve: int = 10
+    starting_money: int = 40
     starting_generation_offset: int = 1
 
     @property
@@ -40,31 +41,33 @@ def create_default_farm_profiles() -> list[FarmProfile]:
 
     return [
         FarmProfile(
-            farm_id="mossy_knoll",
-            farm_name="Mossy Knoll Farm",
+            farm_id="basalt_yard",
+            farm_name="Basalt Yard",
             owner_name="Mira Gravel",
-            region="North Ridge",
-            difficulty="easy",
-            personality="friendly collector",
-            trait_preferences=("color", "eyes"),
-            relatedness_tolerance=0.25,
-            risk_tolerance=0.65,
-            market_aggression=0.35,
-            cash_reserve=8,
+            region="Old Quarry Road",
+            difficulty="medium",
+            personality="value-focused breeder",
+            trait_preferences=("size", "shape", "color"),
+            relatedness_tolerance=0.125,
+            risk_tolerance=0.4,
+            market_aggression=0.55,
+            cash_reserve=16,
+            starting_money=55,
             starting_generation_offset=1,
         ),
         FarmProfile(
-            farm_id="basalt_yard",
-            farm_name="Basalt Yard",
+            farm_id="moonseed_lab",
+            farm_name="Moonseed Lab",
             owner_name="Basil Basalt",
-            region="Old Quarry Road",
+            region="North Ridge",
             difficulty="medium",
-            personality="value-minded breeder",
-            trait_preferences=("size", "shape", "hair"),
-            relatedness_tolerance=0.125,
-            risk_tolerance=0.45,
-            market_aggression=0.55,
+            personality="rare trait specialist",
+            trait_preferences=("special", "eye_color", "hair_color"),
+            relatedness_tolerance=0.18,
+            risk_tolerance=0.55,
+            market_aggression=0.65,
             cash_reserve=14,
+            starting_money=50,
             starting_generation_offset=1,
         ),
         FarmProfile(
@@ -73,12 +76,13 @@ def create_default_farm_profiles() -> list[FarmProfile]:
             owner_name="Orin Feldspar",
             region="Sunset Cut",
             difficulty="hard",
-            personality="careful lineage planner",
-            trait_preferences=("color", "eye_color", "special"),
+            personality="lineage/title collector",
+            trait_preferences=("title", "family", "honorific"),
             relatedness_tolerance=0.0625,
-            risk_tolerance=0.3,
-            market_aggression=0.75,
-            cash_reserve=22,
+            risk_tolerance=0.25,
+            market_aggression=0.45,
+            cash_reserve=24,
+            starting_money=60,
             starting_generation_offset=2,
         ),
     ]

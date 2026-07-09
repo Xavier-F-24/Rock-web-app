@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from Rock_World import (
+    NPC_ROCK_ID_START,
     PLAYER_OWNER_ID,
     FarmMessage,
     FarmProfile,
@@ -10,9 +11,13 @@ from Rock_World import (
     WorldState,
     create_default_farm_profiles,
     create_empty_default_world,
+    create_starter_world,
     farm_owner_id,
+    get_rock_owner,
     is_farm_owner,
 )
+from Rock_GameState.rock_game_state_helper import GameMaster
+import Rock_Genetics.rock_genetic_helper as genetics
 
 
 def test_default_farm_profiles_create_three_distinct_npc_farms():
@@ -20,8 +25,13 @@ def test_default_farm_profiles_create_three_distinct_npc_farms():
 
     assert len(profiles) == 3
     assert len({profile.farm_id for profile in profiles}) == 3
-    assert [profile.difficulty for profile in profiles] == ["easy", "medium", "hard"]
+    assert [profile.personality for profile in profiles] == [
+        "value-focused breeder",
+        "rare trait specialist",
+        "lineage/title collector",
+    ]
     assert all(profile.owner_id == farm_owner_id(profile.farm_id) for profile in profiles)
+    assert all(profile.starting_money > 0 for profile in profiles)
     assert all(profile.starting_generation_offset in {1, 2} for profile in profiles)
 
 
@@ -77,6 +87,48 @@ def test_empty_default_world_has_profiles_but_no_generated_rocks_yet():
     assert world.market_listings == []
     assert world.trade_offers == []
     assert world.messages == []
+
+
+def test_create_starter_world_makes_three_farms_with_valid_owned_rocks():
+    game = GameMaster(seed=901)
+    player_rock_ids = set(game.rocks)
+    player_count_before = len(game.rocks)
+    player_next_id_before = game.next_rock_id
+
+    world = create_starter_world(game)
+
+    assert len(world.farms) == 3
+    assert len(game.rocks) == player_count_before
+    assert game.next_rock_id == player_next_id_before
+
+    farm_rock_ids = []
+    for farm in world.farms.values():
+        assert farm.money == farm.profile.starting_money
+        assert farm.generation == farm.profile.starting_generation_offset
+        assert farm.rocks
+        assert all(rock_id >= NPC_ROCK_ID_START for rock_id in farm.rocks)
+        assert all(rock_id not in player_rock_ids for rock_id in farm.rocks)
+        assert all(get_rock_owner(rock) == farm.owner_id for rock in farm.rocks.values())
+        assert all(rock.status == genetics.RockStatus.ACTIVE for rock in farm.rocks.values())
+        assert all(rock.genotype.genes for rock in farm.rocks.values())
+        farm_rock_ids.extend(farm.rocks)
+
+    assert len(farm_rock_ids) == len(set(farm_rock_ids))
+    assert not player_rock_ids & set(farm_rock_ids)
+
+
+def test_create_starter_world_uses_generation_ahead_offsets():
+    game = GameMaster(seed=902)
+
+    world = create_starter_world(game)
+
+    farm_generations = {
+        farm.profile.personality: farm.generation
+        for farm in world.farms.values()
+    }
+    assert farm_generations["value-focused breeder"] == 1
+    assert farm_generations["rare trait specialist"] == 1
+    assert farm_generations["lineage/title collector"] == 2
 
 
 def test_world_core_modules_do_not_import_streamlit():
