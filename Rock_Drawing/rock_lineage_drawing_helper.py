@@ -1024,9 +1024,10 @@ class TreeDrawer:
         parents = ", ".join(str(parent_id) for parent_id in rock.parent_ids) or "founder"
         phenotype_lines = []
         for gene_name in genetics.GENE_SPECS:
-            gene_pair = rock.genotype.genes.get(gene_name)
-            phenotype = "n/a" if gene_pair is None or gene_pair.phenotype is None else str(gene_pair.phenotype)
-            phenotype_lines.append(f"{html.escape(gene_name)}: {html.escape(phenotype)}")
+            if rock.genotype.genes[gene_name].phenotype != "n/a":
+                gene_pair = rock.genotype.genes.get(gene_name)
+                phenotype = "n/a" if gene_pair is None or gene_pair.phenotype is None else str(gene_pair.phenotype)
+                phenotype_lines.append(f"{html.escape(gene_name)}: {html.escape(phenotype)}")
 
         return (
             f"id: {int(rock.id)}<br>"
