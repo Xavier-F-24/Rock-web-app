@@ -558,11 +558,11 @@ class RockRenderContext:
         self.ax.set_aspect("equal")
 
         if normalize_size:
-            self.ax.set_xlim(-2.0 * self.size_scale, 2.0 * self.size_scale)
-            self.ax.set_ylim(-1.65 * self.size_scale, 1.75 * self.size_scale)
+            self.ax.set_xlim(-2.35 * self.size_scale, 2.35 * self.size_scale)
+            self.ax.set_ylim(-1.85 * self.size_scale, 1.95 * self.size_scale)
         else:
-            self.ax.set_xlim(-3.0, 3.0)
-            self.ax.set_ylim(-2.55, 2.85)
+            self.ax.set_xlim(-3.35, 3.35)
+            self.ax.set_ylim(-2.75, 3.05)
 
         self.ax.axis("off")
 

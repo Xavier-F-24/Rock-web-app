@@ -27,15 +27,16 @@ class IdentityLabelLayout:
     Controls identity-label placement in body-radius units.
     """
 
-    name_below_body_radius: float = 0.7
-    gender_right_body_radius: float = 0.7
-    gender_above_body_radius: float = 0.7
-    status_left_body_radius: float = 0.7
-    status_above_body_radius: float = 0.7
+    name_below_body_radius: float = 0.85
+    gender_right_body_radius: float = 1.0
+    gender_above_body_radius: float = 0.95
+    status_left_body_radius: float = 1.0
+    status_above_body_radius: float = 0.95
     name_font_size: int = 8
     gender_font_size: int = 18
     status_font_size: int = 16
-    fallback_name_line_chars: int = 16
+    fallback_name_line_chars: int = 20
+    structured_name_line_chars: int = 24
     font_weight: str = "bold"
 
 
@@ -201,10 +202,23 @@ class DrawMachine:
             core = str(name.given)
             if getattr(name, "family", None):
                 core = f"{core} {name.family}"
-            lines.append(core)
+            lines.extend(
+                textwrap.wrap(
+                    core,
+                    width=max(8, self.identity_layout.structured_name_line_chars),
+                )
+                or [core]
+            )
 
             if getattr(name, "epithet", None):
-                lines.append(str(name.epithet))
+                epithet = str(name.epithet)
+                lines.extend(
+                    textwrap.wrap(
+                        epithet,
+                        width=max(8, self.identity_layout.structured_name_line_chars),
+                    )
+                    or [epithet]
+                )
 
             return "\n".join(lines)
 

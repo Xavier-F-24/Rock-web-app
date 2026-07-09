@@ -18,6 +18,9 @@ MANUAL_PARENT_SELECTION_KEY = "breeding_manual_parent_selection_next_run"
 BREED_MODE_KEY = "breeding_tree_breed_mode"
 POTION_MULTISELECT_KEY = "breeding_potion_multiselect"
 CLEAR_POTION_SELECTION_KEY = "breeding_clear_potion_selection_next_run"
+TREE_FULL_IMAGES_KEY = "breeding_tree_full_images"
+TREE_IMAGE_THRESHOLD_APPLIED_KEY = "breeding_tree_image_threshold_applied"
+TREE_FAST_OVERVIEW_THRESHOLD = 120
 
 
 def _show_last_action_message() -> None:
@@ -107,7 +110,7 @@ def render() -> None:
             st.session_state[candidate_checkbox_key(manual_b)] = True
     _sync_selected_parent_ids(candidate_ids)
 
-    page_header("Breeding", "Select parents, queue breeding pairs, then advance the generation.")
+    page_header("The rock farm", "Select parents, queue breeding pairs, then advance the generation.")
     _show_last_action_message()
 
     metric_strip(
@@ -118,33 +121,28 @@ def render() -> None:
     )
 
     queue_rows = game_controller.get_breeding_queue_rows(game)
-    with section("Queued Pairs"):
-        if queue_rows:
-            st.dataframe(queue_rows, width="stretch", hide_index=True)
-            remove_cols = st.columns(len(queue_rows))
-            for column, row in zip(remove_cols, queue_rows):
-                with column:
-                    if st.button(
-                        f"Remove slot {row['slot']}",
-                        key=f"breeding_remove_queue_slot_{row['slot']}",
-                    ):
-                        result = game_controller.remove_queued_pair(game, row["slot"])
-                        _store_action_and_rerun(result)
-        else:
-            st.info("No pairs queued yet.")
 
-    if len(candidates) < 2:
-        st.info("Not enough unqueued active rocks to add another pair.")
-        if queue_rows and st.button("Breed queued pairs", key="breeding_advance_generation"):
-            result = game_controller.advance_breeding_generation(game)
-            _store_action_and_rerun(result)
-        return
-
-    with section("Tree Reference", "Turn on Breed? to show parent boxes under available rocks."):
+    with section("Rock Family Tree", "Turn on Breed? to show parent boxes under available rocks."):
         breed_mode = st.checkbox(
             "Breed?",
             key=BREED_MODE_KEY,
             help="Show parent-picking boxes under available rocks in the lineage tree.",
+        )
+        large_tree = len(game.rocks) > TREE_FAST_OVERVIEW_THRESHOLD
+        if large_tree:
+            st.info(
+                "Large tree fast overview is on. Rock images are skipped until you enable full images."
+            )
+            if not st.session_state.get(TREE_IMAGE_THRESHOLD_APPLIED_KEY, False):
+                st.session_state[TREE_FULL_IMAGES_KEY] = False
+                st.session_state[TREE_IMAGE_THRESHOLD_APPLIED_KEY] = True
+        else:
+            st.session_state[TREE_IMAGE_THRESHOLD_APPLIED_KEY] = False
+        render_tree_images = st.checkbox(
+            "Show full rock images",
+            value=not large_tree,
+            key=TREE_FULL_IMAGES_KEY,
+            help="Large games are faster with this off. Hover markers still show rock details.",
         )
         if not breed_mode:
             _clear_parent_selection(candidate_ids)
@@ -165,6 +163,7 @@ def render() -> None:
             rock_badges=game_controller.get_queued_parent_badges(game),
             tree_checkbox_ids=tuple(sorted(candidate_ids)) if breed_mode else (),
             tree_checked_ids=tuple(checked_before) if breed_mode else (),
+            render_images=render_tree_images,
         )
         st.plotly_chart(
             fig,
@@ -173,8 +172,13 @@ def render() -> None:
             key="breeding_tree_parent_selector",
         )
 
-    if breed_mode:
-        with section("Tree Box Controls", "These controls update the boxes shown on the tree. Pick exactly two."):
+    with section("Breeding Controls"):
+        st.subheader("Tree Box Controls")
+        st.caption("These controls update the boxes shown on the tree. Pick exactly two.")
+
+        if len(candidates) < 2:
+            st.info("Not enough unqueued active rocks to add another pair.")
+        elif breed_mode:
             if st.button("Clear parent checkboxes", key="breeding_clear_parent_checkboxes"):
                 _clear_parent_selection(candidate_ids)
                 st.rerun()
@@ -204,43 +208,45 @@ def render() -> None:
             selected_a, selected_b = st.columns(2)
             selected_a.info(f"Parent A: {_selected_parent_label(parent_a_id, labels)}")
             selected_b.info(f"Parent B: {_selected_parent_label(parent_b_id, labels)}")
-    else:
-        parent_a_id = None
-        parent_b_id = None
-        st.info("Turn on Breed? to pick two parents from the tree.")
+        else:
+            parent_a_id = None
+            parent_b_id = None
+            st.info("Turn on Breed? above the tree to pick two parents.")
 
-    with st.expander("Manual fallback selectors"):
-        options = [rock.id for rock in candidates]
-        blank_parent_options = [None, *options]
-        manual_a = st.selectbox(
-            "Parent A",
-            blank_parent_options,
-            index=blank_parent_options.index(parent_a_id) if parent_a_id in blank_parent_options else 0,
-            format_func=lambda rock_id: "Choose parent A" if rock_id is None else labels[rock_id],
-            key="breeding_parent_a_select_fallback",
-        )
-        manual_b_options = [
-            rock.id for rock in (_parent_b_options(manual_a, candidates) if manual_a else candidates)
-        ]
-        blank_parent_b_options = [None, *manual_b_options]
-        manual_b = st.selectbox(
-            "Parent B",
-            blank_parent_b_options,
-            index=blank_parent_b_options.index(parent_b_id) if parent_b_id in blank_parent_b_options else 0,
-            format_func=lambda rock_id: "Choose parent B" if rock_id is None else labels[rock_id],
-            key="breeding_parent_b_select_fallback",
-        )
-        if st.button("Use manual parent selectors", key="breeding_use_manual_parent_selectors"):
-            st.session_state[MANUAL_PARENT_SELECTION_KEY] = (manual_a, manual_b)
-            st.rerun()
+        with st.expander("Manual fallback selectors"):
+            options = [rock.id for rock in candidates]
+            blank_parent_options = [None, *options]
+            manual_a = st.selectbox(
+                "Parent A",
+                blank_parent_options,
+                index=blank_parent_options.index(parent_a_id) if parent_a_id in blank_parent_options else 0,
+                format_func=lambda rock_id: "Choose parent A" if rock_id is None else labels[rock_id],
+                key="breeding_parent_a_select_fallback",
+            )
+            manual_b_options = [
+                rock.id for rock in (_parent_b_options(manual_a, candidates) if manual_a else candidates)
+            ]
+            blank_parent_b_options = [None, *manual_b_options]
+            manual_b = st.selectbox(
+                "Parent B",
+                blank_parent_b_options,
+                index=blank_parent_b_options.index(parent_b_id) if parent_b_id in blank_parent_b_options else 0,
+                format_func=lambda rock_id: "Choose parent B" if rock_id is None else labels[rock_id],
+                key="breeding_parent_b_select_fallback",
+            )
+            if st.button("Use manual parent selectors", key="breeding_use_manual_parent_selectors"):
+                st.session_state[MANUAL_PARENT_SELECTION_KEY] = (manual_a, manual_b)
+                st.rerun()
 
-    parent_a_id = st.session_state.get(PARENT_A_KEY)
-    parent_b_id = st.session_state.get(PARENT_B_KEY)
-    validation = {"valid": False, "errors": ["Choose two parents."], "warnings": []}
-    if parent_a_id is not None and parent_b_id is not None:
-        validation = game_controller.validate_breeding_pair(game, parent_a_id, parent_b_id)
+        st.divider()
+        st.subheader("Breeding Action")
 
-    with section("Breeding Action"):
+        parent_a_id = st.session_state.get(PARENT_A_KEY)
+        parent_b_id = st.session_state.get(PARENT_B_KEY)
+        validation = {"valid": False, "errors": ["Choose two parents."], "warnings": []}
+        if parent_a_id is not None and parent_b_id is not None:
+            validation = game_controller.validate_breeding_pair(game, parent_a_id, parent_b_id)
+
         potion_keys = st.multiselect(
             "Potions",
             [key for key in game_controller.get_potion_options(game) if key is not None],
@@ -283,3 +289,19 @@ def render() -> None:
         ):
             result = game_controller.advance_breeding_generation(game)
             _store_action_and_rerun(result)
+
+        st.divider()
+        st.subheader("Queued Pairs")
+        if queue_rows:
+            st.dataframe(queue_rows, width="stretch", hide_index=True)
+            remove_cols = st.columns(len(queue_rows))
+            for column, row in zip(remove_cols, queue_rows):
+                with column:
+                    if st.button(
+                        f"Remove slot {row['slot']}",
+                        key=f"breeding_remove_queue_slot_{row['slot']}",
+                    ):
+                        result = game_controller.remove_queued_pair(game, row["slot"])
+                        _store_action_and_rerun(result)
+        else:
+            st.info("No pairs queued yet.")

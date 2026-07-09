@@ -69,6 +69,19 @@ def test_game_master_can_queue_pair_with_multiple_potion_types_and_refund_them()
     assert game.potions["mutation"] == 1
 
 
+def test_random_import_uses_current_game_generation():
+    game = GameMaster(seed=38, starting_money=80)
+    males = [rock for rock in game.rocks.values() if rock.sex == genetics.Sex.MALE]
+    females = [rock for rock in game.rocks.values() if rock.sex == genetics.Sex.FEMALE]
+    game.add_pair_to_queue(males[0].id, females[0].id)
+    game.advance_generation()
+
+    imported = game.buy_random_rock()
+
+    assert game.generation == 1
+    assert imported.generation == game.generation
+
+
 def test_market_pod_purchase_can_keep_one_child():
     game = create_new_game(seed=13, starting_money=30)
     offer = game.market_pods[0]

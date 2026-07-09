@@ -89,6 +89,13 @@ def get_active_rocks(game: GameMaster) -> list[genetics.Rock]:
     ]
 
 
+def get_rock(game: GameMaster, rock_id: int) -> genetics.Rock:
+    rock = game.get_rock(rock_id)
+    if rock is None:
+        raise ValueError(f"Unknown rock id: {rock_id}")
+    return rock
+
+
 def get_breedable_rocks(game: GameMaster) -> list[genetics.Rock]:
     return get_active_rocks(game)
 
@@ -323,6 +330,22 @@ def get_pending_market_pod_rows(game: GameMaster) -> list[dict[str, Any]]:
     ]
 
 
+def get_pending_market_pod_rocks(game: GameMaster) -> dict[str, list[genetics.Rock]]:
+    pending = game.pending_market_pod
+    if pending is None:
+        return {"parents": [], "children": []}
+
+    parents = [
+        rock
+        for rock in (
+            game.get_rock(pending.parent_a_id),
+            game.get_rock(pending.parent_b_id),
+        )
+        if rock is not None
+    ]
+    return {"parents": parents, "children": list(pending.children)}
+
+
 def buy_market_pod(game: GameMaster, offer_id: str) -> ActionResult:
     try:
         pending = game.market_manager.buy_market_pod(game, offer_id)
@@ -423,6 +446,8 @@ def render_tree_for_streamlit(game: GameMaster, **kwargs):
 
 
 def render_rock(rock: genetics.Rock, **kwargs) -> str:
+    kwargs.setdefault("sprite_size", 1.4)
+    kwargs.setdefault("dpi", 120)
     return rock_to_image_uri(rock, **kwargs)
 
 

@@ -105,6 +105,16 @@ def get_rock_render_signature(rock):
         tuple(gene_bits),
     )
 
+def get_render_variant_key(sprite_size=2.0, dpi=140, identity_layout=None):
+    """
+    Cache key for render settings that affect the generated PNG bytes.
+    """
+    return (
+        float(sprite_size),
+        int(dpi),
+        repr(identity_layout),
+    )
+
 def ensure_rock_image_cache(game):
     """
     Runtime cache for id -> rendered data URI.
@@ -114,19 +124,30 @@ def ensure_rock_image_cache(game):
 
     return game.rock_image_cache
 
-def render_game_rock_images(game, sprite_size=2.0, dpi=220, force=False, identity_layout=None):
+def render_game_rock_images(game, sprite_size=2.0, dpi=140, force=False, identity_layout=None):
     """
     Render all game rocks to a cache and return {rock_id: image_uri}.
     """
     cache = ensure_rock_image_cache(game)
     output = {}
+    variant_key = get_render_variant_key(
+        sprite_size=sprite_size,
+        dpi=dpi,
+        identity_layout=identity_layout,
+    )
 
     for rock_id, rock in game.rocks.items():
         signature = get_rock_render_signature(rock)
-        cached = cache.get(int(rock_id))
+        rock_cache = cache.setdefault(int(rock_id), {})
+
+        if "signature" in rock_cache and "image_uri" in rock_cache:
+            rock_cache = {variant_key: rock_cache}
+            cache[int(rock_id)] = rock_cache
+
+        cached = rock_cache.get(variant_key)
 
         if force or cached is None or cached.get("signature") != signature:
-            cache[int(rock_id)] = {
+            rock_cache[variant_key] = {
                 "signature": signature,
                 "image_uri": rock_to_image_uri(
                     rock,
@@ -136,6 +157,6 @@ def render_game_rock_images(game, sprite_size=2.0, dpi=220, force=False, identit
                 ),
             }
 
-        output[int(rock_id)] = cache[int(rock_id)]["image_uri"]
+        output[int(rock_id)] = rock_cache[variant_key]["image_uri"]
 
     return output

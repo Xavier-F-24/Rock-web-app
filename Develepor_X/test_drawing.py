@@ -9,8 +9,9 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 from Rock_Drawing.rock_draw_machine import DrawMachine, IdentityLabelLayout, draw_rock
-from Rock_Drawing.rock_drawing_helper import render_game_rock_images, rock_to_image_uri
+from Rock_Drawing.rock_drawing_helper import get_render_variant_key, render_game_rock_images, rock_to_image_uri
 from Rock_Drawing.rock_lineage_drawing_helper import (
+    FAMILY_LINE_COLORS,
     TreeDrawer,
     TreeHelper,
     draw_game_tree,
@@ -97,6 +98,23 @@ def test_identity_layout_formats_structured_names_and_status_symbol():
         plt.close(fig)
 
 
+def test_identity_layout_wraps_long_structured_name_lines():
+    rock = make_rock()
+    rock.name = genetics.RockName(
+        honorific="Archduchess",
+        given="Pebblewithaverylonggivenname",
+        family="Moonstonewithaverylongfamilyname",
+        epithet="the Particularly Bright and Surprisingly Wide",
+    )
+    machine = DrawMachine(rock=rock)
+
+    formatted_name = machine.format_rock_name()
+
+    assert "Archduchess" in formatted_name
+    assert len(formatted_name.splitlines()) > 3
+    assert all(len(line) <= 24 for line in formatted_name.splitlines() if line != "Archduchess")
+
+
 def test_identity_layout_normalizes_status_symbols():
     cases = [
         (genetics.RockStatus.BRED, {}, "o", "gray"),
@@ -141,11 +159,14 @@ def test_identity_layout_places_status_top_left_and_gender_top_right():
 
         gender_text = next(text for text in ax.texts if text.get_text() in {"\u2642", "\u2640"})
         status_text = next(text for text in ax.texts if text.get_text() == "$")
+        body_radius = 0.5 * machine.ctx.unit
 
         assert status_text.get_position()[0] < machine.ctx.xmin
         assert status_text.get_position()[1] > machine.ctx.ymax
         assert gender_text.get_position()[0] > machine.ctx.xmax
         assert gender_text.get_position()[1] > machine.ctx.ymax
+        assert status_text.get_position()[0] <= machine.ctx.xmin - 0.95 * body_radius
+        assert gender_text.get_position()[0] >= machine.ctx.xmax + 0.95 * body_radius
     finally:
         plt.close(fig)
 
@@ -188,6 +209,7 @@ def test_render_game_rock_images_returns_id_to_uri_cache():
     assert set(images) == set(game.rocks)
     assert all(uri.startswith("data:image/png;base64,") for uri in images.values())
     assert set(game.rock_image_cache) == set(game.rocks)
+    assert all(get_render_variant_key(sprite_size=0.8, dpi=60) in variants for variants in game.rock_image_cache.values())
 
 
 def test_render_game_rock_images_cache_tracks_market_status():
@@ -195,12 +217,27 @@ def test_render_game_rock_images_cache_tracks_market_status():
     rock = next(iter(game.rocks.values()))
 
     render_game_rock_images(game, sprite_size=0.8, dpi=60)
-    first_signature = game.rock_image_cache[rock.id]["signature"]
+    variant_key = get_render_variant_key(sprite_size=0.8, dpi=60)
+    first_signature = game.rock_image_cache[rock.id][variant_key]["signature"]
 
     rock.is_market = True
     render_game_rock_images(game, sprite_size=0.8, dpi=60)
 
-    assert game.rock_image_cache[rock.id]["signature"] != first_signature
+    assert game.rock_image_cache[rock.id][variant_key]["signature"] != first_signature
+
+
+def test_render_game_rock_images_caches_render_variants_separately():
+    game = GameMaster(seed=611)
+
+    small_images = render_game_rock_images(game, sprite_size=0.8, dpi=40)
+    large_images = render_game_rock_images(game, sprite_size=1.2, dpi=90)
+
+    small_key = get_render_variant_key(sprite_size=0.8, dpi=40)
+    large_key = get_render_variant_key(sprite_size=1.2, dpi=90)
+
+    assert small_key != large_key
+    assert all(small_key in variants and large_key in variants for variants in game.rock_image_cache.values())
+    assert any(small_images[rock_id] != large_images[rock_id] for rock_id in game.rocks)
 
 
 def test_tree_helper_computes_positions_and_family_links():
@@ -434,10 +471,9 @@ def test_tree_drawer_creates_plotly_figure_with_images_without_duplicate_labels(
     fig = TreeDrawer(game=game, canvas_width=600, canvas_height=400).draw()
 
     assert len(fig.layout.images) == len(game.rocks)
-    assert len(fig.data) >= len(game.rocks)
-    assert len(fig.layout.shapes) > 0
-    assert all(shape.layer == "below" for shape in fig.layout.shapes)
-    assert all(shape.line.dash == "solid" for shape in fig.layout.shapes)
+    line_traces = [trace for trace in fig.data if getattr(trace, "mode", None) == "lines"]
+    assert line_traces
+    assert all(trace.line.dash == "solid" for trace in line_traces)
     assert fig.layout.dragmode == "pan"
     visible_texts = [
         text
@@ -447,6 +483,134 @@ def test_tree_drawer_creates_plotly_figure_with_images_without_duplicate_labels(
     ]
     assert not any("#" in str(text) for text in visible_texts)
     assert not any("\u2642" in str(text) or "\u2640" in str(text) for text in visible_texts)
+
+
+def test_tree_drawer_caches_routed_geometry_on_game_runtime_state():
+    game = GameMaster(seed=630)
+    ids = list(game.rocks)
+    game.add_pair_to_queue(ids[0], ids[1])
+    game.advance_generation()
+
+    TreeDrawer(game=game, canvas_width=600, canvas_height=400).draw()
+    cache = getattr(game, "lineage_geometry_cache")
+    cache_keys = set(cache)
+
+    assert cache
+    assert all("positions" in entry and "family_line_specs" in entry for entry in cache.values())
+
+    TreeDrawer(
+        game=game,
+        canvas_width=600,
+        canvas_height=400,
+        highlighted_rock_ids=(ids[0],),
+        tree_checkbox_ids=tuple(game.rocks),
+    ).draw()
+
+    assert set(game.lineage_geometry_cache) == cache_keys
+
+
+def test_tree_drawer_large_tree_fast_route_skips_obstacle_router(monkeypatch):
+    game = GameMaster(seed=634)
+    game.rocks.clear()
+    game.next_rock_id = 1
+
+    for index in range(75):
+        rock = make_rock(rock_id=game.reserve_rock_id())
+        rock.generation = 0 if rock.id <= 2 else 1
+        rock.parent_ids = [] if rock.id <= 2 else [1, 2]
+        game.rocks[rock.id] = rock
+
+    def fail_route(*args, **kwargs):
+        raise AssertionError("large-tree fast route should not call obstacle router")
+
+    monkeypatch.setattr(TreeHelper, "route_orthogonal", fail_route)
+
+    fig = TreeDrawer(game=game, obstacle_routing_threshold=70).draw()
+
+    assert len(fig.layout.images) == len(game.rocks)
+    assert any(getattr(trace, "mode", None) == "lines" for trace in fig.data)
+
+
+def test_tree_drawer_uses_adaptive_image_resolution_for_large_trees():
+    game = GameMaster(seed=635)
+    game.rocks.clear()
+    game.next_rock_id = 1
+
+    for _ in range(160):
+        rock = make_rock(rock_id=game.reserve_rock_id())
+        game.rocks[rock.id] = rock
+
+    drawer = TreeDrawer(game=game)
+
+    assert drawer.image_render_settings() == (1.0, 70)
+    assert TreeDrawer(game=game, adaptive_image_resolution=False).image_render_settings() == (1.4, 100)
+
+
+def test_tree_drawer_fast_overview_skips_png_image_rendering(monkeypatch):
+    game = GameMaster(seed=636)
+
+    def fail_render_images(*args, **kwargs):
+        raise AssertionError("fast overview should not render PNG rock images")
+
+    monkeypatch.setattr(
+        "Rock_Drawing.rock_lineage_drawing_helper.render_game_rock_images",
+        fail_render_images,
+    )
+
+    fig = TreeDrawer(game=game, render_images=False).draw()
+    marker_traces = [
+        trace
+        for trace in fig.data
+        if getattr(trace, "mode", None) == "markers" and getattr(trace, "customdata", None) is not None
+    ]
+
+    assert len(fig.layout.images) == 0
+    assert marker_traces
+    assert marker_traces[0].marker.color
+
+
+def test_tree_drawer_groups_family_line_traces_by_style():
+    game = GameMaster(seed=637)
+    game.rocks.clear()
+    game.next_rock_id = 1
+
+    for _ in range(90):
+        rock = make_rock(rock_id=game.reserve_rock_id())
+        rock.generation = 0 if rock.id <= 20 else 1
+        rock.parent_ids = [] if rock.id <= 20 else [1 + (rock.id % 20), 1 + ((rock.id + 7) % 20)]
+        game.rocks[rock.id] = rock
+
+    fig = TreeDrawer(game=game, render_images=False, obstacle_routing_threshold=10).draw()
+    line_traces = [trace for trace in fig.data if getattr(trace, "mode", None) == "lines"]
+
+    assert len(TreeHelper.from_game(game).family_groups()) > len(FAMILY_LINE_COLORS)
+    assert line_traces
+    assert len(line_traces) <= len(FAMILY_LINE_COLORS)
+
+
+def test_tree_hover_text_includes_requested_fields_and_phenotypes():
+    rock = make_rock(rock_id=77)
+    rock.parent_ids = [1, 2]
+    rock.generation = 3
+    rock.value = 12
+    rock.sell_value = 7
+
+    hover = TreeDrawer.hover_text(rock)
+
+    expected_order = [
+        "id: 77",
+        "name:",
+        "generation: 3",
+        "parents: 1, 2",
+        "status:",
+        "value: $12",
+        "sell value: $7",
+        "phenotypes:",
+        "eyes:",
+    ]
+    positions = [hover.index(text) for text in expected_order]
+
+    assert positions == sorted(positions)
 
 
 def test_tree_drawer_node_markers_expose_clickable_rock_ids_and_highlights():
@@ -465,15 +629,23 @@ def test_tree_drawer_node_markers_expose_clickable_rock_ids_and_highlights():
         for trace in fig.data
         if getattr(trace, "mode", None) == "markers" and getattr(trace, "customdata", None) is not None
     ]
+    highlight_traces = [
+        trace
+        for trace in fig.data
+        if getattr(trace, "mode", None) == "markers"
+        and getattr(trace, "customdata", None) is None
+        and getattr(trace.marker.line, "color", None) == "#8B5A2B"
+    ]
     customdata_ids = {
-        int(trace.customdata[0])
+        int(rock_id)
         for trace in marker_traces
+        for rock_id in trace.customdata
     }
-    highlighted_trace = next(trace for trace in marker_traces if int(trace.customdata[0]) == highlighted_id)
 
     assert customdata_ids == set(game.rocks)
-    assert highlighted_trace.marker.line.color == "#8B5A2B"
-    assert highlighted_trace.marker.line.width == 4
+    assert highlight_traces
+    assert highlight_traces[0].marker.line.color == "#8B5A2B"
+    assert highlight_traces[0].marker.line.width == 4
 
 
 def test_tree_drawer_renders_queued_parent_badges():
@@ -491,7 +663,7 @@ def test_tree_drawer_renders_queued_parent_badges():
     badge_traces = [
         trace
         for trace in fig.data
-        if getattr(trace, "mode", None) == "text" and list(trace.text or []) == ["\u2665"]
+        if getattr(trace, "mode", None) == "text" and "\u2665" in list(trace.text or [])
     ]
 
     assert badge_traces
@@ -512,9 +684,11 @@ def test_tree_drawer_renders_tree_checkbox_marks():
     ).draw()
 
     checkbox_texts = [
-        list(trace.text or [])[0]
+        text
         for trace in fig.data
-        if getattr(trace, "mode", None) == "text" and list(trace.text or []) in (["\u2610"], ["\u2611"])
+        if getattr(trace, "mode", None) == "text"
+        for text in list(trace.text or [])
+        if text in {"\u2610", "\u2611"}
     ]
 
     assert "\u2610" in checkbox_texts

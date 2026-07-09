@@ -10,6 +10,8 @@ from rockgame_ui import game_controller
 
 
 MARKET_MESSAGE_KEY = "market_last_action"
+MARKET_SECTION_KEY = "market_active_section"
+MARKET_SECTIONS = ["Random Imports", "Potion Shop", "Market Pods", "Sell Rocks", "Owned Rocks"]
 
 
 def _show_last_action_message() -> None:
@@ -26,6 +28,11 @@ def _show_last_action_message() -> None:
 def _store_action_and_rerun(result: game_controller.ActionResult) -> None:
     st.session_state[MARKET_MESSAGE_KEY] = result
     st.rerun()
+
+
+def _rock_image_card(rock, caption: str) -> None:
+    st.image(game_controller.render_rock(rock), width=150)
+    st.caption(caption)
 
 
 def _render_potion_shop(game) -> None:
@@ -69,7 +76,19 @@ def _render_market_pods(game) -> None:
         pending_rows = game_controller.get_pending_market_pod_rows(game)
         if pending_rows:
             st.warning("Choose one child from the pending market pod before buying another pod.")
-            st.dataframe(pending_rows, width="stretch", hide_index=True)
+            pod_rocks = game_controller.get_pending_market_pod_rocks(game)
+
+            st.markdown("**Parents**")
+            parent_cols = st.columns(max(1, len(pod_rocks["parents"])))
+            for column, parent in zip(parent_cols, pod_rocks["parents"]):
+                with column:
+                    _rock_image_card(parent, game_controller.rock_label(parent))
+
+            st.markdown("**Children**")
+            child_cols = st.columns(min(4, max(1, len(pod_rocks["children"]))))
+            for index, child in enumerate(pod_rocks["children"]):
+                with child_cols[index % len(child_cols)]:
+                    _rock_image_card(child, f"{index}: {game_controller.rock_label(child)}")
 
             child_options = {
                 f"{row['index']}: {row['name']} ({row['sex']}, value ${row['value']})": row["index"]
@@ -119,42 +138,65 @@ def render() -> None:
 
     metric_strip([("Money", f"${summary['money']}")])
 
-    active_rows = game_controller.get_active_rock_rows(game)
-    sellable_rows = game_controller.get_sellable_rock_rows(game)
+    if st.session_state.get(MARKET_SECTION_KEY) not in MARKET_SECTIONS:
+        st.session_state[MARKET_SECTION_KEY] = MARKET_SECTIONS[0]
 
-    with section("Imports"):
-        if st.button("Buy random import rock", key="market_buy_random_import", type="primary"):
-            result = game_controller.buy_random_rock(game)
-            _store_action_and_rerun(result)
+    active_section = st.radio(
+        "Market section",
+        MARKET_SECTIONS,
+        horizontal=True,
+        key=MARKET_SECTION_KEY,
+    )
 
-    _render_potion_shop(game)
-    _render_market_pods(game)
-
-    with section("Sell Rocks"):
-        if sellable_rows:
-            sell_options = {
-                f"#{row['id']} {row['name']} - ${row['sell_value']}": row["id"]
-                for row in sellable_rows
-            }
-            selected_sell_label = st.selectbox(
-                "Eligible rock",
-                list(sell_options),
-                key="market_sell_rock_select",
-            )
-            selected_sell_id = sell_options[selected_sell_label]
-
-            if st.button(
-                "Sell selected rock",
-                key=f"market_sell_rock_{selected_sell_id}",
-                type="primary",
-            ):
-                result = game_controller.sell_rock(game, selected_sell_id)
+    if active_section == "Random Imports":
+        with section("Random Imports"):
+            if st.button("Buy random import rock", key="market_buy_random_import", type="primary"):
+                result = game_controller.buy_random_rock(game)
                 _store_action_and_rerun(result)
-        else:
-            st.info("No rocks are currently eligible to sell.")
 
-    with section("Owned Active Rocks"):
-        if active_rows:
-            st.dataframe(active_rows, width="stretch", hide_index=True)
-        else:
-            st.info("No active rocks owned yet.")
+    elif active_section == "Potion Shop":
+        _render_potion_shop(game)
+
+    elif active_section == "Market Pods":
+        _render_market_pods(game)
+
+    elif active_section == "Sell Rocks":
+        with section("Sell Rocks"):
+            sellable_rows = game_controller.get_sellable_rock_rows(game)
+            if sellable_rows:
+                sell_options = {
+                    f"#{row['id']} {row['name']} - ${row['sell_value']}": row["id"]
+                    for row in sellable_rows
+                }
+                selected_sell_label = st.selectbox(
+                    "Eligible rock",
+                    list(sell_options),
+                    key="market_sell_rock_select",
+                )
+                selected_sell_id = sell_options[selected_sell_label]
+                selected_rock = game_controller.get_rock(game, selected_sell_id)
+
+                preview_cols = st.columns([1, 2])
+                with preview_cols[0]:
+                    _rock_image_card(selected_rock, game_controller.rock_label(selected_rock))
+                with preview_cols[1]:
+                    st.write(f"Sell value: ${selected_rock.sell_value}")
+                    st.write(f"Status: {selected_rock.status.value}")
+
+                if st.button(
+                    "Sell selected rock",
+                    key=f"market_sell_rock_{selected_sell_id}",
+                    type="primary",
+                ):
+                    result = game_controller.sell_rock(game, selected_sell_id)
+                    _store_action_and_rerun(result)
+            else:
+                st.info("No rocks are currently eligible to sell.")
+
+    elif active_section == "Owned Rocks":
+        with section("Owned Active Rocks"):
+            active_rows = game_controller.get_active_rock_rows(game)
+            if active_rows:
+                st.dataframe(active_rows, width="stretch", hide_index=True)
+            else:
+                st.info("No active rocks owned yet.")

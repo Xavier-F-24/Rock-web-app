@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from Rock_Streamlit.app_state import get_game_state, reset_game
+from Rock_Streamlit.app_state import clear_game_state, get_game_state
 from Rock_Streamlit.ui_components import metric_strip, page_header, section
 from rockgame_ui import game_controller
 
@@ -13,7 +13,7 @@ def render() -> None:
     page_header("Rock Genetics Game", "Breed, trade, and trace a very serious lineage of very serious rocks.")
 
     if st.button("New Game", type="primary"):
-        reset_game()
+        clear_game_state()
         st.rerun()
 
     game = get_game_state()

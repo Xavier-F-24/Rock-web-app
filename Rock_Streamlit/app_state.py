@@ -48,5 +48,9 @@ def reset_game(
     return st.session_state[GAME_STATE_KEY]
 
 
+def clear_game_state() -> None:
+    st.session_state[GAME_STATE_KEY] = None
+
+
 def set_game_state(game: GameMaster) -> None:
     st.session_state[GAME_STATE_KEY] = game

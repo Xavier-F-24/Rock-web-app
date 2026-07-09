@@ -5,6 +5,7 @@ Grid and lineage-tree drawing helpers for split-module rock games.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import html
 import math
 import random
 from typing import Any
@@ -552,6 +553,10 @@ class TreeDrawer:
     game: Any
     helper: TreeHelper | None = None
     rock_image_size: float = 1.35
+    rock_image_sprite_size: float = 1.4
+    rock_image_dpi: int = 100
+    adaptive_image_resolution: bool = True
+    render_images: bool = True
     canvas_width: int = 1200
     canvas_height: int = 800
     line_style_seed: int | None = None
@@ -564,6 +569,7 @@ class TreeDrawer:
     rock_badges: dict[int, dict[str, str]] = field(default_factory=dict)
     tree_checkbox_ids: tuple[int, ...] = ()
     tree_checked_ids: tuple[int, ...] = ()
+    obstacle_routing_threshold: int = 70
 
     def __post_init__(self):
         if self.helper is None:
@@ -575,12 +581,18 @@ class TreeDrawer:
         self.helper.route_fudge = self.route_fudge
 
     def draw(self, show: bool = False) -> go.Figure:
-        positions = self.helper.compute_positions()
-        image_by_id = render_game_rock_images(self.game)
+        positions = self.get_cached_positions()
         fig = go.Figure()
 
         self.add_family_lines(fig, positions)
-        self.add_rock_images(fig, positions, image_by_id)
+        if self.render_images:
+            sprite_size, dpi = self.image_render_settings()
+            image_by_id = render_game_rock_images(
+                self.game,
+                sprite_size=sprite_size,
+                dpi=dpi,
+            )
+            self.add_rock_images(fig, positions, image_by_id)
         self.add_node_text(fig, positions)
         self.add_rock_badges(fig, positions)
         self.add_tree_checkboxes(fig, positions)
@@ -591,11 +603,109 @@ class TreeDrawer:
 
         return fig
 
+    def image_render_settings(self) -> tuple[float, int]:
+        if not self.adaptive_image_resolution:
+            return self.rock_image_sprite_size, self.rock_image_dpi
+
+        rock_count = len(self.helper.rocks)
+        if rock_count > 150:
+            return min(self.rock_image_sprite_size, 1.0), min(self.rock_image_dpi, 70)
+        if rock_count > 70:
+            return min(self.rock_image_sprite_size, 1.2), min(self.rock_image_dpi, 80)
+        return self.rock_image_sprite_size, self.rock_image_dpi
+
+    def geometry_cache_key(self) -> tuple:
+        rock_bits = tuple(
+            (
+                int(rock_id),
+                int(getattr(rock, "generation", 0)),
+                bool(getattr(rock, "is_market", False)),
+                tuple(self.helper.parent_ids(rock)),
+            )
+            for rock_id, rock in sorted(self.helper.rocks.items())
+        )
+        return (
+            "lineage_geometry_v2",
+            int(getattr(self.game, "generation", 0)),
+            float(self.rock_image_size),
+            float(self.line_clearance),
+            float(self.generation_gap_rocks),
+            float(self.route_fudge),
+            self.line_style_seed,
+            bool(self.use_dash_styles),
+            int(self.obstacle_routing_threshold),
+            rock_bits,
+        )
+
+    def get_geometry_cache(self) -> dict:
+        if not hasattr(self.game, "lineage_geometry_cache") or self.game.lineage_geometry_cache is None:
+            self.game.lineage_geometry_cache = {}
+        return self.game.lineage_geometry_cache
+
+    def get_cached_positions(self) -> dict[int, tuple[float, float]]:
+        cache = self.get_geometry_cache()
+        key = self.geometry_cache_key()
+        cached = cache.get(key)
+        if cached is not None and "positions" in cached:
+            self.helper.positions = dict(cached["positions"])
+            return dict(cached["positions"])
+
+        positions = self.helper.compute_positions()
+        cache[key] = {"positions": dict(positions)}
+        return positions
+
+    def get_cached_family_line_specs(self, positions: dict[int, tuple[float, float]]) -> list[dict[str, Any]]:
+        cache = self.get_geometry_cache()
+        key = self.geometry_cache_key()
+        cached = cache.setdefault(key, {"positions": dict(positions)})
+        if "family_line_specs" not in cached:
+            cached["family_line_specs"] = self.build_family_line_specs(positions)
+        return cached["family_line_specs"]
+
     def add_family_lines(self, fig: go.Figure, positions: dict[int, tuple[float, float]]) -> None:
+        line_specs = self.get_cached_family_line_specs(positions)
+        if line_specs:
+            fig.add_traces(
+                [
+                    go.Scatter(
+                        x=spec["x"],
+                        y=spec["y"],
+                        mode="lines",
+                        line=spec["line"],
+                        hoverinfo="skip",
+                        showlegend=False,
+                    )
+                    for spec in line_specs
+                ]
+            )
+
+        if self.debug_connectors:
+            family_styles = self.helper.family_styles(
+                seed=self.line_style_seed,
+                use_dash_styles=self.use_dash_styles,
+            )
+            for family_key in self.helper.family_groups():
+                parent_a_id, parent_b_id = family_key
+                xa, ya = positions[parent_a_id]
+                xb, yb = positions[parent_b_id]
+                parent_connector = self.parent_pair_connector_segments(
+                    parent_a_pos=(xa, ya),
+                    parent_b_pos=(xb, yb),
+                    parent_connector_y=self.helper.parent_branch_y(family_key, positions),
+                    child_connector_y=0.0,
+                )
+                self.add_debug_connector_markers(
+                    fig=fig,
+                    endpoints=parent_connector["endpoints"],
+                    color=family_styles[family_key]["color"],
+                )
+
+    def build_family_line_specs(self, positions: dict[int, tuple[float, float]]) -> list[dict[str, Any]]:
         family_styles = self.helper.family_styles(
             seed=self.line_style_seed,
             use_dash_styles=self.use_dash_styles,
         )
+        grouped_line_specs: dict[tuple[str, str, int], dict[str, Any]] = {}
 
         for family_key, child_ids in self.helper.family_groups().items():
             parent_a_id, parent_b_id = family_key
@@ -630,38 +740,46 @@ class TreeDrawer:
                 segment_requests.append(((child_x, child_branch_y), (child_x, child_top)))
 
             segments = []
+            use_obstacle_routing = self.should_route_around_obstacles()
             for start, end in [*parent_segments, *segment_requests]:
-                segments.extend(
-                    self.helper.route_orthogonal(
-                        start=start,
-                        end=end,
-                        positions=positions,
-                        ignore_ids=ignore_ids,
+                if use_obstacle_routing:
+                    segments.extend(
+                        self.helper.route_orthogonal(
+                            start=start,
+                            end=end,
+                            positions=positions,
+                            ignore_ids=ignore_ids,
+                        )
                     )
-                )
+                else:
+                    segments.append((start, end))
 
+            line_x = []
+            line_y = []
             for (x0, y0), (x1, y1) in segments:
                 if x0 == x1 and y0 == y1:
                     continue
 
-                fig.add_shape(
-                    type="line",
-                    xref="x",
-                    yref="y",
-                    x0=x0,
-                    y0=y0,
-                    x1=x1,
-                    y1=y1,
-                    layer="below",
-                    line={"color": style["color"], "dash": style["dash"], "width": 3},
-                )
+                line_x.extend([x0, x1, None])
+                line_y.extend([y0, y1, None])
 
-            if self.debug_connectors:
-                self.add_debug_connector_markers(
-                    fig=fig,
-                    endpoints=parent_connector["endpoints"],
-                    color=style["color"],
+            if line_x:
+                group_key = (style["color"], style["dash"], 3)
+                group = grouped_line_specs.setdefault(
+                    group_key,
+                    {
+                        "x": [],
+                        "y": [],
+                        "line": {"color": style["color"], "dash": style["dash"], "width": 3},
+                    },
                 )
+                group["x"].extend(line_x)
+                group["y"].extend(line_y)
+
+        return list(grouped_line_specs.values())
+
+    def should_route_around_obstacles(self) -> bool:
+        return len(self.helper.rocks) <= self.obstacle_routing_threshold
 
     @staticmethod
     def parent_pair_connector_segments(
@@ -728,11 +846,12 @@ class TreeDrawer:
         positions: dict[int, tuple[float, float]],
         image_by_id: dict[int, str],
     ) -> None:
+        layout_images = []
         for rock_id, rock in self.helper.rocks.items():
             x, y = positions[rock_id]
             opacity = 0.45 if rock.status == genetics.RockStatus.SOLD else 1.0
 
-            fig.add_layout_image(
+            layout_images.append(
                 {
                     "source": image_by_id[rock_id],
                     "xref": "x",
@@ -748,47 +867,100 @@ class TreeDrawer:
                 }
             )
 
+        fig.update_layout(images=layout_images)
+
     def add_node_text(self, fig: go.Figure, positions: dict[int, tuple[float, float]]) -> None:
         highlighted = {int(rock_id) for rock_id in self.highlighted_rock_ids}
+        rock_ids = []
+        xs = []
+        ys = []
+        hover_texts = []
+        colors = []
+        symbols = []
+        highlight_xs = []
+        highlight_ys = []
+
         for rock_id, rock in self.helper.rocks.items():
-            x, y = positions[rock_id]
-            is_highlighted = int(rock_id) in highlighted
+            x, y = positions[int(rock_id)]
+            rock_ids.append(int(rock_id))
+            xs.append(x)
+            ys.append(y)
+            hover_texts.append(self.hover_text(rock))
+            colors.append(get_gender_color(rock))
+            symbols.append("circle" if rock.sex == genetics.Sex.MALE else "diamond")
+            if int(rock_id) in highlighted:
+                highlight_xs.append(x)
+                highlight_ys.append(y)
+
+        if rock_ids:
+            if self.render_images:
+                marker = {
+                    "size": 28,
+                    "color": "rgba(0,0,0,0)",
+                    "line": {"color": "rgba(0,0,0,0)", "width": 0},
+                }
+            else:
+                marker = {
+                    "size": 15,
+                    "color": colors,
+                    "symbol": symbols,
+                    "opacity": 0.9,
+                    "line": {"color": "#4B4038", "width": 1},
+                }
 
             fig.add_trace(
                 go.Scatter(
-                    x=[x],
-                    y=[y],
+                    x=xs,
+                    y=ys,
                     mode="markers",
-                    marker={
-                        "size": 36 if is_highlighted else 28,
-                        "color": "rgba(255,255,255,0.01)" if is_highlighted else "rgba(0,0,0,0)",
-                        "line": {
-                            "color": "#8B5A2B" if is_highlighted else "rgba(0,0,0,0)",
-                            "width": 4 if is_highlighted else 0,
-                        },
-                    },
-                    customdata=[int(rock_id)],
-                    hovertext=[self.hover_text(rock)],
+                    marker=marker,
+                    customdata=rock_ids,
+                    hovertext=hover_texts,
                     hoverinfo="text",
                     showlegend=False,
                 )
             )
 
+        if highlight_xs:
+            fig.add_trace(
+                go.Scatter(
+                    x=highlight_xs,
+                    y=highlight_ys,
+                    mode="markers",
+                    marker={
+                        "size": 36,
+                        "color": "rgba(255,255,255,0.01)",
+                        "line": {"color": "#8B5A2B", "width": 4},
+                    },
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+
     def add_rock_badges(self, fig: go.Figure, positions: dict[int, tuple[float, float]]) -> None:
+        grouped_badges: dict[tuple[str, str], dict[str, list[float] | list[str]]] = {}
         for rock_id, badge in self.rock_badges.items():
             if int(rock_id) not in positions:
                 continue
 
             x, y = positions[int(rock_id)]
+            text = badge.get("text", "\u2665")
+            color = badge.get("color", "#E15759")
+            group = grouped_badges.setdefault((text, color), {"x": [], "y": [], "text": []})
+            group["x"].append(x - 0.42 * self.rock_image_size)
+            group["y"].append(y + 0.42 * self.rock_image_size)
+            group["text"].append(text)
+
+        for (text, color), group in grouped_badges.items():
             fig.add_trace(
                 go.Scatter(
-                    x=[x - 0.42 * self.rock_image_size],
-                    y=[y + 0.42 * self.rock_image_size],
+                    x=group["x"],
+                    y=group["y"],
                     mode="text",
-                    text=[badge.get("text", "\u2665")],
+                    text=group["text"],
                     textfont={
                         "size": 24,
-                        "color": badge.get("color", "#E15759"),
+                        "color": color,
                     },
                     hoverinfo="skip",
                     showlegend=False,
@@ -801,21 +973,46 @@ class TreeDrawer:
         if not checkbox_ids:
             return
 
+        unchecked_xs = []
+        unchecked_ys = []
+        checked_xs = []
+        checked_ys = []
+
         for rock_id in sorted(checkbox_ids):
             if rock_id not in positions:
                 continue
 
             x, y = positions[rock_id]
-            is_checked = rock_id in checked_ids
+            target_xs, target_ys = (checked_xs, checked_ys) if rock_id in checked_ids else (unchecked_xs, unchecked_ys)
+            target_xs.append(x)
+            target_ys.append(y - 0.76 * self.rock_image_size)
+
+        if unchecked_xs:
             fig.add_trace(
                 go.Scatter(
-                    x=[x],
-                    y=[y - 0.76 * self.rock_image_size],
+                    x=unchecked_xs,
+                    y=unchecked_ys,
                     mode="text",
-                    text=["\u2611" if is_checked else "\u2610"],
+                    text=["\u2610"] * len(unchecked_xs),
                     textfont={
                         "size": 24,
-                        "color": "#8B5A2B" if is_checked else "#6F6258",
+                        "color": "#6F6258",
+                    },
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+
+        if checked_xs:
+            fig.add_trace(
+                go.Scatter(
+                    x=checked_xs,
+                    y=checked_ys,
+                    mode="text",
+                    text=["\u2611"] * len(checked_xs),
+                    textfont={
+                        "size": 24,
+                        "color": "#8B5A2B",
                     },
                     hoverinfo="skip",
                     showlegend=False,
@@ -825,14 +1022,22 @@ class TreeDrawer:
     @staticmethod
     def hover_text(rock: genetics.Rock) -> str:
         parents = ", ".join(str(parent_id) for parent_id in rock.parent_ids) or "founder"
+        phenotype_lines = []
+        for gene_name in genetics.GENE_SPECS:
+            gene_pair = rock.genotype.genes.get(gene_name)
+            phenotype = "n/a" if gene_pair is None or gene_pair.phenotype is None else str(gene_pair.phenotype)
+            phenotype_lines.append(f"{html.escape(gene_name)}: {html.escape(phenotype)}")
+
         return (
-            f"<b>#{rock.id}: {rock_display_name(rock)}</b><br>"
-            f"sex: {rock.sex.value}<br>"
-            f"generation: {rock.generation}<br>"
-            f"parents: {parents}<br>"
-            f"status: {rock.status.value}<br>"
-            f"value: ${rock.value}<br>"
-            f"sell: ${rock.sell_value}"
+            f"id: {int(rock.id)}<br>"
+            f"name: {html.escape(rock_display_name(rock))}<br>"
+            f"generation: {int(rock.generation)}<br>"
+            f"parents: {html.escape(parents)}<br>"
+            f"status: {html.escape(rock.status.value)}<br>"
+            f"value: ${int(rock.value)}<br>"
+            f"sell value: ${int(rock.sell_value)}<br>"
+            f"phenotypes:<br>"
+            + "<br>".join(phenotype_lines)
         )
 
     def apply_layout(self, fig: go.Figure) -> None:
