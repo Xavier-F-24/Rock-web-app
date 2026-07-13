@@ -30,11 +30,11 @@ class IdentityLabelLayout:
     """
 
     label_reference_size_scale: float = GIANT_SIZE_SCALE
-    name_below_body_radius: float = 1.0
-    gender_right_body_radius: float = 1.0
-    gender_above_body_radius: float = 0.95
-    status_left_body_radius: float = 1.0
-    status_above_body_radius: float = 0.95
+    name_below_body_radius: float = GIANT_SIZE_SCALE #1.0
+    gender_right_body_radius: float = GIANT_SIZE_SCALE #1.0
+    gender_above_body_radius: float = GIANT_SIZE_SCALE #0.95
+    status_left_body_radius: float = GIANT_SIZE_SCALE #1.0
+    status_above_body_radius: float = GIANT_SIZE_SCALE #0.95
     name_font_size: int = 8
     gender_font_size: int = 18
     status_font_size: int = 16
