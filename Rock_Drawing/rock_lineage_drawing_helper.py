@@ -1034,7 +1034,7 @@ class TreeDrawer:
                 if rock.genotype.genes["hair"].phenotype == "n/a" and rock.genotype.genes["brows"].phenotype == "n/a" and rock.genotype.genes["facial_hair"].phenotype == "n/a":
                     bypass = False
 
-            if rock.genotype.genes["facial_hair"].phenotype != "n/a" and rock.sex == genetics.Sex.FEMALE:
+            if gene_name == "facial_hair" and rock.genotype.genes[gene_name].phenotype != "n/a" and rock.sex == genetics.Sex.FEMALE:
                 gene_pair = rock.genotype.genes.get(gene_name)
                 phenotype = "n/a" if gene_pair is None or gene_pair.phenotype is None else str("peach fuzz")
                 phenotype_lines.append(f"{html.escape(gene_name)}: {html.escape(phenotype)}")
