@@ -1024,14 +1024,22 @@ class TreeDrawer:
         parents = ", ".join(str(parent_id) for parent_id in rock.parent_ids) or "founder"
         phenotype_lines = []
         for gene_name in genetics.GENE_SPECS:
+
             bypass = True
+
             if gene_name == "eye_color":
                 if rock.genotype.genes["eyes"].phenotype == "n/a":
                     bypass = False
             if gene_name in ["hair_color", "hair_texture"]:
                 if rock.genotype.genes["hair"].phenotype == "n/a" and rock.genotype.genes["brows"].phenotype == "n/a" and rock.genotype.genes["facial_hair"].phenotype == "n/a":
                     bypass = False
-            if rock.genotype.genes[gene_name].phenotype != "n/a" and bypass:
+
+            if rock.genotype.genes["facial_hair"].phenotype != "n/a" and rock.sex == genetics.Sex.FEMALE:
+                gene_pair = rock.genotype.genes.get(gene_name)
+                phenotype = "n/a" if gene_pair is None or gene_pair.phenotype is None else str("peach fuzz")
+                phenotype_lines.append(f"{html.escape(gene_name)}: {html.escape(phenotype)}")
+
+            elif rock.genotype.genes[gene_name].phenotype != "n/a" and bypass:
                 gene_pair = rock.genotype.genes.get(gene_name)
                 phenotype = "n/a" if gene_pair is None or gene_pair.phenotype is None else str(gene_pair.phenotype)
                 phenotype_lines.append(f"{html.escape(gene_name)}: {html.escape(phenotype)}")
