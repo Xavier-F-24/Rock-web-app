@@ -201,6 +201,25 @@ def test_rock_to_image_uri_uses_stable_canvas_for_long_names():
     assert short_image.size == long_image.size
 
 
+def _nontransparent_bounds_area(uri):
+    image = Image.open(io.BytesIO(base64.b64decode(uri.split(",", 1)[1]))).convert("RGBA")
+    alpha = image.getchannel("A")
+    bounds = alpha.getbbox()
+    assert bounds is not None
+    left, top, right, bottom = bounds
+    return (right - left) * (bottom - top)
+
+
+def test_rock_to_image_uri_preserves_size_gene_visual_scale():
+    small_rock = make_rock(rock_id=21, gene_overrides={"size": (2, 2)})
+    giant_rock = make_rock(rock_id=22, gene_overrides={"size": (3, 3)})
+
+    small_uri = rock_to_image_uri(small_rock, sprite_size=1.2, dpi=120)
+    giant_uri = rock_to_image_uri(giant_rock, sprite_size=1.2, dpi=120)
+
+    assert _nontransparent_bounds_area(giant_uri) > _nontransparent_bounds_area(small_uri) * 1.8
+
+
 def test_render_game_rock_images_returns_id_to_uri_cache():
     game = GameMaster(seed=61)
 
@@ -589,7 +608,7 @@ def test_tree_drawer_groups_family_line_traces_by_style():
 
 
 def test_tree_hover_text_includes_requested_fields_and_phenotypes():
-    rock = make_rock(rock_id=77)
+    rock = make_rock(rock_id=77, gene_overrides={"eyes": (1, 1)})
     rock.parent_ids = [1, 2]
     rock.generation = 3
     rock.value = 12
@@ -611,6 +630,7 @@ def test_tree_hover_text_includes_requested_fields_and_phenotypes():
     positions = [hover.index(text) for text in expected_order]
 
     assert positions == sorted(positions)
+    assert "eye_color: n/a" not in hover
 
 
 def test_tree_drawer_node_markers_expose_clickable_rock_ids_and_highlights():

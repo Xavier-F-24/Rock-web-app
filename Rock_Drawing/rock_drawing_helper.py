@@ -47,17 +47,20 @@ def pad_rock_axis(ax, pad_frac=PAD_FRAC):
     ax.set_ylim(y0 - pad_frac * dy, y1 + pad_frac * dy)
     ax.set_aspect("equal")
 
-def rock_to_image_uri(rock, sprite_size=2.0, dpi=400, identity_layout=None):
+def rock_to_image_uri(rock, sprite_size=2.0, dpi=400, identity_layout=None, normalize_size=False):
     """
     Render a rock to a transparent PNG and return it as a base64 image URI
     that Plotly can place on the graph.
+
+    Gameplay images use a fixed camera by default so the size gene remains
+    visible: a giant rock should occupy more of the PNG than a small rock.
     """
     fig, ax = plt.subplots(figsize=(sprite_size, sprite_size), dpi=dpi)
 
     if identity_layout is None:
-        draw_rock(rock, ax=ax)
+        draw_rock(rock, ax=ax, normalize_size=normalize_size)
     else:
-        draw_rock(rock, ax=ax, identity_layout=identity_layout)
+        draw_rock(rock, ax=ax, identity_layout=identity_layout, normalize_size=normalize_size)
 
     pad_rock_axis(ax, pad_frac=PAD_FRAC)
 
@@ -105,7 +108,7 @@ def get_rock_render_signature(rock):
         tuple(gene_bits),
     )
 
-def get_render_variant_key(sprite_size=2.0, dpi=400, identity_layout=None):
+def get_render_variant_key(sprite_size=2.0, dpi=400, identity_layout=None, normalize_size=False):
     """
     Cache key for render settings that affect the generated PNG bytes.
     """
@@ -113,6 +116,7 @@ def get_render_variant_key(sprite_size=2.0, dpi=400, identity_layout=None):
         float(sprite_size),
         int(dpi),
         repr(identity_layout),
+        bool(normalize_size),
     )
 
 def ensure_rock_image_cache(game):
@@ -124,7 +128,7 @@ def ensure_rock_image_cache(game):
 
     return game.rock_image_cache
 
-def render_game_rock_images(game, sprite_size=2.0, dpi=400, force=False, identity_layout=None):
+def render_game_rock_images(game, sprite_size=2.0, dpi=400, force=False, identity_layout=None, normalize_size=False):
     """
     Render all game rocks to a cache and return {rock_id: image_uri}.
     """
@@ -134,6 +138,7 @@ def render_game_rock_images(game, sprite_size=2.0, dpi=400, force=False, identit
         sprite_size=sprite_size,
         dpi=dpi,
         identity_layout=identity_layout,
+        normalize_size=normalize_size,
     )
 
     for rock_id, rock in game.rocks.items():
@@ -154,6 +159,7 @@ def render_game_rock_images(game, sprite_size=2.0, dpi=400, force=False, identit
                     sprite_size=sprite_size,
                     dpi=dpi,
                     identity_layout=identity_layout,
+                    normalize_size=normalize_size,
                 ),
             }
 

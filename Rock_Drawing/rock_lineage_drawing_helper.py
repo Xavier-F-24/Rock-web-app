@@ -554,7 +554,7 @@ class TreeDrawer:
     helper: TreeHelper | None = None
     rock_image_size: float = 1.35
     rock_image_sprite_size: float = 1.4
-    rock_image_dpi: int = 400
+    rock_image_dpi: int = 100
     adaptive_image_resolution: bool = True
     render_images: bool = True
     canvas_width: int = 1200
@@ -609,9 +609,9 @@ class TreeDrawer:
 
         rock_count = len(self.helper.rocks)
         if rock_count > 150:
-            return min(self.rock_image_sprite_size, 1.0), min(self.rock_image_dpi, 100)
+            return min(self.rock_image_sprite_size, 1.0), min(self.rock_image_dpi, 70)
         if rock_count > 70:
-            return min(self.rock_image_sprite_size, 1.2), min(self.rock_image_dpi, 250)
+            return min(self.rock_image_sprite_size, 1.2), min(self.rock_image_dpi, 80)
         return self.rock_image_sprite_size, self.rock_image_dpi
 
     def geometry_cache_key(self) -> tuple:
@@ -1031,7 +1031,7 @@ class TreeDrawer:
             if gene_name in ["hair_color", "hair_texture"]:
                 if rock.genotype.genes["hair"].phenotype == "n/a" and rock.genotype.genes["brows"].phenotype == "n/a" and rock.genotype.genes["facial_hair"].phenotype == "n/a":
                     bypass = False
-            if rock.genotype.genes[gene_name].phenotype != "n/a" and bypass: # CHANGE TO TRY AND REMOVE N/A IN PHENOTYPES IN HOVER TEXT
+            if rock.genotype.genes[gene_name].phenotype != "n/a" and bypass:
                 gene_pair = rock.genotype.genes.get(gene_name)
                 phenotype = "n/a" if gene_pair is None or gene_pair.phenotype is None else str(gene_pair.phenotype)
                 phenotype_lines.append(f"{html.escape(gene_name)}: {html.escape(phenotype)}")
