@@ -2560,7 +2560,7 @@ def draw_eyes(ctx):
             radius=eye_radius,
             facecolor=sclera_color,
             edgecolor="black",
-            linewidth=1.2,
+            linewidth=1.0,
             zorder=8
         )
         ctx.ax.add_patch(eye)
@@ -2570,7 +2570,7 @@ def draw_eyes(ctx):
             radius=0.43 * eye_radius,
             facecolor=eye_color,
             edgecolor="black",
-            linewidth=0.5,
+            linewidth=0.25,
             zorder=9
         )
         ctx.ax.add_patch(pupil)
@@ -2581,7 +2581,7 @@ def draw_eyes(ctx):
                 [ex, ex],
                 [ey + 0.45 * eye_radius, ey - 0.45 * eye_radius],
                 color="black",
-                linewidth=1.4,
+                linewidth=1.2,
                 zorder=10
             )
 
