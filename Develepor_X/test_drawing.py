@@ -171,6 +171,39 @@ def test_identity_layout_places_status_top_left_and_gender_top_right():
         plt.close(fig)
 
 
+def test_identity_label_offsets_use_giant_reference_for_all_rock_sizes():
+    gaps = []
+
+    for rock_id, size_gene in [(81, (2, 2)), (82, (3, 3))]:
+        fig, ax = plt.subplots()
+        rock = make_rock(
+            rock_id=rock_id,
+            status=genetics.RockStatus.SOLD,
+            gene_overrides={"size": size_gene},
+        )
+
+        try:
+            machine = DrawMachine(rock=rock, ax=ax, normalize_size=False)
+            machine.draw()
+            gender_text = next(text for text in ax.texts if text.get_text() in {"\u2642", "\u2640"})
+            status_text = next(text for text in ax.texts if text.get_text() == "$")
+            name_text = next(text for text in ax.texts if text.get_text().startswith(f"#{rock_id}:"))
+
+            gaps.append(
+                (
+                    round(gender_text.get_position()[0] - machine.ctx.xmax, 6),
+                    round(gender_text.get_position()[1] - machine.ctx.ymax, 6),
+                    round(machine.ctx.xmin - status_text.get_position()[0], 6),
+                    round(status_text.get_position()[1] - machine.ctx.ymax, 6),
+                    round(machine.ctx.ymin - name_text.get_position()[1], 6),
+                )
+            )
+        finally:
+            plt.close(fig)
+
+    assert gaps[0] == gaps[1]
+
+
 def test_rock_to_image_uri_returns_png_data_uri():
     rock = make_rock()
 
@@ -561,8 +594,8 @@ def test_tree_drawer_uses_adaptive_image_resolution_for_large_trees():
 
     drawer = TreeDrawer(game=game)
 
-    assert drawer.image_render_settings() == (1.0, 70)
-    assert TreeDrawer(game=game, adaptive_image_resolution=False).image_render_settings() == (1.4, 100)
+    assert drawer.image_render_settings() == (1.0, 150)
+    assert TreeDrawer(game=game, adaptive_image_resolution=False).image_render_settings() == (1.4, 400)
 
 
 def test_tree_drawer_fast_overview_skips_png_image_rendering(monkeypatch):

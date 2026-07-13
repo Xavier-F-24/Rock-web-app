@@ -21,12 +21,15 @@ from Rock_Drawing.rock_feature_drawers import (
     draw_nose, draw_patchwork, draw_stones, draw_tail, draw_wings, draw_wrinkles,
 )
 
+GIANT_SIZE_SCALE = 2.30
+
 @dataclass(frozen=True)
 class IdentityLabelLayout:
     """
-    Controls identity-label placement in body-radius units.
+    Controls identity-label placement in reference body-radius units.
     """
 
+    label_reference_size_scale: float = GIANT_SIZE_SCALE
     name_below_body_radius: float = 1.0
     gender_right_body_radius: float = 1.0
     gender_above_body_radius: float = 0.95
@@ -134,14 +137,14 @@ class DrawMachine:
         gender_color = "royalblue" if self.rock.sex == genetics.Sex.MALE else "deeppink"
         name = self.format_rock_name()
         status_symbol, status_color = self.get_status_symbol_and_color()
-        body_radius = 0.5 * ctx.unit
         layout = self.identity_layout
+        reference_body_radius = 0.5 * layout.label_reference_size_scale
 
-        gender_x = ctx.xmax + layout.gender_right_body_radius * body_radius
-        gender_y = ctx.ymax + layout.gender_above_body_radius * body_radius
-        name_y = ctx.ymin - layout.name_below_body_radius * body_radius
-        status_x = ctx.xmin - layout.status_left_body_radius * body_radius
-        status_y = ctx.ymax + layout.status_above_body_radius * body_radius
+        gender_x = ctx.xmax + layout.gender_right_body_radius * reference_body_radius
+        gender_y = ctx.ymax + layout.gender_above_body_radius * reference_body_radius
+        name_y = ctx.ymin - layout.name_below_body_radius * reference_body_radius
+        status_x = ctx.xmin - layout.status_left_body_radius * reference_body_radius
+        status_y = ctx.ymax + layout.status_above_body_radius * reference_body_radius
 
         ctx.ax.text(
             gender_x,
