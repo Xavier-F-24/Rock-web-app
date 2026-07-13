@@ -6,3 +6,5 @@ saves/
 *.json
 .DS_Store
 .env
+.jsonl
+.npz
