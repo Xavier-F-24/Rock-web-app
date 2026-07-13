@@ -52,10 +52,12 @@ class BreedingExpectationRecord:
     expected_child_value: ScalarEstimate
     expected_average_surviving_child_value: ScalarEstimate
     expected_maximum_child_value: ScalarEstimate
+    expected_maximum_surviving_child_value: ScalarEstimate
     expected_raw_clutch_size: ScalarEstimate
     expected_survivor_count: ScalarEstimate
     mutation_probability: float
     expected_mutations_per_child: float
+    surviving_value_threshold_probabilities: dict[str, float]
     phenotype_probability_vector: dict[str, float]
     genotype_diversity_estimate: ScalarEstimate
     phenotype_diversity_estimate: ScalarEstimate

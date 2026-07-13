@@ -91,6 +91,7 @@ class BreedingExpectationEvaluator:
         rules: EncodedBreedingRules | Mapping[str, Any] | None = None,
         trial_count: int = 1000,
         seed: int = 0,
+        value_thresholds: Iterable[float] = (),
     ) -> BreedingExpectationRecord:
         if trial_count <= 0:
             raise ValueError("trial_count must be positive")
@@ -117,6 +118,17 @@ class BreedingExpectationEvaluator:
         expected_maximum = _estimate(
             max(record.child_values) if record.child_values else 0.0 for record in records
         )
+        surviving_values_by_trial = [
+            [
+                value
+                for value, status in zip(record.child_values, record.child_statuses)
+                if status == genetics.RockStatus.ACTIVE.value
+            ]
+            for record in records
+        ]
+        expected_maximum_surviving = _estimate(
+            max(values) if values else 0.0 for values in surviving_values_by_trial
+        )
         expected_clutch = _estimate(record.clutch_size for record in records)
         expected_survivors = _estimate(record.survivor_count for record in records)
         genotype_diversity = _estimate(
@@ -138,10 +150,20 @@ class BreedingExpectationEvaluator:
             "expected_child_value": expected_child_value,
             "expected_average_surviving_child_value": expected_surviving_value,
             "expected_maximum_child_value": expected_maximum,
+            "expected_maximum_surviving_child_value": expected_maximum_surviving,
             "expected_raw_clutch_size": expected_clutch,
             "expected_survivor_count": expected_survivors,
             "genotype_diversity_estimate": genotype_diversity,
             "phenotype_diversity_estimate": phenotype_diversity,
+        }
+        normalized_thresholds = tuple(sorted({float(value) for value in value_thresholds}))
+        threshold_probabilities = {
+            str(threshold): sum(
+                any(value >= threshold for value in values)
+                for values in surviving_values_by_trial
+            )
+            / trial_count
+            for threshold in normalized_thresholds
         }
         return BreedingExpectationRecord(
             parent_ids=(parent_a.id, parent_b.id),
@@ -150,10 +172,12 @@ class BreedingExpectationEvaluator:
             expected_child_value=expected_child_value,
             expected_average_surviving_child_value=expected_surviving_value,
             expected_maximum_child_value=expected_maximum,
+            expected_maximum_surviving_child_value=expected_maximum_surviving,
             expected_raw_clutch_size=expected_clutch,
             expected_survivor_count=expected_survivors,
             mutation_probability=mutation_probability,
             expected_mutations_per_child=expected_mutations,
+            surviving_value_threshold_probabilities=threshold_probabilities,
             phenotype_probability_vector=self._phenotype_vector(records),
             genotype_diversity_estimate=genotype_diversity,
             phenotype_diversity_estimate=phenotype_diversity,
@@ -173,10 +197,12 @@ class BreedingExpectationEvaluator:
                 "expected_child_value": "monte_carlo_real_breeding_engine",
                 "expected_average_surviving_child_value": "monte_carlo_real_breeding_engine",
                 "expected_maximum_child_value": "monte_carlo_real_breeding_engine",
+                "expected_maximum_surviving_child_value": "monte_carlo_real_breeding_engine",
                 "expected_raw_clutch_size": "monte_carlo_real_breeding_engine",
                 "expected_survivor_count": "monte_carlo_real_breeding_engine",
                 "mutation_probability": "analytical",
                 "expected_mutations_per_child": "analytical",
+                "surviving_value_threshold_probabilities": "monte_carlo_real_breeding_engine",
                 "phenotype_probability_vector": "monte_carlo_real_breeding_engine",
                 "genotype_diversity_estimate": "monte_carlo_real_breeding_engine",
                 "phenotype_diversity_estimate": "monte_carlo_real_breeding_engine",

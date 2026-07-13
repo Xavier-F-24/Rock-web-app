@@ -13,7 +13,13 @@ __all__ = [
     "BreedingRecord",
     "EncodedBreedingRules",
     "GeneOutcomeDistribution",
+    "PredictorDatasetGenerator",
+    "PredictorDatasetSplits",
+    "PredictorExample",
+    "PredictorTargetSchema",
     "ScalarEstimate",
+    "save_predictor_dataset",
+    "split_predictor_examples",
 ]
 
 
@@ -22,4 +28,20 @@ def __getattr__(name: str):
         from Rock_AI.datasets.breeding_dataset_generator import BreedingDatasetGenerator
 
         return BreedingDatasetGenerator
+    if name in {"PredictorExample", "PredictorTargetSchema"}:
+        from Rock_AI.datasets import predictor_example_helper
+
+        return getattr(predictor_example_helper, name)
+    if name == "PredictorDatasetGenerator":
+        from Rock_AI.datasets.predictor_dataset_generator import PredictorDatasetGenerator
+
+        return PredictorDatasetGenerator
+    if name in {"PredictorDatasetSplits", "split_predictor_examples"}:
+        from Rock_AI.datasets import dataset_split_helper
+
+        return getattr(dataset_split_helper, name)
+    if name == "save_predictor_dataset":
+        from Rock_AI.datasets.dataset_storage_helper import save_predictor_dataset
+
+        return save_predictor_dataset
     raise AttributeError(name)
