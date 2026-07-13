@@ -64,3 +64,55 @@ class TrainingDataConfig:
         result = asdict(self)
         result["value_thresholds"] = list(self.value_thresholds)
         return result
+
+
+@dataclass(frozen=True)
+class PredictorTrainingConfig:
+    dataset_path: str
+    output_directory: str
+    seed: int = 1234
+    batch_size: int = 32
+    learning_rate: float = 1e-3
+    number_of_epochs: int = 20
+    encoder_hidden_dimensions: tuple[int, ...] = (128,)
+    trunk_hidden_dimensions: tuple[int, ...] = (128, 96)
+    parent_embedding_dimension: int = 64
+    rule_embedding_dimension: int = 24
+    context_embedding_dimension: int = 16
+    dropout: float = 0.1
+    weight_decay: float = 1e-5
+    validation_frequency: int = 1
+    early_stopping_patience: int = 5
+    checkpoint_frequency: int = 1
+    device: str = "auto"
+    scalar_loss_weight: float = 1.0
+    probability_loss_weight: float = 1.0
+    phenotype_distribution_weight: float = 1.0
+    genotype_distribution_weight: float = 1.0
+    number_of_workers: int = 0
+    deterministic: bool = True
+    gradient_clip_norm: float | None = 5.0
+    resume_checkpoint: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.batch_size <= 0 or self.number_of_epochs <= 0:
+            raise ValueError("batch_size and number_of_epochs must be positive")
+        if self.learning_rate <= 0 or self.weight_decay < 0:
+            raise ValueError("learning_rate must be positive and weight_decay non-negative")
+        if not 0.0 <= self.dropout < 1.0:
+            raise ValueError("dropout must be in [0, 1)")
+        if self.validation_frequency <= 0 or self.checkpoint_frequency <= 0:
+            raise ValueError("validation and checkpoint frequencies must be positive")
+        if self.early_stopping_patience < 0 or self.number_of_workers < 0:
+            raise ValueError("patience and worker count cannot be negative")
+
+    @property
+    def dataset_directory(self) -> Path:
+        return Path(self.dataset_path)
+
+    @property
+    def output_path(self) -> Path:
+        return Path(self.output_directory)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

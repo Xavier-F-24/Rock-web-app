@@ -8,3 +8,4 @@ saves/
 .env
 .jsonl
 .npz
+/training_runs/
