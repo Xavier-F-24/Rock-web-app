@@ -68,7 +68,7 @@ def calculate_predictor_metrics(
             "rmse": float(np.sqrt(np.mean(errors ** 2))) if len(errors) else 0.0,
             "r_squared": (
                 1.0 - float(np.sum(errors ** 2)) / total_variance
-                if total_variance > 1e-12
+                if total_variance > 1e-9
                 else 0.0
             ),
         }

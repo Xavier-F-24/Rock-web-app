@@ -116,3 +116,85 @@ class PredictorTrainingConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class PairRankingDataConfig:
+    number_of_farms: int = 100
+    trials_per_pair: int = 100
+    seed: int = 1234
+    output_directory: str = "training_data/pair_ranker_v1"
+    predictor_checkpoint: str | None = None
+    minimum_rocks: int = 4
+    maximum_rocks: int = 8
+    mutation_chance_range: tuple[float, float] = (0.0, 0.12)
+    death_chance_range: tuple[float, float] = (0.0, 0.15)
+    train_fraction: float = 0.70
+    validation_fraction: float = 0.15
+    test_fraction: float = 0.15
+    retain_single_candidate_farms: bool = False
+    game_rules_version: str = "rock-game-breeding-v1"
+
+    def __post_init__(self) -> None:
+        if self.number_of_farms <= 0 or self.trials_per_pair <= 0:
+            raise ValueError("number_of_farms and trials_per_pair must be positive")
+        if not 2 <= self.minimum_rocks <= self.maximum_rocks:
+            raise ValueError("rock bounds must satisfy 2 <= minimum <= maximum")
+        if abs(self.train_fraction + self.validation_fraction + self.test_fraction - 1.0) > 1e-9:
+            raise ValueError("split fractions must sum to 1")
+        for low, high in (self.mutation_chance_range, self.death_chance_range):
+            if not 0.0 <= low <= high <= 1.0:
+                raise ValueError("probability ranges must be ordered within [0, 1]")
+
+    @property
+    def output_path(self) -> Path:
+        return Path(self.output_directory)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class PairRankerTrainingConfig:
+    dataset_path: str
+    output_directory: str
+    seed: int = 1234
+    batch_size: int = 4
+    learning_rate: float = 1e-3
+    number_of_epochs: int = 20
+    parent_embedding_dimension: int = 64
+    auxiliary_embedding_dimension: int = 24
+    encoder_hidden_dimensions: tuple[int, ...] = (128,)
+    trunk_hidden_dimensions: tuple[int, ...] = (128, 64)
+    dropout: float = 0.1
+    weight_decay: float = 1e-5
+    utility_regression_weight: float = 1.0
+    pairwise_ranking_weight: float = 1.0
+    best_pair_weight: float = 0.5
+    tie_tolerance: float = 1e-5
+    early_stopping_patience: int = 5
+    gradient_clip_norm: float | None = 5.0
+    device: str = "auto"
+    number_of_workers: int = 0
+    resume_checkpoint: str | None = None
+    transferred_predictor_checkpoint: str | None = None
+    freeze_transferred_parent_encoder: bool = False
+
+    def __post_init__(self) -> None:
+        if self.batch_size <= 0 or self.number_of_epochs <= 0 or self.learning_rate <= 0:
+            raise ValueError("batch size, epochs, and learning rate must be positive")
+        if not 0.0 <= self.dropout < 1.0:
+            raise ValueError("dropout must be in [0, 1)")
+        if min(self.utility_regression_weight, self.pairwise_ranking_weight, self.best_pair_weight) < 0:
+            raise ValueError("loss weights cannot be negative")
+
+    @property
+    def dataset_directory(self) -> Path:
+        return Path(self.dataset_path)
+
+    @property
+    def output_path(self) -> Path:
+        return Path(self.output_directory)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

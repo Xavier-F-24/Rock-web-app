@@ -6,6 +6,6 @@ saves/
 *.json
 .DS_Store
 .env
-.jsonl
-.npz
+*.jsonl
+*.npz
 /training_runs/

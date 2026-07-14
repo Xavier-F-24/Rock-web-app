@@ -17,6 +17,9 @@ __all__ = [
     "PredictorDatasetSplits",
     "PredictorExample",
     "PredictorTargetSchema",
+    "PairRankingDatasetGenerator",
+    "PairRankingGroup",
+    "FarmerObjectiveProfile",
     "ScalarEstimate",
     "save_predictor_dataset",
     "split_predictor_examples",
@@ -44,4 +47,12 @@ def __getattr__(name: str):
         from Rock_AI.datasets.dataset_storage_helper import save_predictor_dataset
 
         return save_predictor_dataset
+    if name in {"PairRankingGroup", "FarmerObjectiveProfile"}:
+        from Rock_AI.datasets import pair_ranking_record_helper
+
+        return getattr(pair_ranking_record_helper, name)
+    if name == "PairRankingDatasetGenerator":
+        from Rock_AI.datasets.pair_ranking_dataset_generator import PairRankingDatasetGenerator
+
+        return PairRankingDatasetGenerator
     raise AttributeError(name)
