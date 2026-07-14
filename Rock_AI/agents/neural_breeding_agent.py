@@ -79,7 +79,12 @@ class NeuralBreedingAgent(BreedingAgent):
             },
             "predictor_outputs": selected.predicted_breeding_outcomes,
             "ranked_candidate_pairs": [
-                {"parent_ids": list(row.parent_ids), "score": row.neural_score}
+                {
+                    "parent_ids": list(row.parent_ids),
+                    "score": row.neural_score,
+                    "predicted_breeding_outcomes": row.predicted_breeding_outcomes,
+                    "score_components": row.score_components,
+                }
                 for row in ranked
             ],
         }

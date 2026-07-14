@@ -21,6 +21,7 @@ class AgentDecisionRecord:
     predictor_outputs: dict[str, Any] | None = None
     objective_weights: dict[str, Any] = field(default_factory=dict)
     pre_action_farm_metrics: dict[str, float | int] = field(default_factory=dict)
+    immediate_post_action_farm_metrics: dict[str, float | int] = field(default_factory=dict)
     post_action_farm_metrics: dict[str, float | int] = field(default_factory=dict)
     resulting_child_ids: list[int | str] = field(default_factory=list)
     resulting_child_values: list[float] = field(default_factory=list)

@@ -89,7 +89,18 @@ class NeuralPairRankingPolicy:
             predictor = BreedingPredictor.load(predictor_checkpoint, device=device)
             if len(predictor.layout.target_names) != values["predictor_feature_dimension"]:
                 raise ValueError("Breeding predictor output schema is incompatible with ranker")
-        return cls(model, checkpoint, UtilityNormalizer(norm["mean"], norm["standard_deviation"]), selected, predictor)
+        instance = cls(
+            model,
+            checkpoint,
+            UtilityNormalizer(norm["mean"], norm["standard_deviation"]),
+            selected,
+            predictor,
+        )
+        instance.checkpoint_path = str(Path(checkpoint_path))
+        instance.predictor_checkpoint_path = (
+            str(Path(predictor_checkpoint)) if predictor_checkpoint is not None else None
+        )
+        return instance
 
     def _predictor_features(self, parent_a, parent_b, rules):
         if self.predictor is None:

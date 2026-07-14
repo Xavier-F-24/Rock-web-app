@@ -328,6 +328,7 @@ class BreedingCampaignEnvironment(RockTrainingEnvironment):
             predictor_outputs=context.get("predictor_outputs"),
             objective_weights=self.state.objective_profile.to_dict(),
             pre_action_farm_metrics=pre_metrics,
+            immediate_post_action_farm_metrics=pre_metrics,
             post_action_farm_metrics=pre_metrics,
             environment_seed=self.seed,
             agent_seed=agent_seed,
@@ -394,7 +395,9 @@ class BreedingCampaignEnvironment(RockTrainingEnvironment):
             self.state.termination_reason = "maximum_decisions_reached"
         if generation_advanced:
             self._check_terminal_state()
-        record.post_action_farm_metrics = calculate_farm_metrics(self.game)
+        immediate_metrics = calculate_farm_metrics(self.game)
+        record.immediate_post_action_farm_metrics = immediate_metrics
+        record.post_action_farm_metrics = immediate_metrics
         record.status = self.state.termination_reason if self.state.terminated else "continue"
         return CampaignStepResult(
             action=action,
