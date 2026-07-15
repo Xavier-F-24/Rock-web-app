@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from Rock_AI.agents.breeding_agent_helper import FarmerObjectiveProfile, action_from_dict
+from Rock_AI.explanations.decision_explanation_helper import build_decision_explanation
 from Rock_AI.environments.breeding_campaign_environment import (
     BreedingCampaignConfig,
     BreedingCampaignEnvironment,
@@ -31,6 +32,7 @@ class ReplayFrame:
     selected_action: dict[str, Any] | None
     farm_summary: dict[str, float | int]
     snapshot: EnvironmentSnapshot
+    decision_explanation: Any = None
 
 
 class EpisodeReplay:
@@ -82,8 +84,17 @@ class EpisodeReplay:
                 or decision.scores.get("heuristic_score"),
                 "pair_evaluator_utility": decision.scores.get("oracle_pair_utility"),
             }
+            action = action_from_dict(decision.selected_action)
+            explanation = build_decision_explanation(
+                action,
+                farm=environment.game,
+                legal_pair_ids=environment.observation().legal_pair_ids,
+                objective_profile=objective,
+                decision_context=context,
+                mutation_chance=environment.state.rules.mutation_chance,
+            )
             environment.step(
-                action_from_dict(decision.selected_action),
+                action,
                 agent_name=decision.agent_name,
                 agent_seed=record.agent_seed,
                 decision_context=context,
@@ -101,6 +112,7 @@ class EpisodeReplay:
                     decision.selected_action,
                     summary,
                     environment.snapshot(),
+                    explanation,
                 )
             )
         final_actual = calculate_farm_metrics(environment.game)

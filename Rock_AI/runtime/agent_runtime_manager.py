@@ -28,7 +28,10 @@ from Rock_AI.environments.breeding_campaign_environment import (
     BreedingCampaignEnvironment,
     BreedingCampaignState,
 )
-from Rock_AI.evaluation.breeding_agent_metrics import calculate_farm_metrics
+from Rock_AI.evaluation.breeding_agent_metrics import (
+    calculate_farm_metrics,
+    calculate_final_objective_utility,
+)
 from Rock_AI.explanations.candidate_explanation_helper import CandidateExplanation
 from Rock_AI.explanations.decision_explanation_helper import (
     DecisionExplanation,
@@ -165,7 +168,68 @@ class AgentRuntimeManager:
             "dataset_schema_version": checkpoint.get("dataset_schema_version"),
             "game_rules_version": checkpoint.get("game_rules_version"),
             "model_architecture_config": checkpoint.get("model_architecture_config"),
+            "epoch": checkpoint.get("epoch"),
+            "validation_metrics": checkpoint.get("validation_metrics") or checkpoint.get("metrics"),
+            "device": str(getattr(policy, "device", "unknown")),
         }
+
+    def episode_record(self, session_id: str) -> EpisodeRecord:
+        """Create a replayable record without mutating the live session."""
+        session = self.get_session(session_id)
+        if session.environment is None or session.agent is None:
+            raise ValueError("Only live agent sessions can produce episode records")
+        environment = session.environment
+        state = environment.state
+        final_summary = calculate_farm_metrics(environment.game)
+        final_summary.update(
+            {
+                "mutation_count": state.mutation_count,
+                "valid_decisions": state.valid_decisions,
+                "invalid_decisions_attempted": state.invalid_decisions,
+                "early_stop_count": state.early_stop_count,
+                "cumulative_pair_evaluator_utility": state.cumulative_pair_utility,
+                "objective_utility": calculate_final_objective_utility(
+                    final_summary,
+                    session.objective_profile,
+                    mutation_count=state.mutation_count,
+                ),
+            }
+        )
+        return EpisodeRecord(
+            episode_id=state.episode_id,
+            initial_seed=session.environment_seed,
+            agent_seed=session.agent_seed,
+            agent_configuration=session.agent.configuration(),
+            environment_configuration=environment.config.to_dict(),
+            breeding_rules=state.rules.to_dict(),
+            initial_farm_summary=state.initial_farm_summary,
+            decisions=copy.deepcopy(state.decisions),
+            final_farm_summary=final_summary,
+            termination_reason=state.termination_reason or "in_progress",
+            total_generations=environment.game.generation,
+            total_breeding_decisions=sum(
+                decision.selected_action.get("action_type") == "breed_pair" and decision.error is None
+                for decision in state.decisions
+            ),
+            runtime_seconds=0.0,
+            errors=list(state.errors),
+            warnings=list(state.warnings),
+        )
+
+    def build_replay_from_session(
+        self,
+        session_id: str,
+        *,
+        replay_session_id: str | None = None,
+    ) -> AgentSession:
+        session = self.get_session(session_id)
+        replay_session = self.build_replay_session(
+            self.episode_record(session_id),
+            initial_farm=copy.deepcopy(session.initial_farm_state),
+            session_id=replay_session_id,
+        )
+        replay_session.event_history = copy.deepcopy(session.event_history)
+        return replay_session
 
     def get_session(self, session_id: str) -> AgentSession:
         try:
@@ -467,12 +531,26 @@ class AgentRuntimeManager:
                     decision_index=decision_index,
                 )
             )
+        historical_farm_values = [
+            float(record.immediate_post_action_farm_metrics.get("final_active_rock_value", 0.0))
+            for record in session.environment.state.decisions[:-1]
+            if record.immediate_post_action_farm_metrics
+        ]
+        previous_peak = max(
+            historical_farm_values,
+            default=float(session.environment.state.initial_farm_summary.get("final_active_rock_value", 0.0)),
+        )
         pause = evaluate_pause_conditions(
             session.runtime_configuration.speed,
             mutation_count=mutation_count,
             rare_trait_increase=float(post_metrics["rare_trait_count"] - pre_metrics["rare_trait_count"]),
+            farm_value_record=float(post_metrics["final_active_rock_value"]) > previous_peak,
             maximum_value_increase=float(post_metrics["final_maximum_rock_value"] - pre_metrics["final_maximum_rock_value"]),
             candidate_score_gap=explanation.first_second_score_difference,
+            action_completed=True,
+            breeding_executed=isinstance(action, BreedPairAction),
+            generation_advanced=step_result.generation_advanced,
+            warning_or_fallback=bool(explanation.warnings or explanation.fallback_reason),
         )
         if environment.state.terminated:
             session.episode_termination_reason = environment.state.termination_reason
