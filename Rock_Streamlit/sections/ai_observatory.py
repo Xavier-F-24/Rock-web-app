@@ -63,9 +63,17 @@ REPLAY_MODE_KEY = "ai_observatory_replay_mode"
 
 
 def get_runtime_manager() -> AgentRuntimeManager:
-    if MANAGER_KEY not in st.session_state:
-        st.session_state[MANAGER_KEY] = AgentRuntimeManager()
-    return st.session_state[MANAGER_KEY]
+    manager = st.session_state.get(MANAGER_KEY)
+    if getattr(manager, "interface_version", 0) != AgentRuntimeManager.INTERFACE_VERSION:
+        replacement = AgentRuntimeManager()
+        st.session_state[MANAGER_KEY] = replacement
+        st.session_state.pop(SESSION_ID_KEY, None)
+        st.session_state.pop(LIVE_SESSION_ID_KEY, None)
+        st.session_state.pop(LAST_RESULT_KEY, None)
+        st.session_state[AUTO_RUN_KEY] = False
+        st.session_state[REPLAY_MODE_KEY] = False
+        manager = replacement
+    return manager
 
 
 def _runtime_configuration(speed: dict) -> AgentRuntimeConfig:
@@ -106,7 +114,27 @@ def _make_agent(settings: dict, objective):
         checkpoint_path = Path(__file__).resolve().parents[2] / checkpoint_path
     if not checkpoint_path.exists():
         raise ValueError(f"Checkpoint does not exist: {checkpoint_path}")
-    return NeuralBreedingAgent(NeuralPairRankingPolicy.load(checkpoint_path), objective)
+    predictor_checkpoint = settings.get("predictor_checkpoint")
+    predictor_path = None
+    if predictor_checkpoint:
+        predictor_path = Path(predictor_checkpoint)
+        if not predictor_path.is_absolute():
+            predictor_path = Path(__file__).resolve().parents[2] / predictor_path
+        if not predictor_path.exists():
+            raise ValueError(f"Breeding-predictor checkpoint does not exist: {predictor_path}")
+    try:
+        policy = NeuralPairRankingPolicy.load(
+            checkpoint_path,
+            predictor_checkpoint=predictor_path,
+        )
+    except ValueError as error:
+        if "requires a breeding-predictor checkpoint" in str(error):
+            raise ValueError(
+                "This pair ranker needs a companion breeding-predictor checkpoint. "
+                "Choose a complete model bundle from the dropdown or provide both paths."
+            ) from error
+        raise
+    return NeuralBreedingAgent(policy, objective)
 
 
 def _create_session(manager, settings: dict, speed: dict):

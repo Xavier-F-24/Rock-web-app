@@ -596,14 +596,24 @@ class Rock:
     """
     @property
     def is_active(self) -> bool:
-        return self.status == RockStatus.ACTIVE
+        return getattr(self.status, "value", self.status) == RockStatus.ACTIVE.value
 
     def change_status(
             self, 
             new_status: RockStatus
     ):
         if not isinstance(new_status, RockStatus):
-            raise TypeError(f"new_status must be a RockStatus, not {type(new_status)}")
+            if not isinstance(new_status, Enum):
+                raise TypeError(
+                    f"new_status must be a RockStatus, not {type(new_status)}"
+                )
+            status_value = getattr(new_status, "value", new_status)
+            try:
+                new_status = RockStatus(status_value)
+            except (TypeError, ValueError) as error:
+                raise TypeError(
+                    f"new_status must be a valid RockStatus value, not {new_status!r}"
+                ) from error
     
         self.status = new_status
 

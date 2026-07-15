@@ -3,22 +3,70 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from pathlib import Path
 
 import streamlit as st
 
 from Rock_AI.agents.breeding_agent_helper import DEFAULT_OBJECTIVE_PROFILES
 from Rock_AI.datasets.breeding_record_helper import EncodedBreedingRules
+from Rock_Streamlit.components.checkpoint_selector_helper import (
+    discover_pair_ranker_checkpoints,
+)
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
+@st.cache_data(show_spinner=False)
+def _checkpoint_options(include_latest: bool):
+    return discover_pair_ranker_checkpoints(REPOSITORY_ROOT, include_latest=include_latest)
 
 
 def render_session_configuration() -> dict:
     st.header("Agent Setup")
     agent_type = st.selectbox("Agent", ("heuristic", "random", "neural", "oracle"), key="ai_obs_agent_type")
-    checkpoint = st.text_input(
-        "Pair-ranker checkpoint",
-        key="ai_obs_checkpoint_path",
-        disabled=agent_type != "neural",
-        placeholder="training_runs/pair_ranker/best.pt",
-    )
+    checkpoint = ""
+    predictor_checkpoint = ""
+    if agent_type == "neural":
+        custom_checkpoint = st.checkbox(
+            "Use custom checkpoint paths",
+            key="ai_obs_custom_checkpoint",
+            help="Advanced option for models outside training_runs.",
+        )
+        if custom_checkpoint:
+            checkpoint = st.text_input(
+                "Pair-ranker checkpoint",
+                key="ai_obs_checkpoint_path",
+                placeholder="training_runs/pair_ranker/best.pt",
+            ).strip()
+            predictor_checkpoint = st.text_input(
+                "Companion breeding-predictor checkpoint",
+                key="ai_obs_predictor_checkpoint_path",
+                placeholder="Only required by predictor-backed rankers",
+            ).strip()
+        else:
+            show_latest = st.checkbox(
+                "Show latest checkpoints",
+                key="ai_obs_show_latest_checkpoints",
+                help="Best checkpoints are recommended for normal use.",
+            )
+            options = _checkpoint_options(show_latest)
+            if options:
+                selected = st.selectbox(
+                    "Neural model",
+                    options,
+                    format_func=lambda option: option.label,
+                    key="ai_obs_checkpoint_option",
+                )
+                checkpoint = selected.ranker_path
+                predictor_checkpoint = selected.predictor_path or ""
+                st.caption(
+                    "The companion breeding predictor is attached automatically."
+                    if selected.predictor_path
+                    else "This model is a standalone pair ranker."
+                )
+            else:
+                st.warning("No complete pair-ranker checkpoint bundles were found locally.")
     farm_source = st.selectbox("Initial farm", ("Generated farm", "Current player game"), key="ai_obs_farm_source")
     objective_name = st.selectbox("Objective", tuple(DEFAULT_OBJECTIVE_PROFILES), key="ai_obs_objective")
     seed = st.number_input("Environment seed", min_value=0, value=1234, step=1, key="ai_obs_seed")
@@ -33,7 +81,8 @@ def render_session_configuration() -> dict:
         clutch_std = st.number_input("Clutch standard deviation", 0.0, 20.0, float(defaults.clutch_std), 0.1, key="ai_obs_clutch_std")
     return {
         "agent_type": agent_type,
-        "checkpoint": checkpoint.strip(),
+        "checkpoint": checkpoint,
+        "predictor_checkpoint": predictor_checkpoint,
         "farm_source": farm_source,
         "objective_name": objective_name,
         "seed": int(seed),

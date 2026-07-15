@@ -69,6 +69,17 @@ from .runtime_state_helper import (
 
 RUNTIME_SAVE_VERSION = 1
 
+def _implements_breeding_agent_interface(agent: object) -> bool:
+    """Accept agents across Streamlit hot reloads without relying on class identity."""
+    required_methods = ("choose_action", "reset", "configuration")
+    return (
+        agent is not None
+        and all(callable(getattr(agent, name, None)) for name in required_methods)
+        and hasattr(agent, "objective_profile")
+        and hasattr(agent, "name")
+    )
+
+
 
 def _jsonable_rng_state(value: Any) -> Any:
     if isinstance(value, tuple):
@@ -104,7 +115,10 @@ def migrate_runtime_save(data: dict[str, Any]) -> dict[str, Any]:
 
 
 class AgentRuntimeManager:
+    INTERFACE_VERSION = 3
+
     def __init__(self):
+        self.interface_version = self.INTERFACE_VERSION
         self.sessions: dict[str, AgentSession] = {}
 
     def create_session(
@@ -119,8 +133,11 @@ class AgentRuntimeManager:
         rules: EncodedBreedingRules | Mapping[str, Any] | None = None,
         session_id: str | None = None,
     ) -> AgentSession:
-        if not isinstance(agent, BreedingAgent):
-            raise TypeError("agent must implement BreedingAgent")
+        if not _implements_breeding_agent_interface(agent):
+            raise TypeError(
+                "agent must provide choose_action(), reset(), configuration(), "
+                "objective_profile, and name"
+            )
         objective = objective_profile or agent.objective_profile
         agent.objective_profile = objective
         selected_environment = environment or BreedingCampaignEnvironment(
@@ -157,9 +174,9 @@ class AgentRuntimeManager:
 
     @staticmethod
     def _checkpoint_metadata(agent: BreedingAgent) -> dict[str, Any]:
-        if not isinstance(agent, NeuralBreedingAgent):
+        policy = getattr(agent, "policy", None)
+        if policy is None:
             return {}
-        policy = agent.policy
         checkpoint = getattr(policy, "checkpoint", {})
         return {
             "ranker_checkpoint_path": getattr(policy, "checkpoint_path", None),
@@ -814,7 +831,7 @@ class AgentRuntimeManager:
                     or model_registry.get(config.get("agent_type"))
                     or model_registry.get(metadata.get("ranker_checkpoint_path"))
                 )
-                if isinstance(candidate, BreedingAgent):
+                if _implements_breeding_agent_interface(candidate):
                     return candidate
                 if callable(candidate):
                     return candidate(config, metadata)
