@@ -34,3 +34,6 @@ def __getattr__(name: str):
 
         return getattr(import_module(f"Rock_AI.agents.{modules[name]}"), name)
     raise AttributeError(name)
+from .neat_breeding_agent import NeatBreedingAgent
+
+__all__ = ["NeatBreedingAgent"]

@@ -19,7 +19,9 @@ class PairRankerCheckpointOption:
 def _load_metadata(path: Path) -> dict[str, Any]:
     import torch
 
-    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    if checkpoint.get("information_access") != "player":
+        raise ValueError("Checkpoint is not certified for player-visible inference")
     architecture = checkpoint.get("model_architecture_config", {})
     return {
         "epoch": checkpoint.get("epoch"),

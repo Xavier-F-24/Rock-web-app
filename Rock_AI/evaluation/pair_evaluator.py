@@ -141,6 +141,11 @@ class PairEvaluator:
         mutation_opportunity = (
             expectation.mutation_probability + expectation.expected_mutations_per_child
         )
+        relatedness = 0.0
+        if game is not None:
+            relatedness, _ = breeding.BreedingMaster().calculate_relatedness(
+                game, parent_a, parent_b
+            )
         raw_components = {
             "expected_value": immediate,
             "maximum_value": expectation.expected_maximum_child_value.mean,
@@ -149,6 +154,14 @@ class PairEvaluator:
             "phenotype_diversity": phenotype_diversity,
             "rare_trait": rarity,
             "mutation_opportunity": mutation_opportunity,
+            "mortality_penalty": expectation.expected_dead_count.mean,
+            "craisen_penalty": expectation.expected_craisened_count.mean,
+            "zero_survivor_penalty": expectation.probability_zero_active_survivors,
+            "relatedness_penalty": float(relatedness),
+            "aleatoric_risk_penalty": (
+                expectation.surviving_clutch_value_variance ** 0.5
+            ),
+            "epistemic_uncertainty_penalty": expectation.expected_survivor_count.standard_error,
         }
         contributions = {
             "expected_value": raw_components["expected_value"] * weights.expected_value_weight,

@@ -55,6 +55,13 @@ class BreedingExpectationRecord:
     expected_maximum_surviving_child_value: ScalarEstimate
     expected_raw_clutch_size: ScalarEstimate
     expected_survivor_count: ScalarEstimate
+    expected_dead_count: ScalarEstimate
+    expected_craisened_count: ScalarEstimate
+    probability_any_craisened_child: float
+    probability_zero_active_survivors: float
+    expected_surviving_clutch_value: ScalarEstimate
+    surviving_clutch_value_variance: float
+    lower_tail_surviving_clutch_value: float
     mutation_probability: float
     expected_mutations_per_child: float
     surviving_value_threshold_probabilities: dict[str, float]

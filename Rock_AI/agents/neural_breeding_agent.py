@@ -12,6 +12,7 @@ from Rock_AI.agents.breeding_agent_helper import (
 )
 from Rock_AI.datasets.pair_ranking_record_helper import FarmerObjectiveProfile
 from Rock_AI.policies.neural_pair_ranking_policy import NeuralPairRankingPolicy
+from Rock_AI.representations.player_observation_adapter import PlayerObservationAdapter
 
 
 class NeuralBreedingAgent(BreedingAgent):
@@ -24,6 +25,7 @@ class NeuralBreedingAgent(BreedingAgent):
         confidence_threshold: float | None = None,
         temperature: float = 0.0,
         agent_id: str = "neural",
+        observation_adapter: PlayerObservationAdapter | None = None,
     ):
         super().__init__(agent_id, objective_profile)
         if temperature < 0:
@@ -34,6 +36,7 @@ class NeuralBreedingAgent(BreedingAgent):
         self.utility_threshold = utility_threshold
         self.confidence_threshold = confidence_threshold
         self.temperature = float(temperature)
+        self.observation_adapter = observation_adapter or PlayerObservationAdapter()
 
     def choose_action(self, observation, legal_actions) -> AgentAction:
         legal_pairs = {
@@ -45,11 +48,13 @@ class NeuralBreedingAgent(BreedingAgent):
             return StopGenerationAction("no_remaining_breeding_actions")
         if not legal_pairs:
             return StopGenerationAction("no_legal_pairs")
-        decision = self.policy.rank_legal_pairs(
+        player_observation = self.observation_adapter.build(
             observation.farm,
             observation.breeding_rules,
             self.objective_profile,
+            remaining_breeding_actions=observation.remaining_breeding_actions,
         )
+        decision = self.policy.rank_observation(player_observation)
         ranked = [
             row
             for row in decision.ranked_pairs
@@ -78,6 +83,8 @@ class NeuralBreedingAgent(BreedingAgent):
                 "confidence_proxy": decision.confidence_proxy,
             },
             "predictor_outputs": selected.predicted_breeding_outcomes,
+            "player_observation_hash": player_observation.observation_hash,
+            "observation_schema_version": player_observation.schema_version,
             "ranked_candidate_pairs": [
                 {
                     "parent_ids": list(row.parent_ids),
@@ -88,6 +95,8 @@ class NeuralBreedingAgent(BreedingAgent):
                 for row in ranked
             ],
         }
+        if self.policy.latest_model_trace is not None:
+            self.last_decision_context["model_trace"] = self.policy.latest_model_trace.to_dict()
         return action
 
     def configuration(self):

@@ -54,6 +54,24 @@ def score_pair_evaluation(
     )
     uncertainty = math.sqrt(sum(value * value for value in standard_errors))
     raw["uncertainty_penalty"] = uncertainty
+    raw["mortality_penalty"] = getattr(
+        getattr(expectation, "expected_dead_count", None), "mean", 0.0
+    )
+    raw["craisen_penalty"] = getattr(
+        getattr(expectation, "expected_craisened_count", None), "mean", 0.0
+    )
+    raw["zero_survivor_penalty"] = float(
+        getattr(expectation, "probability_zero_active_survivors", 0.0)
+    )
+    raw["relatedness_penalty"] = float(
+        evaluation.explanation_fields["raw_components"].get(
+            "relatedness_penalty", 0.0
+        )
+    )
+    raw["aleatoric_risk_penalty"] = (
+        float(getattr(expectation, "surviving_clutch_value_variance", 0.0)) ** 0.5
+    )
+    raw["epistemic_uncertainty_penalty"] = uncertainty
     weights = {
         "expected_value": objective.immediate_expected_value_weight,
         "maximum_value": objective.maximum_offspring_value_weight,
@@ -65,6 +83,18 @@ def score_pair_evaluation(
         "gene_preservation": objective.gene_preservation_weight,
         "uncertainty_penalty": -(
             objective.risk_aversion_weight + objective.uncertainty_penalty_weight
+        ),
+        "mortality_penalty": -objective.mortality_penalty_weight,
+        "craisen_penalty": -objective.craisen_penalty_weight,
+        "zero_survivor_penalty": -objective.zero_survivor_penalty_weight,
+        "relatedness_penalty": -objective.relatedness_penalty_weight,
+        "aleatoric_risk_penalty": -(
+            objective.risk_aversion_weight
+            + objective.aleatoric_risk_penalty_weight
+        ),
+        "epistemic_uncertainty_penalty": -(
+            objective.uncertainty_penalty_weight
+            + objective.epistemic_uncertainty_penalty_weight
         ),
     }
     contributions = {name: raw[name] * weights[name] for name in UTILITY_COMPONENT_NAMES}

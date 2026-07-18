@@ -18,8 +18,11 @@ from Rock_AI.models.breeding_predictor_model import (
 )
 from Rock_AI.models.loss_helper import PredictorLossConfig, predictor_multitask_loss
 from Rock_AI.models.model_output_helper import BreedingPredictorOutput, TargetLayout
-from Rock_AI.representations.encoding_schema_helper import get_default_encoding_schema
-from Rock_AI.representations.rock_encoder_helper import encode_rock
+from Rock_AI.representations.player_candidate_helper import candidate_arrays
+from Rock_AI.representations.player_observation_helper import (
+    PLAYER_OBSERVATION_SCHEMA_VERSION,
+    PlayerCandidateObservation,
+)
 from Rock_AI.training.checkpoint_helper import load_predictor_checkpoint
 from Rock_AI.training.predictor_data_helper import TargetNormalizer
 
@@ -125,11 +128,11 @@ class BreedingPredictor:
     ) -> "BreedingPredictor":
         selected_device = torch.device(device)
         checkpoint = load_predictor_checkpoint(checkpoint_path, map_location=selected_device)
-        current_schema = get_default_encoding_schema()
-        if int(checkpoint["encoding_schema_version"]) != current_schema.version:
+        if checkpoint.get("information_access") != "player":
+            raise ValueError("Privileged predictor checkpoints cannot be used by player policies")
+        if int(checkpoint["observation_schema_version"]) != PLAYER_OBSERVATION_SCHEMA_VERSION:
             raise ValueError(
-                f"Checkpoint encoding schema {checkpoint['encoding_schema_version']} is incompatible "
-                f"with current schema {current_schema.version}"
+                "Predictor player-observation schema is incompatible"
             )
         config_values = dict(checkpoint["model_architecture_config"])
         for name in (
@@ -144,44 +147,56 @@ class BreedingPredictor:
         layout = TargetLayout.from_target_names(checkpoint["target_names"])
         model = BreedingPredictorModel(model_config, layout).to(selected_device)
         model.load_state_dict(checkpoint["model_state_dict"])
-        return cls(model, checkpoint, selected_device)
+        instance = cls(model, checkpoint, selected_device)
+        instance.checkpoint_path = str(Path(checkpoint_path).resolve())
+        return instance
 
-    def _context_from_rocks(
+    def _context_from_candidate(
         self,
-        parent_a: genetics.Rock,
-        parent_b: genetics.Rock,
+        candidate: PlayerCandidateObservation,
     ) -> np.ndarray:
-        schema = get_default_encoding_schema()
+        parent_a = dict(zip(candidate.parent_a.feature_names, candidate.parent_a.values))
+        parent_b = dict(zip(candidate.parent_b.feature_names, candidate.parent_b.values))
+        metadata = dict(
+            zip(
+                candidate.visible_pair_metadata.feature_names,
+                candidate.visible_pair_metadata.values,
+            )
+        )
         values = {
-            "parent_a_generation_normalized": parent_a.generation / schema.generation_scale,
-            "parent_b_generation_normalized": parent_b.generation / schema.generation_scale,
-            "generation_difference_normalized": abs(parent_a.generation - parent_b.generation) / schema.generation_scale,
-            "parent_a_value_normalized": parent_a.value / schema.value_scale,
-            "parent_b_value_normalized": parent_b.value / schema.value_scale,
+            "parent_a_generation_normalized": parent_a["generation"],
+            "parent_b_generation_normalized": parent_b["generation"],
+            "generation_difference_normalized": metadata[
+                "parent_generation_difference"
+            ],
+            "parent_a_value_normalized": parent_a["value"],
+            "parent_b_value_normalized": parent_b["value"],
         }
         unknown = set(self.feature_names["context"]) - set(values)
         if unknown:
             raise ValueError(f"Cannot construct checkpoint context features: {sorted(unknown)}")
         return np.asarray([values[name] for name in self.feature_names["context"]], dtype=np.float32)
 
-    def predict(
+    def predict_candidate(
         self,
-        parent_a: genetics.Rock,
-        parent_b: genetics.Rock,
-        rules: EncodedBreedingRules | Mapping[str, Any],
+        candidate: PlayerCandidateObservation,
         context: np.ndarray | list[float] | None = None,
     ) -> dict[str, Any]:
-        schema = get_default_encoding_schema()
-        encoded_a = encode_rock(parent_a, schema)
-        encoded_b = encode_rock(parent_b, schema)
-        expected_parent_names = tuple(self.feature_names["parent"])
-        if encoded_a.continuous_feature_names + encoded_a.categorical_feature_names + encoded_a.genotype_feature_names + encoded_a.phenotype_feature_names != expected_parent_names:
-            raise ValueError("Checkpoint parent feature order is incompatible with current encoder")
-        encoded_rules = EncodedBreedingRules.from_config(rules)
-        if tuple(encoded_rules.feature_names) != tuple(self.feature_names["rules"]):
-            raise ValueError("Checkpoint rule feature order is incompatible with current rules")
+        if not isinstance(candidate, PlayerCandidateObservation):
+            raise TypeError("BreedingPredictor requires PlayerCandidateObservation")
+        arrays = candidate_arrays(candidate)
+        parent_names = candidate.parent_a.feature_names + tuple(
+            f"{name}.observed_mask" for name in candidate.parent_a.feature_names
+        )
+        rule_names = candidate.public_rules.feature_names + tuple(
+            f"{name}.observed_mask" for name in candidate.public_rules.feature_names
+        )
+        if parent_names != tuple(self.feature_names["parent"]):
+            raise ValueError("Checkpoint parent feature order is incompatible")
+        if rule_names != tuple(self.feature_names["rules"]):
+            raise ValueError("Checkpoint rule feature order is incompatible")
         context_array = (
-            self._context_from_rocks(parent_a, parent_b)
+            self._context_from_candidate(candidate)
             if context is None
             else np.asarray(context, dtype=np.float32)
         )
@@ -192,14 +207,15 @@ class BreedingPredictor:
             )
         with torch.no_grad():
             output = self.model(
-                torch.from_numpy(encoded_a.as_feature_vector().astype(np.float32)).unsqueeze(0).to(self.device),
-                torch.from_numpy(encoded_b.as_feature_vector().astype(np.float32)).unsqueeze(0).to(self.device),
-                torch.tensor(encoded_rules.feature_values, dtype=torch.float32, device=self.device).unsqueeze(0),
+                torch.from_numpy(arrays.parent_a_features).unsqueeze(0).to(self.device),
+                torch.from_numpy(arrays.parent_b_features).unsqueeze(0).to(self.device),
+                torch.from_numpy(arrays.rule_features).unsqueeze(0).to(self.device),
                 torch.from_numpy(context_array).unsqueeze(0).to(self.device),
             )
             full = output_to_prediction_tensor(output, self.layout, self.normalizer)[0].cpu().numpy()
         result: dict[str, Any] = {
-            "parent_ids": [parent_a.id, parent_b.id],
+            "parent_ids": list(candidate.canonical_parent_ids),
+            "candidate_hash": candidate.candidate_hash,
             "scalar_predictions": {
                 self.layout.target_names[index]: float(full[index]) for index in self.layout.scalar_indices
             },
@@ -221,3 +237,9 @@ class BreedingPredictor:
                 for name, index in zip(group.target_names, group.target_indices)
             }
         return result
+
+    def predict(self, *args, **kwargs):
+        raise TypeError(
+            "Player-safe predictor inference requires predict_candidate("
+            "PlayerCandidateObservation)"
+        )

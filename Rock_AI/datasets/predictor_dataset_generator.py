@@ -12,9 +12,10 @@ import Rock_Breeding.rock_breeding_helper as breeding
 import Rock_Genetics.rock_genetic_helper as genetics
 from Rock_AI.datasets.breeding_record_helper import EncodedBreedingRules
 from Rock_AI.datasets.predictor_example_helper import PredictorExample, PredictorTargetSchema
+from Rock_AI.datasets.pair_ranking_record_helper import FarmerObjectiveProfile
 from Rock_AI.evaluation.breeding_expectation_helper import BreedingExpectationEvaluator
 from Rock_AI.representations.encoding_schema_helper import EncodingSchema, get_default_encoding_schema
-from Rock_AI.representations.rock_encoder_helper import encode_rock
+from Rock_AI.representations.player_observation_adapter import PlayerObservationAdapter
 from Rock_AI.training.training_config_helper import TrainingDataConfig
 
 
@@ -68,6 +69,7 @@ class PredictorDatasetGenerator:
         self.expectation_evaluator = expectation_evaluator or BreedingExpectationEvaluator()
         self.target_schema = PredictorTargetSchema.build(config.value_thresholds, self.schema)
         self.rng = random.Random(config.seed)
+        self.player_adapter = PlayerObservationAdapter()
 
     def _sample_rules(self) -> EncodedBreedingRules:
         uniform = self.rng.uniform
@@ -120,8 +122,15 @@ class PredictorDatasetGenerator:
             seed=evaluation_seed,
             value_thresholds=self.config.value_thresholds,
         )
-        encoded_a = encode_rock(parent_a, self.schema)
-        encoded_b = encode_rock(parent_b, self.schema)
+        player_observation = self.player_adapter.build(
+            [parent_a, parent_b],
+            rules,
+            FarmerObjectiveProfile(),
+            remaining_breeding_actions=1,
+        )
+        if len(player_observation.candidates) != 1:
+            raise ValueError("Predictor parent pair did not produce one legal player candidate")
+        candidate = player_observation.candidates[0]
         uncertainty = {
             "expected_raw_clutch_size_standard_error": expectation.expected_raw_clutch_size.standard_error,
             "expected_survivor_count_standard_error": expectation.expected_survivor_count.standard_error,
@@ -141,17 +150,22 @@ class PredictorDatasetGenerator:
             "procedural_profile": profile,
             "game_rules_version": self.config.game_rules_version,
             "encoding_schema_version": self.schema.version,
+            "observation_schema_version": player_observation.schema_version,
+            "information_access": "player",
+            "player_feature_normalizer": self.player_adapter.normalizer.to_dict(),
+            "parent_feature_names": list(candidate.parent_a.feature_names)
+            + [f"{name}.observed_mask" for name in candidate.parent_a.feature_names],
             "rule_encoding": rules.to_dict(),
             "field_methods": dict(expectation.field_methods),
         }
         return PredictorExample.from_expectation(
-            encoded_a.as_feature_vector(),
-            encoded_b.as_feature_vector(),
-            np.asarray(rules.feature_values, dtype=np.float32),
+            np.asarray(candidate.parent_a.model_values(), dtype=np.float32),
+            np.asarray(candidate.parent_b.model_values(), dtype=np.float32),
+            np.asarray(candidate.public_rules.model_values(), dtype=np.float32),
             self._context(parent_a, parent_b),
             expectation,
             metadata,
-            self.schema.version,
+            player_observation.schema_version,
         )
 
     @staticmethod

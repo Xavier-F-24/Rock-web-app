@@ -332,6 +332,7 @@ class BreedingCampaignEnvironment(RockTrainingEnvironment):
             post_action_farm_metrics=pre_metrics,
             environment_seed=self.seed,
             agent_seed=agent_seed,
+            model_trace=copy.deepcopy(context.get("model_trace")),
         )
         self.state.decisions.append(record)
         self.state.decision_count += 1

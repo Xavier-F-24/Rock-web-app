@@ -71,6 +71,7 @@ def build_farm_rock_views(
     include_images: bool = True,
     image_renderer: Callable[..., str] | None = None,
     high_value_quantile: float = 0.85,
+    include_oracle_truth: bool = False,
 ) -> list[FarmRockView]:
     source = getattr(game, "rocks", {})
     rocks = list(source.values() if isinstance(source, dict) else source)
@@ -90,7 +91,7 @@ def build_farm_rock_views(
         genotype = tuple(
             f"{name}: {pair.allele_a.value}/{pair.allele_b.value}"
             for name, pair in sorted(_genes(rock).items())
-        )
+        ) if include_oracle_truth else ()
         status = getattr(getattr(rock, "status", None), "value", str(getattr(rock, "status", "")))
         sex = getattr(getattr(rock, "sex", None), "value", str(getattr(rock, "sex", "")))
         result.append(
@@ -110,7 +111,7 @@ def build_farm_rock_views(
                 selected_parent=str(rock.id) in selected,
                 newly_created=str(rock.id) in children,
                 mutated=str(rock.id) in mutations,
-                rare_trait=rock_has_rare_trait(rock),
+                rare_trait=rock_has_rare_trait(rock) if include_oracle_truth else False,
                 high_value=float(getattr(rock, "value", 0.0)) >= high_value_threshold,
             )
         )

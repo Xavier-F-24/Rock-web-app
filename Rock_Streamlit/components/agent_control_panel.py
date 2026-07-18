@@ -22,9 +22,22 @@ def _checkpoint_options(include_latest: bool):
     return discover_pair_ranker_checkpoints(REPOSITORY_ROOT, include_latest=include_latest)
 
 
+@st.cache_data(show_spinner=False)
+def _neat_options():
+    return tuple(sorted(
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in REPOSITORY_ROOT.glob(
+            "training_runs/neat*/champions/generation_*/network.json"
+        )
+    ))
+
+
 def render_session_configuration() -> dict:
     st.header("Agent Setup")
-    agent_type = st.selectbox("Agent", ("heuristic", "random", "neural", "oracle"), key="ai_obs_agent_type")
+    agent_type = st.selectbox(
+        "Agent", ("heuristic", "random", "neural", "neat", "oracle"),
+        key="ai_obs_agent_type",
+    )
     checkpoint = ""
     predictor_checkpoint = ""
     if agent_type == "neural":
@@ -67,11 +80,29 @@ def render_session_configuration() -> dict:
                 )
             else:
                 st.warning("No complete pair-ranker checkpoint bundles were found locally.")
+    elif agent_type == "neat":
+        options = _neat_options()
+        if options:
+            checkpoint = st.selectbox(
+                "Evolved NEAT champion",
+                options,
+                format_func=lambda value: value.replace("/network.json", "").replace("_", " "),
+                key="ai_obs_neat_checkpoint",
+            )
+            st.caption("Safe exported JSON champion. Training checkpoints are never loaded here.")
+        else:
+            st.warning("No exported NEAT champion networks were found locally.")
     farm_source = st.selectbox("Initial farm", ("Generated farm", "Current player game"), key="ai_obs_farm_source")
     objective_name = st.selectbox("Objective", tuple(DEFAULT_OBJECTIVE_PROFILES), key="ai_obs_objective")
     seed = st.number_input("Environment seed", min_value=0, value=1234, step=1, key="ai_obs_seed")
     max_generations = st.number_input("Maximum generations", 1, 50, 7, key="ai_obs_max_generations")
     max_pairs = st.number_input("Pairs per generation", 1, 10, 3, key="ai_obs_max_pairs")
+    show_hidden_truth = st.checkbox(
+        "Show hidden truth (developer)",
+        value=False,
+        key="ai_obs_show_hidden_truth",
+        help="Displays privileged genotype diagnostics. It never changes agent inputs.",
+    )
     with st.expander("Breeding rules"):
         defaults = EncodedBreedingRules()
         mutation = st.slider("Mutation chance", 0.0, 1.0, float(defaults.mutation_chance), 0.005, key="ai_obs_mutation")
@@ -88,6 +119,7 @@ def render_session_configuration() -> dict:
         "seed": int(seed),
         "max_generations": int(max_generations),
         "max_pairs": int(max_pairs),
+        "show_hidden_truth": bool(show_hidden_truth),
         "rules": {
             **asdict(EncodedBreedingRules()),
             "mutation_chance": mutation,

@@ -20,10 +20,10 @@ from Rock_AI.datasets.pair_ranking_record_helper import (
     PairRankingGroup,
 )
 from Rock_AI.evaluation.pair_evaluator import PairEvaluator
-from Rock_AI.models.pair_scoring_helper import pair_diversity_features, score_pair_evaluation
+from Rock_AI.models.pair_scoring_helper import score_pair_evaluation
 from Rock_AI.representations.encoding_schema_helper import EncodingSchema, get_default_encoding_schema
-from Rock_AI.representations.farm_encoder_helper import encode_farm
-from Rock_AI.representations.rock_encoder_helper import encode_rock
+from Rock_AI.representations.player_candidate_helper import candidate_arrays, candidate_model_input_hash
+from Rock_AI.representations.player_observation_adapter import PlayerObservationAdapter
 from Rock_AI.training.training_config_helper import PairRankingDataConfig
 
 
@@ -56,6 +56,7 @@ class PairRankingDatasetGenerator:
         self.schema = schema or get_default_encoding_schema()
         self.pair_evaluator = pair_evaluator or PairEvaluator()
         self.rng = random.Random(config.seed)
+        self.player_adapter = PlayerObservationAdapter()
         self.predictor = None
         if config.predictor_checkpoint:
             from Rock_AI.evaluation.predictor_evaluator import BreedingPredictor
@@ -107,10 +108,10 @@ class PairRankingDatasetGenerator:
         allele = self.rng.choice(tuple(sorted(genetics.GENE_SPECS[gene].options)))
         return FarmerObjectiveProfile(*values, preserved_gene=gene, preserved_allele=allele)
 
-    def _predictor_vector(self, parent_a, parent_b, rules) -> np.ndarray:
+    def _predictor_vector(self, candidate) -> np.ndarray:
         if self.predictor is None:
             return np.zeros(0, dtype=np.float32)
-        result = self.predictor.predict(parent_a, parent_b, rules)
+        result = self.predictor.predict_candidate(candidate)
         values = {}
         values.update(result["scalar_predictions"])
         values.update(result["binary_probability_predictions"])
@@ -132,9 +133,15 @@ class PairRankingDatasetGenerator:
         lookup = farm if hasattr(farm, "get_rock") else SyntheticFarm(rocks, f"lookup-{farm_index}")
         rules = rules or self._sample_rules()
         objective = objective or self._sample_objective(farm_index)
-        farm_encoded = encode_farm(
-            farm, max_rocks=max(len(rocks), self.config.maximum_rocks), game=lookup, overflow="error"
+        player_observation = self.player_adapter.build(
+            farm,
+            rules,
+            objective,
         )
+        player_candidates = {
+            frozenset(map(str, candidate.canonical_parent_ids)): candidate
+            for candidate in player_observation.candidates
+        }
         legal = []
         validator = breeding.BreedingMaster()
         for left in range(len(rocks)):
@@ -158,36 +165,41 @@ class PairRankingDatasetGenerator:
                 game=lookup,
             )
             scored = score_pair_evaluation(evaluation, objective)
-            allele_diversity, phenotype_diversity = pair_diversity_features(parent_a, parent_b)
-            relatedness, _ = validator.calculate_relatedness(lookup, parent_a, parent_b)
-            metadata_features = np.asarray(
-                (
-                    (parent_a.value + parent_b.value) / self.schema.value_scale,
-                    abs(parent_a.value - parent_b.value) / self.schema.value_scale,
-                    (parent_a.generation + parent_b.generation) / self.schema.generation_scale,
-                    abs(parent_a.generation - parent_b.generation) / self.schema.generation_scale,
-                    allele_diversity,
-                    phenotype_diversity,
-                    relatedness,
+            key = frozenset(map(str, (parent_a.id, parent_b.id)))
+            player_candidate = player_candidates[key]
+            arrays = candidate_arrays(player_candidate)
+            predictor_features = self._predictor_vector(player_candidate)
+            model_input_hash = candidate_model_input_hash(
+                player_candidate,
+                predictor_checkpoint_id=(
+                    getattr(self.predictor, "checkpoint_path", None)
+                    if self.predictor is not None else None
                 ),
-                dtype=np.float32,
+                predictor_feature_names=(
+                    tuple(self.predictor.layout.target_names)
+                    if self.predictor is not None else ()
+                ),
+                predictor_values=predictor_features,
             )
             rows.append(
                 PairRankingCandidate(
                     parent_ids=(parent_a.id, parent_b.id),
-                    parent_a_features=encode_rock(parent_a, self.schema).as_feature_vector().astype(np.float32),
-                    parent_b_features=encode_rock(parent_b, self.schema).as_feature_vector().astype(np.float32),
-                    rule_features=np.asarray(rules.feature_values, dtype=np.float32),
-                    farm_features=farm_encoded.global_farm_features.astype(np.float32),
-                    objective_features=np.asarray(objective.feature_values, dtype=np.float32),
-                    metadata_features=metadata_features,
-                    predictor_features=self._predictor_vector(parent_a, parent_b, rules),
+                    parent_a_features=arrays.parent_a_features,
+                    parent_b_features=arrays.parent_b_features,
+                    rule_features=arrays.rule_features,
+                    farm_features=arrays.farm_features,
+                    objective_features=arrays.objective_features,
+                    metadata_features=arrays.metadata_features,
+                    predictor_features=predictor_features,
                     utility_components=np.asarray(
                         [scored.raw_components[name] for name in UTILITY_COMPONENT_NAMES], dtype=np.float32
                     ),
                     utility_score=scored.score,
                     uncertainty=scored.uncertainty,
-                    metadata={"evaluation_seed": group_seed + index},
+                    metadata={
+                        "evaluation_seed": group_seed + index,
+                        "candidate_hash": model_input_hash,
+                    },
                 )
             )
         order = sorted(range(len(rows)), key=lambda i: (-rows[i].utility_score, tuple(map(str, rows[i].parent_ids))))
@@ -232,27 +244,48 @@ class PairRankingDatasetGenerator:
 
     def manifest(self) -> dict:
         predictor_width = 0 if self.predictor is None else len(self.predictor.layout.target_names)
+        rng_state = self.rng.getstate()
+        try:
+            sample_farm = self.create_procedural_farm(999_999)
+        finally:
+            self.rng.setstate(rng_state)
+        sample_rules = EncodedBreedingRules()
+        sample_objective = FarmerObjectiveProfile()
+        sample = self.player_adapter.build(
+            sample_farm, sample_rules, sample_objective
+        ).candidates[0]
+        arrays = candidate_arrays(sample)
+        with_masks = lambda vector: list(vector.feature_names) + [
+            f"{name}.observed_mask" for name in vector.feature_names
+        ]
         return {
-            "encoding_schema_version": self.schema.version,
+            "encoding_schema_version": player_observation_version(),
+            "observation_schema_version": player_observation_version(),
+            "information_access": "player",
+            "player_feature_normalizer": self.player_adapter.normalizer.to_dict(),
             "game_rules_version": self.config.game_rules_version,
             "config": self.config.to_dict(),
             "feature_names": {
-                "parent": list(self.schema.rock_matrix_feature_names),
-                "rules": list(EncodedBreedingRules().feature_names),
-                "farm": list(self.schema.farm_global_feature_names),
-                "objective": list(OBJECTIVE_FEATURE_NAMES),
-                "metadata": list(PAIR_METADATA_FEATURE_NAMES),
+                "parent": with_masks(sample.parent_a),
+                "rules": with_masks(sample.public_rules),
+                "farm": with_masks(sample.visible_farm),
+                "objective": with_masks(sample.objective),
+                "metadata": with_masks(sample.visible_pair_metadata),
                 "predictor": (
                     [] if self.predictor is None else list(self.predictor.layout.target_names)
                 ),
             },
             "utility_component_names": list(UTILITY_COMPONENT_NAMES),
             "dimensions": {
-                "parent": len(self.schema.rock_matrix_feature_names),
-                "rules": len(EncodedBreedingRules().feature_names),
-                "farm": len(self.schema.farm_global_feature_names),
-                "objective": len(OBJECTIVE_FEATURE_NAMES),
-                "metadata": len(PAIR_METADATA_FEATURE_NAMES),
+                "parent": len(arrays.parent_a_features),
+                "rules": len(arrays.rule_features),
+                "farm": len(arrays.farm_features),
+                "objective": len(arrays.objective_features),
+                "metadata": len(arrays.metadata_features),
                 "predictor": predictor_width,
             },
         }
+
+
+def player_observation_version() -> int:
+    return PlayerObservationAdapter().schema.version

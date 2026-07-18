@@ -30,6 +30,7 @@ class AgentDecisionRecord:
     environment_seed: int = 0
     agent_seed: int = 0
     error: str | None = None
+    model_trace: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

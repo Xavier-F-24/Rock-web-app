@@ -15,10 +15,17 @@ from Rock_AI.representations.encoding_schema_helper import EncodingSchema, get_d
 SCALAR_TARGET_NAMES = (
     "expected_raw_clutch_size",
     "expected_survivor_count",
+    "expected_dead_count",
+    "expected_craisened_count",
     "expected_average_surviving_child_value",
     "expected_maximum_surviving_child_value",
+    "expected_surviving_clutch_value",
+    "surviving_clutch_value_variance",
+    "lower_tail_surviving_clutch_value",
     "expected_mutation_count",
     "probability_at_least_one_mutation",
+    "probability_any_craisened_child",
+    "probability_zero_active_survivors",
     "genotype_diversity_estimate",
     "phenotype_diversity_estimate",
 )
@@ -82,11 +89,18 @@ class PredictorExample:
     schema_version: int
     expected_raw_clutch_size: float
     expected_survivor_count: float
+    expected_dead_count: float
+    expected_craisened_count: float
     expected_average_surviving_child_value: float
     expected_maximum_surviving_child_value: float
+    expected_surviving_clutch_value: float
+    surviving_clutch_value_variance: float
+    lower_tail_surviving_clutch_value: float
     surviving_value_threshold_probabilities: dict[str, float]
     expected_mutation_count: float
     probability_at_least_one_mutation: float
+    probability_any_craisened_child: float
+    probability_zero_active_survivors: float
     genotype_diversity_estimate: float
     phenotype_diversity_estimate: float
     per_gene_child_allele_pair_distributions: dict[str, dict[str, float]]
@@ -112,13 +126,20 @@ class PredictorExample:
             schema_version=int(schema_version),
             expected_raw_clutch_size=expectation.expected_raw_clutch_size.mean,
             expected_survivor_count=expectation.expected_survivor_count.mean,
+            expected_dead_count=expectation.expected_dead_count.mean,
+            expected_craisened_count=expectation.expected_craisened_count.mean,
             expected_average_surviving_child_value=expectation.expected_average_surviving_child_value.mean,
             expected_maximum_surviving_child_value=expectation.expected_maximum_surviving_child_value.mean,
+            expected_surviving_clutch_value=expectation.expected_surviving_clutch_value.mean,
+            surviving_clutch_value_variance=expectation.surviving_clutch_value_variance,
+            lower_tail_surviving_clutch_value=expectation.lower_tail_surviving_clutch_value,
             surviving_value_threshold_probabilities=dict(
                 expectation.surviving_value_threshold_probabilities
             ),
             expected_mutation_count=expectation.expected_mutations_per_child,
             probability_at_least_one_mutation=expectation.mutation_probability,
+            probability_any_craisened_child=expectation.probability_any_craisened_child,
+            probability_zero_active_survivors=expectation.probability_zero_active_survivors,
             genotype_diversity_estimate=expectation.genotype_diversity_estimate.mean,
             phenotype_diversity_estimate=expectation.phenotype_diversity_estimate.mean,
             per_gene_child_allele_pair_distributions={
@@ -133,10 +154,17 @@ class PredictorExample:
         values = [
             self.expected_raw_clutch_size,
             self.expected_survivor_count,
+            self.expected_dead_count,
+            self.expected_craisened_count,
             self.expected_average_surviving_child_value,
             self.expected_maximum_surviving_child_value,
+            self.expected_surviving_clutch_value,
+            self.surviving_clutch_value_variance,
+            self.lower_tail_surviving_clutch_value,
             self.expected_mutation_count,
             self.probability_at_least_one_mutation,
+            self.probability_any_craisened_child,
+            self.probability_zero_active_survivors,
             self.genotype_diversity_estimate,
             self.phenotype_diversity_estimate,
         ]

@@ -19,6 +19,12 @@ OBJECTIVE_FEATURE_NAMES = (
     "gene_preservation_weight",
     "risk_aversion_weight",
     "uncertainty_penalty_weight",
+    "mortality_penalty_weight",
+    "craisen_penalty_weight",
+    "zero_survivor_penalty_weight",
+    "relatedness_penalty_weight",
+    "aleatoric_risk_penalty_weight",
+    "epistemic_uncertainty_penalty_weight",
 )
 
 
@@ -34,6 +40,12 @@ class FarmerObjectiveProfile:
     gene_preservation_weight: float = 0.0
     risk_aversion_weight: float = 0.0
     uncertainty_penalty_weight: float = 0.0
+    mortality_penalty_weight: float = 1.0
+    craisen_penalty_weight: float = 2.0
+    zero_survivor_penalty_weight: float = 2.0
+    relatedness_penalty_weight: float = 0.25
+    aleatoric_risk_penalty_weight: float = 0.25
+    epistemic_uncertainty_penalty_weight: float = 0.10
     preserved_gene: str | None = None
     preserved_allele: int | None = None
 
@@ -101,4 +113,10 @@ UTILITY_COMPONENT_NAMES = (
     "mutation_opportunity",
     "gene_preservation",
     "uncertainty_penalty",
+    "mortality_penalty",
+    "craisen_penalty",
+    "zero_survivor_penalty",
+    "relatedness_penalty",
+    "aleatoric_risk_penalty",
+    "epistemic_uncertainty_penalty",
 )

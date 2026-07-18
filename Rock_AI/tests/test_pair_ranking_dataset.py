@@ -39,7 +39,7 @@ def test_dataset_is_deterministic_excludes_invalid_pairs_and_preserves_group_bou
     assert arrays["group_offsets"].tolist() == [0, 4]
     assert arrays["candidate_mask"].all()
     assert metadata[0]["parent_ids"]
-    assert manifest["dimensions"]["parent"] == 142
+    assert manifest["dimensions"]["parent"] == 322
 
 
 def test_different_seed_changes_generated_labels(tmp_path):

@@ -20,11 +20,10 @@ class FakePolicy:
         self.score = score
         self.include_invalid = include_invalid
 
-    def rank_legal_pairs(self, farm, rules, objective):
-        valid = next(
-            (pair for pair in ((1, 2), (1, 4), (3, 2), (3, 4)) if farm.breeding_master.validate_breeding_pair(farm.get_rock(pair[0]), farm.get_rock(pair[1]))["valid"]),
-            (1, 2),
-        )
+    latest_model_trace = None
+
+    def rank_observation(self, observation):
+        valid = observation.candidates[0].canonical_parent_ids
         rows = []
         if self.include_invalid:
             rows.append(RankedPairDecision((999, 1000), self.score + 100))

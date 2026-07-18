@@ -17,6 +17,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--predictor-checkpoint")
     parser.add_argument("--output", default="training_data/pair_ranker_v1")
+    parser.add_argument("--observation", choices=("player",), default="player")
     args = parser.parse_args()
     config = PairRankingDataConfig(
         number_of_farms=args.farms,
@@ -24,6 +25,7 @@ def main() -> None:
         seed=args.seed,
         predictor_checkpoint=args.predictor_checkpoint,
         output_directory=args.output,
+        observation_access=args.observation,
     )
     generator = PairRankingDatasetGenerator(config)
     groups = generator.generate()

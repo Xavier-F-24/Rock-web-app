@@ -3,3 +3,6 @@
 from .neural_pair_ranking_policy import NeuralPairRankingPolicy, PairRankingDecision
 
 __all__ = ["NeuralPairRankingPolicy", "PairRankingDecision"]
+from .neat_pair_ranking_policy import NeatPairRankingPolicy
+
+__all__ = ["NeatPairRankingPolicy"]

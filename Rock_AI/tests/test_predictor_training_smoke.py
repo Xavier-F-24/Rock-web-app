@@ -15,6 +15,10 @@ def test_small_training_reduces_loss_and_infers_from_real_rocks(tmp_path):
     dataset = Path(__file__).resolve().parents[2] / "training_data" / "breeding_predictor_smoke"
     if not (dataset / "manifest.json").exists():
         pytest.skip("Smoke dataset has not been generated")
+    import json
+    manifest = json.loads((dataset / "manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("information_access") != "player":
+        pytest.skip("Legacy privileged smoke dataset is intentionally incompatible with schema v2")
     config = PredictorTrainingConfig(
         dataset_path=str(dataset),
         output_directory=str(tmp_path / "run"),

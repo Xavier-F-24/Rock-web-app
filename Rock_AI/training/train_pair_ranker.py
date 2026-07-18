@@ -141,8 +141,16 @@ def save_pair_ranker_checkpoint(path: str | Path, **payload: Any) -> None:
 
 
 def load_pair_ranker_checkpoint(path: str | Path, map_location: str | torch.device = "cpu") -> dict:
-    checkpoint = torch.load(path, map_location=map_location, weights_only=False)
-    required = {"model_state_dict", "model_architecture_config", "feature_names", "normalization_statistics"}
+    checkpoint = torch.load(path, map_location=map_location, weights_only=True)
+    required = {
+        "model_state_dict",
+        "model_architecture_config",
+        "feature_names",
+        "normalization_statistics",
+        "information_access",
+        "observation_schema_version",
+        "player_feature_normalizer",
+    }
     missing = required - set(checkpoint)
     if missing:
         raise ValueError(f"Pair-ranker checkpoint is missing: {sorted(missing)}")
@@ -172,7 +180,11 @@ def train_pair_ranker(config: PairRankerTrainingConfig) -> dict[str, Any]:
     )
     model = PairRankerModel(model_config).to(device)
     if config.transferred_predictor_checkpoint:
-        checkpoint = torch.load(config.transferred_predictor_checkpoint, map_location=device, weights_only=False)
+        checkpoint = torch.load(
+            config.transferred_predictor_checkpoint,
+            map_location=device,
+            weights_only=True,
+        )
         if int(checkpoint.get("encoding_schema_version", -1)) != int(train_data.manifest["encoding_schema_version"]):
             raise ValueError("Transferred predictor encoding schema is incompatible")
         model.load_parent_encoder_from_predictor(checkpoint, config.freeze_transferred_parent_encoder)
@@ -223,6 +235,9 @@ def train_pair_ranker(config: PairRankerTrainingConfig) -> dict[str, Any]:
             training_configuration=config.to_dict(),
             training_seed=config.seed,
             metrics=metrics,
+            information_access=train_data.manifest["information_access"],
+            observation_schema_version=train_data.manifest["observation_schema_version"],
+            player_feature_normalizer=train_data.manifest["player_feature_normalizer"],
         )
 
     for epoch in range(start_epoch, config.number_of_epochs + 1):

@@ -27,6 +27,9 @@ def save_predictor_checkpoint(
     game_rules_version: str,
     training_seed: int,
     training_config: dict[str, Any],
+    information_access: str = "player",
+    observation_schema_version: int | None = None,
+    player_feature_normalizer: dict[str, Any] | None = None,
     metrics: dict[str, Any] | None = None,
 ) -> Path:
     checkpoint_path = Path(path)
@@ -63,6 +66,13 @@ def save_predictor_checkpoint(
         "training_seed": int(training_seed),
         "training_configuration": training_config,
         "metrics": metrics or {},
+        "information_access": information_access,
+        "observation_schema_version": int(
+            observation_schema_version
+            if observation_schema_version is not None
+            else encoding_schema_version
+        ),
+        "player_feature_normalizer": player_feature_normalizer,
     }
     torch.save(payload, checkpoint_path)
     return checkpoint_path
@@ -73,7 +83,7 @@ def load_predictor_checkpoint(
     *,
     map_location: str | torch.device = "cpu",
 ) -> dict[str, Any]:
-    checkpoint = torch.load(Path(path), map_location=map_location, weights_only=False)
+    checkpoint = torch.load(Path(path), map_location=map_location, weights_only=True)
     required = {
         "model_state_dict",
         "model_architecture_config",
@@ -81,6 +91,9 @@ def load_predictor_checkpoint(
         "feature_names",
         "normalization_statistics",
         "encoding_schema_version",
+        "information_access",
+        "observation_schema_version",
+        "player_feature_normalizer",
     }
     missing = required - set(checkpoint)
     if missing:

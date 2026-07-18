@@ -13,11 +13,13 @@ import streamlit as st
 from Rock_AI.agents.breeding_agent_helper import get_objective_profile
 from Rock_AI.agents.heuristic_breeding_agent import HeuristicBreedingAgent
 from Rock_AI.agents.neural_breeding_agent import NeuralBreedingAgent
+from Rock_AI.agents.neat_breeding_agent import NeatBreedingAgent
 from Rock_AI.agents.oracle_breeding_agent import OracleBreedingAgent
 from Rock_AI.agents.random_breeding_agent import RandomBreedingAgent
 from Rock_AI.environments.breeding_campaign_environment import BreedingCampaignConfig
 from Rock_AI.evaluation.breeding_agent_metrics import calculate_farm_metrics
 from Rock_AI.policies.neural_pair_ranking_policy import NeuralPairRankingPolicy
+from Rock_AI.policies.neat_pair_ranking_policy import NeatPairRankingPolicy
 from Rock_AI.runtime import (
     AgentRuntimeManager,
     PauseSessionCommand,
@@ -45,6 +47,8 @@ from Rock_Streamlit.components.farm_visualizer import render_farm
 from Rock_Streamlit.components.generation_summary_panel import render_generation_summaries
 from Rock_Streamlit.components.model_info_panel import render_model_info
 from Rock_Streamlit.components.mutation_event_panel import render_mutation_events
+from Rock_Streamlit.components.network_visualizer import render_network_trace
+from Rock_Streamlit.components.training_replay_panel import render_training_replay
 from Rock_Streamlit.components.observatory_state_helper import (
     auto_run_should_continue,
     control_states,
@@ -114,6 +118,8 @@ def _make_agent(settings: dict, objective):
         checkpoint_path = Path(__file__).resolve().parents[2] / checkpoint_path
     if not checkpoint_path.exists():
         raise ValueError(f"Checkpoint does not exist: {checkpoint_path}")
+    if agent_type == "neat":
+        return NeatBreedingAgent(NeatPairRankingPolicy.load(checkpoint_path), objective)
     predictor_checkpoint = settings.get("predictor_checkpoint")
     predictor_path = None
     if predictor_checkpoint:
@@ -218,7 +224,7 @@ def _render_sidebar_loaders(manager) -> None:
             path.unlink(missing_ok=True)
 
 
-def render() -> None:
+def _render_agent_session() -> None:
     manager = get_runtime_manager()
     with st.sidebar:
         settings = render_session_configuration()
@@ -228,8 +234,6 @@ def render() -> None:
     session_id = st.session_state.get(SESSION_ID_KEY)
     session = manager.sessions.get(session_id) if session_id else None
     replay_mode = bool(session and session.replay_controller is not None)
-    page_header("AI Breeding Observatory", "Watch, inspect, pause, save, and replay headless breeding agents.")
-
     controls = control_states(session.status if session else None, replay_mode=replay_mode)
     command_columns = st.columns(8)
     if command_columns[0].button("Start", disabled=not controls["start"], key="ai_obs_start"):
@@ -315,17 +319,23 @@ def render() -> None:
     event_ids = latest_event_rock_ids(session.event_history)
 
     with section("Current Farm", "Gallery and authoritative lineage views share the same runtime state."):
+        show_hidden_truth = bool(settings["show_hidden_truth"])
         summary_columns = st.columns(5)
         summary_columns[0].metric("Active Rocks", metrics["active_rock_count"])
         summary_columns[1].metric("Active Value", f"${metrics['final_active_rock_value']:.2f}")
         summary_columns[2].metric("Maximum Value", f"${metrics['final_maximum_rock_value']:.2f}")
-        summary_columns[3].metric("Genotype Diversity", f"{metrics['genotype_diversity']:.2f}")
-        summary_columns[4].metric("Rare Alleles", metrics["rare_trait_count"])
+        if show_hidden_truth:
+            summary_columns[3].metric("Privileged genotype diversity", f"{metrics['genotype_diversity']:.2f}")
+            summary_columns[4].metric("Privileged rare alleles", metrics["rare_trait_count"])
+        else:
+            summary_columns[3].metric("Average Value", f"${metrics['average_rock_value']:.2f}")
+            summary_columns[4].metric("Surviving Offspring", metrics["surviving_offspring"])
         render_farm(
             game,
             selected_ids=selected_ids,
             child_ids=event_ids["children"],
             mutation_ids=event_ids["mutations"],
+            show_hidden_truth=show_hidden_truth,
         )
 
     with section("Current Decision"):
@@ -378,3 +388,42 @@ def render() -> None:
         time.sleep(float(speed["delay"]))
         _apply(manager, session.session_id, StepSessionCommand())
         st.rerun()
+
+
+def render() -> None:
+    page_header(
+        "AI Breeding Observatory",
+        "Watch player-like agents decide, inspect safe network signals, and replay evolution.",
+    )
+    session_tab, network_tab, training_tab = st.tabs(
+        ("Agent Session", "Network", "Training Replay")
+    )
+    with session_tab:
+        _render_agent_session()
+    with network_tab:
+        manager = get_runtime_manager()
+        session_id = st.session_state.get(SESSION_ID_KEY)
+        session = manager.sessions.get(session_id) if session_id else None
+        if session is None:
+            st.info("Start or load an agent session to inspect its latest network trace.")
+        else:
+            decision = (
+                session.environment.state.decisions[-1]
+                if session.environment.state and session.environment.state.decisions
+                else None
+            )
+            trace = decision.model_trace if decision is not None else None
+            render_network_trace(trace)
+            if trace:
+                with st.expander("Certified trace metadata"):
+                    st.json({
+                        "model_type": trace.get("model_type"),
+                        "checkpoint_id": trace.get("checkpoint_id"),
+                        "topology_id": trace.get("topology_id"),
+                        "observation_schema_version": trace.get("observation_schema_version"),
+                        "normalizer_version": trace.get("normalizer_version"),
+                        "observation_hash": trace.get("observation_hash"),
+                        "trace_semantics": trace.get("trace_semantics"),
+                    })
+    with training_tab:
+        render_training_replay()

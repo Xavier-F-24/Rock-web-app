@@ -134,6 +134,7 @@ class PairRankingDataConfig:
     test_fraction: float = 0.15
     retain_single_candidate_farms: bool = False
     game_rules_version: str = "rock-game-breeding-v1"
+    observation_access: str = "player"
 
     def __post_init__(self) -> None:
         if self.number_of_farms <= 0 or self.trials_per_pair <= 0:
@@ -145,6 +146,8 @@ class PairRankingDataConfig:
         for low, high in (self.mutation_chance_range, self.death_chance_range):
             if not 0.0 <= low <= high <= 1.0:
                 raise ValueError("probability ranges must be ordered within [0, 1]")
+        if self.observation_access != "player":
+            raise ValueError("Gameplay pair-ranking datasets must use player observations")
 
     @property
     def output_path(self) -> Path:

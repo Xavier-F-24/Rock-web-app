@@ -19,6 +19,7 @@ from Rock_AI.agents.breeding_agent_helper import (
 )
 from Rock_AI.agents.heuristic_breeding_agent import HeuristicBreedingAgent
 from Rock_AI.agents.neural_breeding_agent import NeuralBreedingAgent
+from Rock_AI.agents.neat_breeding_agent import NeatBreedingAgent
 from Rock_AI.agents.oracle_breeding_agent import OracleBreedingAgent
 from Rock_AI.agents.random_breeding_agent import RandomBreedingAgent
 from Rock_AI.datasets.breeding_record_helper import EncodedBreedingRules
@@ -42,6 +43,7 @@ from Rock_AI.logging.agent_decision_record import AgentDecisionRecord
 from Rock_AI.logging.episode_record import EpisodeRecord
 from Rock_AI.logging.episode_storage_helper import load_episode_records
 from Rock_AI.policies.neural_pair_ranking_policy import NeuralPairRankingPolicy
+from Rock_AI.policies.neat_pair_ranking_policy import NeatPairRankingPolicy
 from Rock_AI.replay.episode_replay_helper import EpisodeReplay
 
 from .agent_session_helper import AgentSession
@@ -177,6 +179,16 @@ class AgentRuntimeManager:
         policy = getattr(agent, "policy", None)
         if policy is None:
             return {}
+        artifact = getattr(policy, "artifact", None)
+        if artifact is not None:
+            return {
+                "neat_network_artifact_path": getattr(policy, "checkpoint_id", None),
+                "information_access": artifact.information_access,
+                "observation_schema_version": artifact.observation_schema_version,
+                "normalizer_version": artifact.normalizer_version,
+                "topology_id": artifact.topology_id,
+                "model_type": "neat_pair_ranker",
+            }
         checkpoint = getattr(policy, "checkpoint", {})
         return {
             "ranker_checkpoint_path": getattr(policy, "checkpoint_path", None),
@@ -857,6 +869,19 @@ class AgentRuntimeManager:
                 predictor_checkpoint=metadata.get("predictor_checkpoint_path"),
             )
             return NeuralBreedingAgent(
+                policy,
+                objective,
+                utility_threshold=config.get("utility_threshold"),
+                confidence_threshold=config.get("confidence_threshold"),
+                temperature=float(config.get("temperature", 0.0)),
+                agent_id=config["agent_id"],
+            )
+        if agent_type == "NeatBreedingAgent":
+            artifact_path = metadata.get("neat_network_artifact_path")
+            if not artifact_path:
+                raise ValueError("NEAT session save has no safe network artifact path")
+            policy = NeatPairRankingPolicy.load(artifact_path)
+            return NeatBreedingAgent(
                 policy,
                 objective,
                 utility_threshold=config.get("utility_threshold"),

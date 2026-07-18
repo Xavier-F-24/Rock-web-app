@@ -131,6 +131,31 @@ class BreedingExpectationEvaluator:
         )
         expected_clutch = _estimate(record.clutch_size for record in records)
         expected_survivors = _estimate(record.survivor_count for record in records)
+        expected_dead = _estimate(
+            sum(status == genetics.RockStatus.DEAD.value for status in record.child_statuses)
+            for record in records
+        )
+        expected_craisened = _estimate(
+            sum(
+                status == genetics.RockStatus.CRAISENED.value
+                for status in record.child_statuses
+            )
+            for record in records
+        )
+        surviving_clutch_values = [
+            float(sum(values)) for values in surviving_values_by_trial
+        ]
+        expected_surviving_clutch_value = _estimate(surviving_clutch_values)
+        surviving_variance = (
+            statistics.pvariance(surviving_clutch_values)
+            if len(surviving_clutch_values) > 1
+            else 0.0
+        )
+        ordered_surviving_values = sorted(surviving_clutch_values)
+        lower_tail_count = max(1, math.ceil(len(ordered_surviving_values) * 0.10))
+        lower_tail_value = statistics.mean(
+            ordered_surviving_values[:lower_tail_count]
+        )
         genotype_diversity = _estimate(
             self._trial_diversity(record.child_genotypes, _genotype_signature)
             for record in records
@@ -153,6 +178,9 @@ class BreedingExpectationEvaluator:
             "expected_maximum_surviving_child_value": expected_maximum_surviving,
             "expected_raw_clutch_size": expected_clutch,
             "expected_survivor_count": expected_survivors,
+            "expected_dead_count": expected_dead,
+            "expected_craisened_count": expected_craisened,
+            "expected_surviving_clutch_value": expected_surviving_clutch_value,
             "genotype_diversity_estimate": genotype_diversity,
             "phenotype_diversity_estimate": phenotype_diversity,
         }
@@ -175,6 +203,22 @@ class BreedingExpectationEvaluator:
             expected_maximum_surviving_child_value=expected_maximum_surviving,
             expected_raw_clutch_size=expected_clutch,
             expected_survivor_count=expected_survivors,
+            expected_dead_count=expected_dead,
+            expected_craisened_count=expected_craisened,
+            probability_any_craisened_child=(
+                sum(
+                    genetics.RockStatus.CRAISENED.value in record.child_statuses
+                    for record in records
+                )
+                / trial_count
+            ),
+            probability_zero_active_survivors=(
+                sum(record.survivor_count == 0 for record in records)
+                / trial_count
+            ),
+            expected_surviving_clutch_value=expected_surviving_clutch_value,
+            surviving_clutch_value_variance=float(surviving_variance),
+            lower_tail_surviving_clutch_value=float(lower_tail_value),
             mutation_probability=mutation_probability,
             expected_mutations_per_child=expected_mutations,
             surviving_value_threshold_probabilities=threshold_probabilities,
@@ -200,6 +244,13 @@ class BreedingExpectationEvaluator:
                 "expected_maximum_surviving_child_value": "monte_carlo_real_breeding_engine",
                 "expected_raw_clutch_size": "monte_carlo_real_breeding_engine",
                 "expected_survivor_count": "monte_carlo_real_breeding_engine",
+                "expected_dead_count": "monte_carlo_real_breeding_engine",
+                "expected_craisened_count": "monte_carlo_real_breeding_engine",
+                "probability_any_craisened_child": "monte_carlo_real_breeding_engine",
+                "probability_zero_active_survivors": "monte_carlo_real_breeding_engine",
+                "expected_surviving_clutch_value": "monte_carlo_real_breeding_engine",
+                "surviving_clutch_value_variance": "monte_carlo_real_breeding_engine",
+                "lower_tail_surviving_clutch_value": "monte_carlo_real_breeding_engine",
                 "mutation_probability": "analytical",
                 "expected_mutations_per_child": "analytical",
                 "surviving_value_threshold_probabilities": "monte_carlo_real_breeding_engine",

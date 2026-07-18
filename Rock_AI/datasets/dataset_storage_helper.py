@@ -169,8 +169,14 @@ def save_predictor_dataset(
         np.savez_compressed(
             npz_path,
             **arrays,
-            parent_feature_names=np.asarray(schema.rock_matrix_feature_names),
-            rule_feature_names=np.asarray(tuple(first.metadata["rule_encoding"])),
+            parent_feature_names=np.asarray(first.metadata["parent_feature_names"]),
+            rule_feature_names=np.asarray(
+                list(first.metadata["rule_encoding"])
+                + [
+                    f"{name}.observed_mask"
+                    for name in first.metadata["rule_encoding"]
+                ]
+            ),
             context_feature_names=np.asarray(context_feature_names, dtype=str),
             target_names=np.asarray(target_schema.target_names),
         )
@@ -184,8 +190,11 @@ def save_predictor_dataset(
 
     report = validate_predictor_dataset(splits, target_schema)
     manifest = {
-        "dataset_version": 1,
-        "encoding_schema_version": schema.version,
+        "dataset_version": 2,
+        "encoding_schema_version": int(first.metadata["observation_schema_version"]),
+        "observation_schema_version": int(first.metadata["observation_schema_version"]),
+        "information_access": "player",
+        "player_feature_normalizer": first.metadata["player_feature_normalizer"],
         "game_rules_version": config.game_rules_version,
         "config": config.to_dict(),
         "encoding_schema": {
@@ -199,8 +208,12 @@ def save_predictor_dataset(
                 for gene_name, values in schema.phenotype_values.items()
             },
         },
-        "parent_feature_names": list(schema.rock_matrix_feature_names),
-        "rule_feature_names": list(first.metadata["rule_encoding"]),
+        "parent_feature_names": list(first.metadata["parent_feature_names"]),
+        "rule_feature_names": list(first.metadata["rule_encoding"])
+        + [
+            f"{name}.observed_mask"
+            for name in first.metadata["rule_encoding"]
+        ],
         "context_feature_names": list(context_feature_names),
         "target_names": list(target_schema.target_names),
         "validation_report": report,

@@ -1,0 +1,58 @@
+"""Plotly network and activation display for safe model traces."""
+
+from __future__ import annotations
+
+import math
+
+import plotly.graph_objects as go
+import streamlit as st
+
+from Rock_AI.visualization.network_visualization_helper import model_trace_graph
+
+
+def _positions(nodes):
+    count = max(1, len(nodes))
+    return {
+        node["id"]: (
+            math.cos(2 * math.pi * index / count),
+            math.sin(2 * math.pi * index / count),
+        )
+        for index, node in enumerate(nodes)
+    }
+
+
+def render_network_trace(trace, *, maximum_edges: int = 30) -> None:
+    graph = model_trace_graph(trace, maximum_edges)
+    if not graph["nodes"]:
+        st.info("Run one agent decision to capture a network activation trace.")
+        return
+    positions = _positions(graph["nodes"])
+    figure = go.Figure()
+    for edge in graph["edges"]:
+        source, target = str(edge["source_id"]), str(edge["target_id"])
+        if source not in positions or target not in positions:
+            continue
+        signal = float(edge.get("local_signal", 0.0))
+        figure.add_trace(go.Scatter(
+            x=[positions[source][0], positions[target][0]],
+            y=[positions[source][1], positions[target][1]],
+            mode="lines",
+            line={"color": "#2b6cb0" if signal >= 0 else "#c53030", "width": 1 + min(6, abs(signal))},
+            hovertext=f"Local edge signal: {signal:.4f}",
+            hoverinfo="text",
+            showlegend=False,
+        ))
+    activations = [node["activation"] for node in graph["nodes"]]
+    figure.add_trace(go.Scatter(
+        x=[positions[node["id"]][0] for node in graph["nodes"]],
+        y=[positions[node["id"]][1] for node in graph["nodes"]],
+        mode="markers",
+        marker={"size": 13, "color": activations, "colorscale": "RdBu", "cmid": 0, "showscale": True},
+        text=[node["label"] for node in graph["nodes"]],
+        customdata=activations,
+        hovertemplate="%{text}<br>Activation %{customdata:.4f}<extra></extra>",
+        showlegend=False,
+    ))
+    figure.update_layout(height=600, margin=dict(l=10, r=10, t=20, b=10), xaxis_visible=False, yaxis_visible=False)
+    st.plotly_chart(figure, width="stretch")
+    st.caption("Connection color and width show signed local edge signals, not causal explanations.")

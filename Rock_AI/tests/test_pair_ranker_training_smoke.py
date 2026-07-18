@@ -29,7 +29,10 @@ def test_smoke_training_checkpoint_and_evaluation(tmp_path):
     groups = [_group(index) for index in range(12)]
     splits = {"train": groups[:8], "validation": groups[8:10], "test": groups[10:]}
     manifest = {
-        "encoding_schema_version": 1,
+        "encoding_schema_version": 2,
+        "information_access": "player",
+        "observation_schema_version": 2,
+        "player_feature_normalizer": {"version": 1},
         "game_rules_version": "test",
         "feature_names": {"parent": [f"p{i}" for i in range(6)], "rules": ["r0", "r1"], "farm": ["f0", "f1"], "objective": [f"o{i}" for i in range(10)], "metadata": ["m0"], "predictor": []},
         "utility_component_names": [f"u{i}" for i in range(9)],

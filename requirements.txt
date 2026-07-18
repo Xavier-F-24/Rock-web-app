@@ -2,3 +2,5 @@ streamlit
 numpy
 matplotlib
 plotly
+torch==2.13.0
+neat-python==2.0.0

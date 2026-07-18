@@ -8,7 +8,10 @@ from Rock_AI.visualization.farm_render_adapter import build_farm_rock_views
 from Rock_AI.visualization.lineage_render_adapter import build_lineage_figure
 
 
-def render_farm(game, *, selected_ids=(), child_ids=(), mutation_ids=()) -> None:
+def render_farm(
+    game, *, selected_ids=(), child_ids=(), mutation_ids=(),
+    show_hidden_truth: bool = False,
+) -> None:
     gallery_tab, lineage_tab = st.tabs(("Gallery", "Lineage"))
     with gallery_tab:
         views = build_farm_rock_views(
@@ -16,6 +19,7 @@ def render_farm(game, *, selected_ids=(), child_ids=(), mutation_ids=()) -> None
             selected_parent_ids=selected_ids,
             new_child_ids=child_ids,
             mutation_rock_ids=mutation_ids,
+            include_oracle_truth=show_hidden_truth,
         )
         columns_per_row = 4
         for start in range(0, len(views), columns_per_row):
@@ -47,11 +51,17 @@ def render_farm(game, *, selected_ids=(), child_ids=(), mutation_ids=()) -> None
                             st.caption(" | ".join(labels))
                         trait_text = ", ".join(f"{name}: {value}" for name, value in rock.phenotype_traits[:6])
                         st.caption(trait_text)
-                        with st.expander("Genotype"):
-                            st.write("\n".join(rock.genotype_summary))
+                        if show_hidden_truth:
+                            with st.expander("Privileged genotype truth"):
+                                st.warning("Developer-only ORACLE_TRUTH. The agent cannot observe this.")
+                                st.write("\n".join(rock.genotype_summary))
     with lineage_tab:
         try:
-            rare_ids = tuple(view.rock_id for view in build_farm_rock_views(game, include_images=False) if view.rare_trait)
+            rare_ids = tuple(
+                view.rock_id for view in build_farm_rock_views(
+                    game, include_images=False, include_oracle_truth=show_hidden_truth
+                ) if view.rare_trait
+            )
             figure = build_lineage_figure(
                 game,
                 selected_parent_ids=selected_ids,

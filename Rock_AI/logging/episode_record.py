@@ -29,3 +29,15 @@ class EpisodeRecord:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def episode_record_from_dict(data: dict[str, Any]) -> EpisodeRecord:
+    values = dict(data)
+    decisions = []
+    for row in values.get("decisions", []):
+        decision = dict(row)
+        if decision.get("selected_parent_ids") is not None:
+            decision["selected_parent_ids"] = tuple(decision["selected_parent_ids"])
+        decisions.append(AgentDecisionRecord(**decision))
+    values["decisions"] = decisions
+    return EpisodeRecord(**values)

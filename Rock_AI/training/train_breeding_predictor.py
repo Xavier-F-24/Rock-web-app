@@ -162,6 +162,9 @@ def train_breeding_predictor(config: PredictorTrainingConfig) -> dict[str, Any]:
             training_seed=config.seed,
             training_config=config.to_dict(),
             metrics=metrics,
+            information_access=str(manifest["information_access"]),
+            observation_schema_version=int(manifest["observation_schema_version"]),
+            player_feature_normalizer=manifest["player_feature_normalizer"],
         )
 
     for epoch in range(start_epoch, config.number_of_epochs + 1):
