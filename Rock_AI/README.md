@@ -1,3 +1,4 @@
+
 # Rock AI
 
 The gameplay agents use a strict player-visible observation contract. Hidden genotypes and death genes are available only to oracle label generation, evaluation, and the Observatory's explicitly labeled developer display.
@@ -40,7 +41,6 @@ The network display is diagnostic telemetry, not hidden model reasoning. Local e
 python -m pytest Rock_AI/tests tests
 ```
 # Recurrent NEAT Farmers
-
 The breeding AI includes a strict player-information recurrent NEAT path. It
 scores every legal pair from the same memory snapshot, commits memory only for
 the selected pair, and exports JSON/NPZ artifacts that the AI Observatory can
