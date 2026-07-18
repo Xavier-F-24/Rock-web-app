@@ -66,6 +66,7 @@ class CampaignObservation:
     queued_pair_ids: tuple[tuple[int | str, int | str], ...]
     farm_summary: dict[str, float | int]
     prior_actions: tuple[dict[str, Any], ...] = ()
+    prior_decision_summaries: tuple[dict[str, Any], ...] = ()
 
 
 DEFAULT_OBJECTIVE_PROFILES = {

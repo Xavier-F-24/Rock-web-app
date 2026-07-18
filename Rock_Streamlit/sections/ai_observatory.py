@@ -14,12 +14,14 @@ from Rock_AI.agents.breeding_agent_helper import get_objective_profile
 from Rock_AI.agents.heuristic_breeding_agent import HeuristicBreedingAgent
 from Rock_AI.agents.neural_breeding_agent import NeuralBreedingAgent
 from Rock_AI.agents.neat_breeding_agent import NeatBreedingAgent
+from Rock_AI.agents.recurrent_neat_breeding_agent import RecurrentNeatBreedingAgent
 from Rock_AI.agents.oracle_breeding_agent import OracleBreedingAgent
 from Rock_AI.agents.random_breeding_agent import RandomBreedingAgent
 from Rock_AI.environments.breeding_campaign_environment import BreedingCampaignConfig
 from Rock_AI.evaluation.breeding_agent_metrics import calculate_farm_metrics
 from Rock_AI.policies.neural_pair_ranking_policy import NeuralPairRankingPolicy
 from Rock_AI.policies.neat_pair_ranking_policy import NeatPairRankingPolicy
+from Rock_AI.policies.recurrent_neat_pair_ranking_policy import RecurrentNeatPairRankingPolicy
 from Rock_AI.runtime import (
     AgentRuntimeManager,
     PauseSessionCommand,
@@ -120,6 +122,10 @@ def _make_agent(settings: dict, objective):
         raise ValueError(f"Checkpoint does not exist: {checkpoint_path}")
     if agent_type == "neat":
         return NeatBreedingAgent(NeatPairRankingPolicy.load(checkpoint_path), objective)
+    if agent_type == "recurrent_neat":
+        return RecurrentNeatBreedingAgent(
+            RecurrentNeatPairRankingPolicy.load(checkpoint_path), objective
+        )
     predictor_checkpoint = settings.get("predictor_checkpoint")
     predictor_path = None
     if predictor_checkpoint:

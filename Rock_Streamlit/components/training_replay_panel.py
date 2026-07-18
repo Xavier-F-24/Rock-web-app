@@ -14,7 +14,7 @@ from Rock_AI.logging.episode_record import episode_record_from_dict
 from Rock_AI.replay.episode_replay_helper import EpisodeReplay
 from Rock_Serialization.rock_serialization_helper import game_from_dict
 from Rock_Streamlit.components.farm_visualizer import render_farm
-from Rock_Streamlit.components.network_visualizer import render_network_trace
+from Rock_Streamlit.components.network_visualizer import render_network_trace, render_recurrent_topology
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def discover_training_runs():
     return tuple(sorted(
         path.parent.relative_to(ROOT).as_posix()
-        for path in ROOT.glob("training_runs/neat*/run_manifest.json")
+        for path in ROOT.glob("training_runs/*neat*/run_manifest.json")
     ))
 
 
@@ -57,7 +57,13 @@ def render_training_replay() -> None:
         showcase = json.loads(stream.readline())
     decisions = showcase.get("episode", {}).get("decisions", [])
     if not decisions:
-        st.info("This champion's fixed showcase ended before a breeding decision.")
+        st.info("This champion export has no campaign decision replay yet; showing its evolved recurrent topology.")
+        render_recurrent_topology(network)
+        memory_path = directory / "memory_trace.npz"
+        if memory_path.exists():
+            memory = np.load(memory_path, allow_pickle=False)
+            with st.expander("Showcase memory trace"):
+                st.json({name: memory[name].tolist() for name in memory.files})
         return
     cursor = st.slider(
         "Showcase decision", 1, len(decisions), 1,

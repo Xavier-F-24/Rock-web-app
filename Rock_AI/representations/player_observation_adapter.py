@@ -28,6 +28,7 @@ from .player_observation_helper import (
     TruthDisplayRecord,
     phenotype_categories,
 )
+from Rock_AI.neat.neat_state_helper import RecurrentDecisionObservation, TEMPORAL_FEATURE_NAMES
 
 
 def _definitions(names: Iterable[str]) -> tuple[FeatureDefinition, ...]:
@@ -384,6 +385,39 @@ class PlayerObservationAdapter:
             candidates=tuple(candidates),
             observation_hash=_stable_hash(observation_payload),
         )
+
+    def build_recurrent(self, campaign_observation: object) -> RecurrentDecisionObservation:
+        """Build player-safe current and temporal inputs from campaign history."""
+        required = ("farm", "breeding_rules", "objective_profile", "generation")
+        if any(not hasattr(campaign_observation, name) for name in required):
+            raise TypeError("build_recurrent requires a CampaignObservation-like object")
+        player = self.build(
+            campaign_observation.farm,
+            campaign_observation.breeding_rules,
+            campaign_observation.objective_profile,
+            remaining_breeding_actions=campaign_observation.remaining_breeding_actions,
+        )
+        history = tuple(getattr(campaign_observation, "prior_decision_summaries", ()))
+        previous = history[-1] if history else {}
+        generation = int(campaign_observation.generation)
+        prior_in_generation = sum(int(row.get("generation", -1)) == generation for row in history)
+        raw = (
+            float(getattr(campaign_observation, "prior_decision_count", 0)), float(generation),
+            float(prior_in_generation), float(previous.get("farm_value_change", 0.0)),
+            float(previous.get("visible_diversity_change", 0.0)), float(previous.get("active_children", 0.0)),
+            float(previous.get("dead_children", 0.0)), float(previous.get("craisened_children", 0.0)),
+            float(bool(previous.get("mutation_observed", False))), float(previous.get("selected_score", 0.0)),
+            float(previous.get("action_type") == "stop_generation"),
+        )
+        bounds = (
+            (0.0, 100.0), (0.0, 20.0), (0.0, 10.0), (-500.0, 500.0), (-1.0, 1.0),
+            (0.0, 20.0), (0.0, 20.0), (0.0, 20.0), (0.0, 1.0), (-30.0, 30.0), (0.0, 1.0),
+        )
+        present = bool(history)
+        masks = (True, True, True) + (present,) * 8
+        values = tuple((value - low) / (high - low) if visible else 0.0 for value, (low, high), visible in zip(raw, bounds, masks))
+        temporal = PlayerFeatureVector(values, masks, _definitions(TEMPORAL_FEATURE_NAMES))
+        return RecurrentDecisionObservation(player, temporal)
 
     @staticmethod
     def truth_display(rock: genetics.Rock) -> TruthDisplayRecord:

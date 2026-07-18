@@ -39,3 +39,17 @@ The network display is diagnostic telemetry, not hidden model reasoning. Local e
 ```powershell
 python -m pytest Rock_AI/tests tests
 ```
+# Recurrent NEAT Farmers
+
+The breeding AI includes a strict player-information recurrent NEAT path. It
+scores every legal pair from the same memory snapshot, commits memory only for
+the selected pair, and exports JSON/NPZ artifacts that the AI Observatory can
+load without unpickling training checkpoints.
+
+```powershell
+python -m Rock_AI.scripts.train_recurrent_neat_farmer --dataset training_data/player_pair_ranker_impl_smoke --output training_runs/recurrent_neat_smoke --population 100 --generations 10 --seed 1234
+```
+
+NEAT training checkpoints under `checkpoints/` are trusted CLI artifacts only.
+The app loads champion `network.json` files. Recurrent state is reset between
+independent episodes and is included in runtime session saves.

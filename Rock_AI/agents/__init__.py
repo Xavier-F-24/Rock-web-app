@@ -37,3 +37,4 @@ def __getattr__(name: str):
 from .neat_breeding_agent import NeatBreedingAgent
 
 __all__ = ["NeatBreedingAgent"]
+from .recurrent_neat_breeding_agent import RecurrentNeatBreedingAgent

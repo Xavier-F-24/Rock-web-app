@@ -32,10 +32,20 @@ def _neat_options():
     ))
 
 
+@st.cache_data(show_spinner=False)
+def _recurrent_neat_options():
+    return tuple(sorted(
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in REPOSITORY_ROOT.glob(
+            "training_runs/recurrent_neat*/champions/generation_*/network.json"
+        )
+    ))
+
+
 def render_session_configuration() -> dict:
     st.header("Agent Setup")
     agent_type = st.selectbox(
-        "Agent", ("heuristic", "random", "neural", "neat", "oracle"),
+        "Agent", ("heuristic", "random", "neural", "neat", "recurrent_neat", "oracle"),
         key="ai_obs_agent_type",
     )
     checkpoint = ""
@@ -92,6 +102,17 @@ def render_session_configuration() -> dict:
             st.caption("Safe exported JSON champion. Training checkpoints are never loaded here.")
         else:
             st.warning("No exported NEAT champion networks were found locally.")
+    elif agent_type == "recurrent_neat":
+        options = _recurrent_neat_options()
+        if options:
+            checkpoint = st.selectbox(
+                "Recurrent NEAT champion", options,
+                format_func=lambda value: value.replace("/network.json", "").replace("_", " "),
+                key="ai_obs_recurrent_neat_checkpoint",
+            )
+            st.caption("Open-topology recurrent champion with persistent episode memory.")
+        else:
+            st.warning("No exported recurrent NEAT champions were found locally.")
     farm_source = st.selectbox("Initial farm", ("Generated farm", "Current player game"), key="ai_obs_farm_source")
     objective_name = st.selectbox("Objective", tuple(DEFAULT_OBJECTIVE_PROFILES), key="ai_obs_objective")
     seed = st.number_input("Environment seed", min_value=0, value=1234, step=1, key="ai_obs_seed")

@@ -20,6 +20,7 @@ from Rock_AI.agents.breeding_agent_helper import (
 from Rock_AI.agents.heuristic_breeding_agent import HeuristicBreedingAgent
 from Rock_AI.agents.neural_breeding_agent import NeuralBreedingAgent
 from Rock_AI.agents.neat_breeding_agent import NeatBreedingAgent
+from Rock_AI.agents.recurrent_neat_breeding_agent import RecurrentNeatBreedingAgent
 from Rock_AI.agents.oracle_breeding_agent import OracleBreedingAgent
 from Rock_AI.agents.random_breeding_agent import RandomBreedingAgent
 from Rock_AI.datasets.breeding_record_helper import EncodedBreedingRules
@@ -43,6 +44,7 @@ from Rock_AI.logging.agent_decision_record import AgentDecisionRecord
 from Rock_AI.logging.episode_record import EpisodeRecord
 from Rock_AI.logging.episode_storage_helper import load_episode_records
 from Rock_AI.policies.neural_pair_ranking_policy import NeuralPairRankingPolicy
+from Rock_AI.policies.recurrent_neat_pair_ranking_policy import RecurrentNeatPairRankingPolicy
 from Rock_AI.policies.neat_pair_ranking_policy import NeatPairRankingPolicy
 from Rock_AI.replay.episode_replay_helper import EpisodeReplay
 
@@ -181,14 +183,17 @@ class AgentRuntimeManager:
             return {}
         artifact = getattr(policy, "artifact", None)
         if artifact is not None:
-            return {
+            metadata = {
                 "neat_network_artifact_path": getattr(policy, "checkpoint_id", None),
                 "information_access": artifact.information_access,
                 "observation_schema_version": artifact.observation_schema_version,
                 "normalizer_version": artifact.normalizer_version,
                 "topology_id": artifact.topology_id,
-                "model_type": "neat_pair_ranker",
+                "model_type": "recurrent_neat_pair_ranker" if isinstance(agent, RecurrentNeatBreedingAgent) else "neat_pair_ranker",
             }
+            if isinstance(agent, RecurrentNeatBreedingAgent):
+                metadata["recurrent_neat_network_artifact_path"] = getattr(policy, "checkpoint_id", None)
+            return metadata
         checkpoint = getattr(policy, "checkpoint", {})
         return {
             "ranker_checkpoint_path": getattr(policy, "checkpoint_path", None),
@@ -779,6 +784,10 @@ class AgentRuntimeManager:
                 "agent_runtime_state": {
                     "rng_state": _jsonable_rng_state(session.agent.rng.getstate()),
                     "oracle_decision_index": getattr(session.agent, "_decision_index", None),
+                    "recurrent_state": (
+                        session.agent.policy.export_state()
+                        if isinstance(session.agent, RecurrentNeatBreedingAgent) else None
+                    ),
                 },
                 "event_history": [event.to_dict() for event in session.event_history],
                 "latest_ranked_candidates": [candidate.to_dict() for candidate in session.latest_ranked_candidates],
@@ -889,6 +898,19 @@ class AgentRuntimeManager:
                 temperature=float(config.get("temperature", 0.0)),
                 agent_id=config["agent_id"],
             )
+        if agent_type == "RecurrentNeatBreedingAgent":
+            artifact_path = (
+                metadata.get("recurrent_neat_network_artifact_path")
+                or config.get("network_artifact")
+            )
+            if not artifact_path:
+                raise ValueError("Recurrent NEAT session save has no safe topology artifact path")
+            policy = RecurrentNeatPairRankingPolicy.load(artifact_path)
+            return RecurrentNeatBreedingAgent(
+                policy, objective,
+                utility_threshold=config.get("utility_threshold"),
+                agent_id=config["agent_id"],
+            )
         raise ValueError(f"Cannot restore unknown agent type {agent_type!r} without model_registry")
 
     def load_session(self, path: str | Path, *, model_registry=None) -> AgentSession:
@@ -946,6 +968,11 @@ class AgentRuntimeManager:
         )
         if hasattr(agent, "_decision_index") and session_data["agent_runtime_state"].get("oracle_decision_index") is not None:
             agent._decision_index = int(session_data["agent_runtime_state"]["oracle_decision_index"])
+        recurrent_state = session_data["agent_runtime_state"].get("recurrent_state")
+        if recurrent_state is not None:
+            if not isinstance(agent, RecurrentNeatBreedingAgent):
+                raise ValueError("Runtime save contains recurrent memory for a non-recurrent agent")
+            agent.policy.import_state(recurrent_state)
         candidates = []
         for row in session_data.get("latest_ranked_candidates", []):
             values = dict(row)

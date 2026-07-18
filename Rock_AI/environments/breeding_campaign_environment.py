@@ -192,6 +192,26 @@ class BreedingCampaignEnvironment(RockTrainingEnvironment):
 
     def observation(self) -> CampaignObservation:
         pairs = self._legal_pairs()
+        prior_summaries = []
+        for decision in self.state.decisions[-10:]:
+            statuses = []
+            for child_id in decision.resulting_child_ids:
+                child = self.game.get_rock(child_id)
+                if child is not None:
+                    statuses.append(child.status)
+            pre = decision.pre_action_farm_metrics or {}
+            post = decision.post_action_farm_metrics or {}
+            prior_summaries.append({
+                "action_type": decision.selected_action.get("action_type"),
+                "generation": decision.generation,
+                "selected_score": float(decision.scores.get("neural_score", 0.0)),
+                "farm_value_change": float(post.get("total_farm_value", 0.0)) - float(pre.get("total_farm_value", 0.0)),
+                "visible_diversity_change": float(post.get("phenotype_diversity", 0.0)) - float(pre.get("phenotype_diversity", 0.0)),
+                "active_children": statuses.count(genetics.RockStatus.ACTIVE),
+                "dead_children": statuses.count(genetics.RockStatus.DEAD),
+                "craisened_children": statuses.count(genetics.RockStatus.CRAISENED),
+                "mutation_observed": any(int(row.get("mutation_count", 0)) > 0 for row in decision.mutation_outcomes),
+            })
         return CampaignObservation(
             farm=self.game,
             generation=self.game.generation,
@@ -209,6 +229,7 @@ class BreedingCampaignEnvironment(RockTrainingEnvironment):
             prior_actions=tuple(
                 decision.selected_action for decision in self.state.decisions[-10:]
             ),
+            prior_decision_summaries=tuple(prior_summaries),
         )
 
     def _configure_breeding_master(self) -> None:

@@ -6,3 +6,4 @@ __all__ = ["NeuralPairRankingPolicy", "PairRankingDecision"]
 from .neat_pair_ranking_policy import NeatPairRankingPolicy
 
 __all__ = ["NeatPairRankingPolicy"]
+from .recurrent_neat_pair_ranking_policy import RecurrentNeatPairRankingPolicy
