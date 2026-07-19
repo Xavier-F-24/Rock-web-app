@@ -141,11 +141,15 @@ class _SpeciesReporter(neat.reporting.BaseReporter):
         self.generation += 1
 
 
+class TrainingCancelled(RuntimeError):
+    pass
+
+
 class RecurrentNeatTrainer:
-    def __init__(self, training_config: RecurrentNeatTrainingConfig):
+    def __init__(self, training_config: RecurrentNeatTrainingConfig, *, allow_existing: bool = False, starting_generation: int = 0, progress_callback=None, cancel_path: str | Path | None = None):
         self.training_config = training_config
         self.output = Path(training_config.output_directory)
-        if self.output.exists() and any(self.output.iterdir()):
+        if self.output.exists() and any(self.output.iterdir()) and not allow_existing:
             raise FileExistsError(f"Training run already exists: {self.output}")
         self.output.mkdir(parents=True, exist_ok=True)
         self.train_arrays, self.train_groups, self.manifest = load_pair_ranking_split(training_config.dataset_path, "train")
@@ -166,13 +170,16 @@ class RecurrentNeatTrainer:
         )
         BoundedRecurrentGenome.resource_limits = self.limits
         self.neat_config_path = self.output / "neat_config.ini"
-        _write_config(self.neat_config_path, self.train_matrix.shape[1], training_config.population)
+        if not self.neat_config_path.exists():
+            _write_config(self.neat_config_path, self.train_matrix.shape[1], training_config.population)
         self.neat_config = neat.Config(
             BoundedRecurrentGenome, neat.DefaultReproduction, neat.DefaultSpeciesSet,
             neat.DefaultStagnation, str(self.neat_config_path),
         )
-        self.generation = 0
+        self.generation = int(starting_generation)
         self.validation_history: list[float] = []
+        self.progress_callback = progress_callback
+        self.cancel_path = Path(cancel_path) if cancel_path else None
 
     def _indices(self, count: int, total: int, salt: int) -> tuple[int, ...]:
         rng = random.Random(self.training_config.seed + salt + self.generation * 104729)
@@ -255,11 +262,16 @@ class RecurrentNeatTrainer:
         return float(np.mean(scores)) if scores else 0.0
 
     def _fitness(self, genomes, config):
+        if self.cancel_path is not None and self.cancel_path.exists():
+            raise TrainingCancelled("Cooperative cancellation requested")
         train_indices = self._indices(self.training_config.training_scenarios_per_generation, len(self.train_groups), 0)
         stage = self._curriculum_stage()
         campaign_scenarios = self._campaign_inputs() if stage == "paired_campaign" else ()
         scored = []
-        for _, genome in genomes:
+        progress_interval = max(1, len(genomes) // 20)
+        for genome_index, (_, genome) in enumerate(genomes, start=1):
+            if self.cancel_path is not None and self.cancel_path.exists():
+                raise TrainingCancelled("Cooperative cancellation requested during genome evaluation")
             try:
                 artifact, network = self._network(genome, config)
                 quality = self._quality(network, self.train_matrix, self.train_arrays["utility_scores"], self.train_arrays["group_offsets"], train_indices)
@@ -274,6 +286,13 @@ class RecurrentNeatTrainer:
                 genome.fitness = -1.0
                 quality, campaign_quality, complexity = -1.0, -1.0, 0
             scored.append((genome.fitness, quality, campaign_quality, complexity, genome))
+            if self.progress_callback and (genome_index % progress_interval == 0 or genome_index == len(genomes)):
+                self.progress_callback({
+                    "event_type": "genome_evaluation_progress",
+                    "generation": self.generation,
+                    "genomes_evaluated": genome_index,
+                    "genomes_total": len(genomes),
+                })
         scored.sort(key=lambda row: row[0], reverse=True)
         champion = scored[0][4]
         artifact, network = self._network(champion, config)
@@ -289,6 +308,8 @@ class RecurrentNeatTrainer:
         }
         with (self.output / "generation_metrics.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, sort_keys=True) + "\n")
+        if self.progress_callback:
+            self.progress_callback({"event_type": "generation_completed", **row})
         self._export_champion(champion, config, artifact, row)
         self.generation += 1
 
@@ -341,16 +362,34 @@ class RecurrentNeatTrainer:
 
     def train(self):
         random.seed(self.training_config.seed); np.random.seed(self.training_config.seed)
-        (self.output / "training_config.json").write_text(json.dumps(asdict(self.training_config), indent=2), encoding="utf-8")
-        (self.output / "run_manifest.json").write_text(json.dumps({
+        self.prepare_run_metadata()
+        population = neat.Population(self.neat_config, seed=self.training_config.seed)
+        return self.train_population(population, self.training_config.generations)
+
+    def prepare_run_metadata(self, extra_manifest: dict[str, Any] | None = None) -> None:
+        training_path = self.output / "training_config.json"
+        manifest_path = self.output / "run_manifest.json"
+        if not training_path.exists():
+            training_path.write_text(json.dumps(asdict(self.training_config), indent=2), encoding="utf-8")
+        manifest = {
             "run_type": "recurrent_neat_player_farmer", "information_access": "player",
+            "topology_implementation_version": 1,
+            "fitness_implementation_version": 1,
             "observation_schema_version": self.manifest["observation_schema_version"],
             "feature_names": list(self.feature_names), "safe_artifacts_only": True,
             "candidate_memory_semantics": "same_snapshot_commit_selected_only",
-        }, indent=2), encoding="utf-8")
-        population = neat.Population(self.neat_config, seed=self.training_config.seed)
+        }
+        manifest.update(extra_manifest or {})
+        if not manifest_path.exists():
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    def train_population(self, population, generations: int, *, extra_reporters=()):
         population.add_reporter(neat.StdOutReporter(True))
-        population.add_reporter(_SpeciesReporter(self.output / "species_metrics.jsonl"))
+        species_reporter = _SpeciesReporter(self.output / "species_metrics.jsonl")
+        species_reporter.generation = self.generation
+        population.add_reporter(species_reporter)
+        for reporter in extra_reporters:
+            population.add_reporter(reporter)
         (self.output / "checkpoints").mkdir(parents=True, exist_ok=True)
         population.add_reporter(neat.Checkpointer(self.training_config.checkpoint_frequency, filename_prefix=str(self.output / "checkpoints" / "neat-checkpoint-")))
-        return population.run(self._fitness, self.training_config.generations)
+        return population.run(self._fitness, int(generations))

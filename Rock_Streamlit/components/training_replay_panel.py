@@ -29,6 +29,11 @@ def discover_training_runs():
 
 
 def render_training_replay() -> None:
+    pending_run = st.session_state.pop("ai_obs_pending_training_run", None)
+    if pending_run:
+        discover_training_runs.clear()
+        st.session_state["ai_obs_training_run"] = pending_run
+        st.session_state.pop("ai_obs_training_generation", None)
     runs = discover_training_runs()
     if not runs:
         st.info("No exported NEAT training runs were found under training_runs.")

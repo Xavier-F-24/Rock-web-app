@@ -9,3 +9,4 @@ saves/
 *.jsonl
 *.npz
 /training_runs/
+/training_jobs/

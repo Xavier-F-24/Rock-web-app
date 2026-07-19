@@ -1,0 +1,25 @@
+import json
+from datetime import datetime, timedelta, timezone
+
+from Rock_AI.training_jobs.training_job_status import TrainingJobState, TrainingJobStatus
+from Rock_AI.training_jobs.training_progress_reader import TrainingProgressReader, atomic_write_json
+
+
+def test_atomic_status_round_trip(tmp_path):
+    status = TrainingJobStatus("job_x", TrainingJobState.CREATED, "branch_champion")
+    atomic_write_json(tmp_path / "status.json", status.to_dict())
+    assert TrainingProgressReader(tmp_path).status() == status
+
+
+def test_partial_progress_line_is_ignored(tmp_path):
+    (tmp_path / "progress.jsonl").write_text('{"generation": 1}\n{"broken"', encoding="utf-8")
+    assert TrainingProgressReader(tmp_path).progress() == [{"generation": 1}]
+
+
+def test_stale_heartbeat_warns_without_mutating_status(tmp_path):
+    old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    status = TrainingJobStatus("job_x", TrainingJobState.RUNNING, "continue", last_heartbeat_time=old)
+    atomic_write_json(tmp_path / "status.json", status.to_dict())
+    reader = TrainingProgressReader(tmp_path)
+    assert "stale" in reader.orphan_warning(30)
+    assert reader.status().status is TrainingJobState.RUNNING

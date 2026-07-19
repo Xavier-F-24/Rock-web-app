@@ -53,3 +53,22 @@ python -m Rock_AI.scripts.train_recurrent_neat_farmer --dataset training_data/pl
 NEAT training checkpoints under `checkpoints/` are trusted CLI artifacts only.
 The app loads champion `network.json` files. Recurrent state is reset between
 independent episodes and is included in runtime session saves.
+
+## Observatory Training Console
+
+The AI Observatory's **Training Console** creates an immutable job manifest and
+launches a separate local worker. Closing or rerunning Streamlit does not stop
+the worker. Full continuation restores the trusted local NEAT population,
+species, generation, RNG, and innovation state; champion branching creates a
+new run with ancestry metadata and never overwrites its parent.
+
+```powershell
+python -m Rock_AI.scripts.run_neat_training_job --job training_jobs/job_<uuid>
+python -m Rock_AI.scripts.inspect_training_job --job training_jobs/job_<uuid>
+python -m Rock_AI.scripts.cancel_training_job --job training_jobs/job_<uuid>
+```
+
+Only trusted local checkpoints are accepted for continuation. Uploaded replay
+artifacts remain JSON/NPZ and cannot start training code. Hosted Streamlit
+environments without durable subprocess support expose replay and inference
+only, alongside the equivalent CLI command.
