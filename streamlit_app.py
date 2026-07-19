@@ -10,7 +10,7 @@ from __future__ import annotations
 import streamlit as st
 
 from Rock_Streamlit.app_state import get_game_state, has_game_state, init_session_state
-from Rock_Streamlit.sections import ai_observatory, breeding, debug, ending, home, market, save_load, start
+from Rock_Streamlit.sections import ai_observatory, breeding, debug, ending, home, market, rock_world, save_load, start
 from Rock_Streamlit.ui_components import apply_cozy_lab_style
 
 
@@ -18,6 +18,7 @@ PAGES = {
     "Home": ("home", home.render),
     "Market": ("market", market.render),
     "The Rock Farm": ("rock-farm", breeding.render),
+    "Rock World": ("rock-world", rock_world.render),
     "AI Observatory": ("ai-observatory", ai_observatory.render),
     "Save / Load": ("save-load", save_load.render),
     "Debug": ("debug", debug.render),

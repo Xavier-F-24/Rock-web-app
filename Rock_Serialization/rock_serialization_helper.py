@@ -4,7 +4,9 @@ Serialization helpers for the split-module GameMaster prototype.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -15,7 +17,7 @@ from Rock_GameState.rock_game_state_helper import DEFAULT_ROCK_FARM_COST
 from Rock_Market.rock_market_helper import MarketPodOffer, PendingMarketPod
 
 
-SAVE_VERSION = "0.3.0"
+SAVE_VERSION = "0.4.0"
 
 
 def allele_to_dict(allele: genetics.Allele) -> dict[str, int]:
@@ -218,7 +220,7 @@ def pending_market_pod_from_dict(data: dict[str, Any] | None) -> PendingMarketPo
     )
 
 
-def game_to_dict(game: GameMaster) -> dict[str, Any]:
+def game_to_dict(game: GameMaster, *, include_world: bool = True) -> dict[str, Any]:
     game.evaluate_all_rocks()
     return {
         "save_version": SAVE_VERSION,
@@ -229,6 +231,9 @@ def game_to_dict(game: GameMaster) -> dict[str, Any]:
             "max_pairs_per_generation": int(game.max_pairs_per_generation),
             "rock_farm_cost": int(game.rock_farm_cost),
             "seed": game.seed,
+            "world_size_mode": game.world_size_mode,
+            "resolved_world_farmer_count": int(game.resolved_world_farmer_count),
+            "allow_neural_farmers": bool(game.allow_neural_farmers),
             "generation": int(game.generation),
             "next_rock_id": int(game.next_rock_id),
             "game_over": bool(game.game_over),
@@ -239,10 +244,11 @@ def game_to_dict(game: GameMaster) -> dict[str, Any]:
             "market_pods": [market_pod_to_dict(offer) for offer in game.market_pods],
             "pending_market_pod": pending_market_pod_to_dict(game.pending_market_pod),
         },
+        **({"world": world_to_dict(game.world, root_player_game=game)} if include_world and game.world is not None else {}),
     }
 
 
-def game_from_dict(save_data: dict[str, Any]) -> GameMaster:
+def game_from_dict(save_data: dict[str, Any], *, attach_world: bool = True) -> GameMaster:
     if "game" not in save_data:
         raise ValueError("Invalid save data: missing game.")
 
@@ -254,6 +260,9 @@ def game_from_dict(save_data: dict[str, Any]) -> GameMaster:
         rock_farm_cost=int(data.get("rock_farm_cost", DEFAULT_ROCK_FARM_COST)),
         seed=data.get("seed"),
         auto_start=False,
+        world_size_mode=str(data.get("world_size_mode", "random")),
+        resolved_world_farmer_count=int(data.get("resolved_world_farmer_count", 0)),
+        allow_neural_farmers=bool(data.get("allow_neural_farmers", True)),
     )
 
     game.generation = int(data.get("generation", 0))
@@ -279,6 +288,24 @@ def game_from_dict(save_data: dict[str, Any]) -> GameMaster:
         game.next_rock_id = max(game.next_rock_id, max(game.rock_list) + 1)
 
     game.evaluate_all_rocks()
+    if attach_world and save_data.get("world"):
+        game.world = world_from_dict(save_data["world"], root_player_game=game)
+    elif attach_world:
+        from Rock_World.rock_world_manager_helper import create_playable_world
+        migration_seed = game.seed
+        if migration_seed is None:
+            canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
+            migration_seed = int(hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:8], 16)
+            game.seed = migration_seed
+        count = random.Random(int(migration_seed) + 71_311).randint(3, 8)
+        game.world_size_mode = "random"
+        game.resolved_world_farmer_count = count
+        create_playable_world(
+            game, seed=int(migration_seed) + 90_001, npc_count=count,
+            allow_neural_farmers=game.allow_neural_farmers, clear_legacy_market=False,
+        )
+        from Rock_World.rock_playable_world_manager import PlayableWorldManager
+        PlayableWorldManager().bootstrap_market(game)
     return game
 
 
@@ -305,13 +332,16 @@ def make_save_filename(game: GameMaster) -> str:
     return f"rock_game_gen{game.generation}_money{game.money}_{timestamp}.json"
 
 
-def world_to_dict(world) -> dict[str, Any]:
+def world_to_dict(world, *, root_player_game=None) -> dict[str, Any]:
     """Serialize the additive multi-farm economy without live policy objects."""
     from dataclasses import asdict
 
     serialized_games = {}
     for farm_id, farm in sorted(world.farms.items()):
-        serialized = game_to_dict(farm.game)
+        if farm_id == "player" and root_player_game is farm.game:
+            serialized_games[farm_id] = None
+            continue
+        serialized = game_to_dict(farm.game, include_world=False)
         serialized.pop("saved_at", None)
         serialized_games[farm_id] = serialized
     return {
@@ -324,10 +354,12 @@ def world_to_dict(world) -> dict[str, Any]:
             farm_id: {
                 "profile": farm.profile.to_dict(),
                 "game": serialized_games[farm_id],
+                "uses_root_game": farm_id == "player" and serialized_games[farm_id] is None,
                 "visible_rock_ids": sorted(farm.visible_rock_ids),
                 "committed_money": int(farm.committed_money),
                 "observable_history": list(farm.observable_history),
                 "private_messages": list(farm.private_messages),
+                "controller": asdict(farm.controller),
             }
             for farm_id, farm in sorted(world.farms.items())
         },
@@ -346,31 +378,39 @@ def world_to_dict(world) -> dict[str, Any]:
             key: {**asdict(offer), "status": offer.status.value}
             for key, offer in world.trade_offers.items()
         },
+        "family_pods": {
+            key: {**asdict(pod), "status": pod.status.value}
+            for key, pod in world.family_pods.items()
+        },
         "messages": [asdict(message) for message in world.messages],
         "public_events": [asdict(event) for event in world.public_events],
+        "resolved_npc_count": int(world.resolved_npc_count),
     }
 
 
-def world_from_dict(data: dict[str, Any]):
+def world_from_dict(data: dict[str, Any], *, root_player_game=None):
     from Rock_AI.logging.public_world_event_record import PublicWorldEventRecord
-    from Rock_Market.rock_npc_market_helper import FarmMessage, ListingStatus, MarketBid, MarketListing, OfferStatus, TradeOffer
+    from Rock_Market.rock_npc_market_helper import FamilyPodListing, FamilyPodStatus, FarmMessage, ListingStatus, MarketBid, MarketListing, OfferStatus, TradeOffer
     from Rock_World.rock_farm_profile_helper import FarmObjective, FarmProfile
-    from Rock_World.rock_world_state_helper import FarmState, WorldState
+    from Rock_World.rock_world_state_helper import FarmerControllerSpec, FarmState, WorldState
 
     farms = {}
     for farm_id, row in data.get("farms", {}).items():
         profile_data = dict(row["profile"])
         profile_data["objective"] = FarmObjective(profile_data["objective"])
+        farm_game = root_player_game if row.get("uses_root_game") else game_from_dict(row["game"], attach_world=False)
         farms[farm_id] = FarmState(
-            farm_id, FarmProfile(**profile_data), game_from_dict(row["game"]),
+            farm_id, FarmProfile(**profile_data), farm_game,
             set(map(int, row.get("visible_rock_ids", ()))), int(row.get("committed_money", 0)),
             list(row.get("observable_history", ())), list(row.get("private_messages", ())),
+            FarmerControllerSpec(**row.get("controller", {})),
         )
     world = WorldState(
         farms, {int(key): value for key, value in data.get("owner_by_rock_id", {}).items()},
         int(data["seed"]), turn=int(data.get("turn", 0)), generation=int(data.get("generation", 0)),
         rule_version=str(data.get("rule_version", "economy-1")),
         save_version=int(data.get("world_save_version", 1)),
+        resolved_npc_count=int(data.get("resolved_npc_count", 0)),
     )
     world.reserved_rock_ids = {int(key): value for key, value in data.get("reserved_rock_ids", {}).items()}
     world.completed_transaction_ids = set(data.get("completed_transaction_ids", ()))
@@ -389,7 +429,15 @@ def world_from_dict(data: dict[str, Any]):
         payload["requested_rock_ids"] = tuple(payload.get("requested_rock_ids", ()))
         payload["status"] = OfferStatus(payload["status"])
         world.trade_offers[offer_id] = TradeOffer(**payload)
+    for pod_id, row in data.get("family_pods", {}).items():
+        payload = dict(row)
+        payload["parent_ids"] = tuple(payload.get("parent_ids", ()))
+        payload["child_ids"] = tuple(payload.get("child_ids", ()))
+        payload["status"] = FamilyPodStatus(payload["status"])
+        world.family_pods[pod_id] = FamilyPodListing(**payload)
     world.messages = [FarmMessage(**row) for row in data.get("messages", ())]
     world.public_events = [PublicWorldEventRecord(**row) for row in data.get("public_events", ())]
     world.validate_ownership()
+    if root_player_game is not None:
+        root_player_game.world = world
     return world

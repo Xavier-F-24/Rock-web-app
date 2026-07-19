@@ -18,6 +18,13 @@ class OfferStatus(str, Enum):
     EXPIRED = "expired"
 
 
+class FamilyPodStatus(str, Enum):
+    ACTIVE = "active"
+    SOLD = "sold"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
 @dataclass
 class MarketBid:
     bid_id: str
@@ -55,7 +62,19 @@ class TradeOffer:
     status: OfferStatus = OfferStatus.OPEN
 
 
-@dataclass(frozen=True)
+@dataclass
+class FamilyPodListing:
+    pod_id: str
+    seller_farm_id: str
+    parent_ids: tuple[int, int]
+    child_ids: tuple[int, ...]
+    price: int
+    created_turn: int
+    expires_turn: int
+    status: FamilyPodStatus = FamilyPodStatus.ACTIVE
+
+
+@dataclass
 class FarmMessage:
     message_id: str
     sender_farm_id: str
@@ -64,3 +83,5 @@ class FarmMessage:
     kind: str
     text: str
     related_id: str | None = None
+    read: bool = False
+    requires_response: bool = False

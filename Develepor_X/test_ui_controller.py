@@ -66,14 +66,13 @@ def test_controller_wraps_basic_actions():
     game = game_controller.start_new_game(seed=702)
 
     buy_result = game_controller.buy_random_rock(game)
-    sellable = game_controller.get_sellable_rocks(game)
-    sell_result = game_controller.sell_rock(game, sellable[0].id)
-    sellable_after_sale = game_controller.get_sellable_rock_rows(game)
+    sell_result = game_controller.sell_rock(game, next(iter(game.rocks)))
 
-    assert buy_result.ok is True
-    assert buy_result.payload.id in game.rocks
-    assert sell_result.ok is True
-    assert sellable[0].id not in {row["id"] for row in sellable_after_sale}
+    assert buy_result.ok is False
+    assert "farmer-owned" in buy_result.message
+    assert sell_result.ok is False
+    assert "listing" in sell_result.message
+    assert game_controller.get_market_listings(game)
 
 
 def test_controller_buys_potions_in_bulk():
@@ -88,17 +87,14 @@ def test_controller_buys_potions_in_bulk():
 
 def test_controller_buys_market_pod_and_keeps_child():
     game = game_controller.start_new_game(seed=708)
-    offer_id = game_controller.get_market_pod_rows(game)[0]["offer_id"]
+    pod = game_controller.get_family_pod_rows(game)[0]
+    child = pod["children"][0]
 
-    buy_result = game_controller.buy_market_pod(game, offer_id)
-    pending_rows = game_controller.get_pending_market_pod_rows(game)
-    keep_result = game_controller.choose_market_pod_child(game, pending_rows[0]["index"])
+    buy_result = game_controller.purchase_family_pod_child(game, pod["pod_id"], child.id)
 
     assert buy_result.ok is True
-    assert pending_rows
-    assert keep_result.ok is True
-    assert game.pending_market_pod is None
-    assert keep_result.payload["id"] in game.rocks
+    assert game.world.owner_of(child.id) == "player"
+    assert child.id in game.rocks
 
 
 def test_controller_queues_breeding_pair_with_clean_result():

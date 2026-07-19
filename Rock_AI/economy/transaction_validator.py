@@ -15,8 +15,9 @@ from Rock_AI.actions.farmer_action import (
 from Rock_AI.logging.public_world_event_record import PublicWorldEventRecord
 from Rock_Market.rock_market_helper import POTION_SHOP, RANDOM_ROCK_COST
 from Rock_Market.rock_npc_market_helper import (
-    ListingStatus, MarketBid, MarketListing, OfferStatus, TradeOffer,
+    FamilyPodStatus, FarmMessage, ListingStatus, MarketBid, MarketListing, OfferStatus, TradeOffer,
 )
+from Rock_Market.rock_player_market_action_helper import CancelTradeOfferAction, PurchaseFamilyPodChildAction
 from Rock_World.rock_world_state_helper import WorldState
 
 
@@ -126,6 +127,7 @@ class EconomyTransactionManager:
             bid = MarketBid(bid_id, listing.listing_id, actor.farm_id, action.bid_amount, world.turn)
             listing.bids[bid_id] = bid
             world.bids[bid_id] = bid
+            self._message(world, actor.farm_id, listing.seller_farm_id, "bid_received", f"{actor.profile.display_name} bid ${action.bid_amount} on rock #{listing.rock_id}.", bid_id, True)
             return {"listing_id": listing.listing_id, "bid_id": bid_id, "amount": action.bid_amount}, (listing.rock_id,), f"Bid ${action.bid_amount} on rock #{listing.rock_id}."
         if isinstance(action, (AcceptBidAction, RejectBidAction)):
             listing = self._active_listing(world, action.listing_id)
@@ -138,6 +140,7 @@ class EconomyTransactionManager:
             if isinstance(action, RejectBidAction):
                 bid.active = False
                 bidder.committed_money -= bid.amount
+                self._message(world, actor.farm_id, bidder.farm_id, "bid_rejected", f"Your bid on rock #{listing.rock_id} was rejected.", bid.bid_id)
                 return {"bid_id": bid.bid_id}, (listing.rock_id,), f"Rejected bid {bid.bid_id}."
             if bidder.money < bid.amount:
                 raise ValueError("Bidder can no longer honor the bid")
@@ -152,6 +155,7 @@ class EconomyTransactionManager:
             listing.status = ListingStatus.SOLD
             self._release_listing_commitments(world, listing, except_bid_id=bid.bid_id)
             bid.active = False
+            self._message(world, actor.farm_id, bidder.farm_id, "bid_accepted", f"Your bid purchased rock #{listing.rock_id} for ${bid.amount}.", bid.bid_id)
             return {"bid_id": bid.bid_id, "price": bid.amount, "buyer_farm_id": bidder.farm_id}, (listing.rock_id,), f"Sold listed rock #{listing.rock_id} to {bidder.farm_id} for ${bid.amount}."
         if isinstance(action, CreateTradeOfferAction):
             if action.recipient_farm_id == actor.farm_id:
@@ -173,6 +177,7 @@ class EconomyTransactionManager:
             actor.committed_money += action.offered_money
             offer = TradeOffer(offer_id, actor.farm_id, recipient.farm_id, action.offered_rock_ids, action.requested_rock_ids, action.offered_money, action.requested_money, world.turn, action.expires_turn)
             world.trade_offers[offer_id] = offer
+            self._message(world, actor.farm_id, recipient.farm_id, "trade_received", f"{actor.profile.display_name} sent a direct trade offer.", offer_id, True)
             return {"offer_id": offer_id}, action.offered_rock_ids + action.requested_rock_ids, f"Proposed trade {offer_id} to {recipient.farm_id}."
         if isinstance(action, (AcceptTradeOfferAction, RejectTradeOfferAction)):
             offer = world.trade_offers.get(action.offer_id)
@@ -184,6 +189,7 @@ class EconomyTransactionManager:
             if isinstance(action, RejectTradeOfferAction):
                 self._release_trade(world, offer)
                 offer.status = OfferStatus.REJECTED
+                self._message(world, actor.farm_id, sender.farm_id, "trade_rejected", f"{actor.profile.display_name} rejected trade {offer.offer_id}.", offer.offer_id)
                 return {"offer_id": offer.offer_id}, offer.offered_rock_ids + offer.requested_rock_ids, f"Rejected trade {offer.offer_id}."
             for rock_id in offer.offered_rock_ids:
                 if world.owner_of(rock_id) != sender.farm_id or world.reserved_rock_ids.get(rock_id) != offer.offer_id:
@@ -200,8 +206,43 @@ class EconomyTransactionManager:
             for rock_id in offer.requested_rock_ids:
                 world.transfer_rock(rock_id, actor.farm_id, sender.farm_id)
             offer.status = OfferStatus.ACCEPTED
+            self._message(world, actor.farm_id, sender.farm_id, "trade_accepted", f"{actor.profile.display_name} accepted trade {offer.offer_id}.", offer.offer_id)
             return {"offer_id": offer.offer_id}, offer.offered_rock_ids + offer.requested_rock_ids, f"Completed trade {offer.offer_id}."
+        if isinstance(action, CancelTradeOfferAction):
+            offer = world.trade_offers.get(action.offer_id)
+            if offer is None or offer.status != OfferStatus.OPEN:
+                raise ValueError("Trade offer is no longer open")
+            if offer.sender_farm_id != actor.farm_id:
+                raise ValueError("Only the sender can cancel this trade")
+            self._release_trade(world, offer)
+            offer.status = OfferStatus.REJECTED
+            self._message(world, actor.farm_id, offer.recipient_farm_id, "trade_cancelled", f"Trade {offer.offer_id} was cancelled.", offer.offer_id)
+            return {"offer_id": offer.offer_id}, offer.offered_rock_ids + offer.requested_rock_ids, f"Cancelled trade {offer.offer_id}."
+        if isinstance(action, PurchaseFamilyPodChildAction):
+            pod = world.family_pods.get(action.pod_id)
+            if pod is None or pod.status != FamilyPodStatus.ACTIVE or pod.expires_turn < world.turn:
+                raise ValueError("Family pod is no longer active")
+            if pod.seller_farm_id == actor.farm_id or action.child_id not in pod.child_ids:
+                raise ValueError("Invalid family pod child selection")
+            if action.quoted_price != pod.price or actor.available_money < pod.price:
+                raise ValueError("Family pod quote is invalid or unaffordable")
+            seller = world.farm(pod.seller_farm_id)
+            if world.owner_of(action.child_id) != seller.farm_id or world.reserved_rock_ids.get(action.child_id) != pod.pod_id:
+                raise ValueError("Selected pod child is no longer available")
+            actor.money -= pod.price
+            seller.money += pod.price
+            world.transfer_rock(action.child_id, seller.farm_id, actor.farm_id)
+            for child_id in pod.child_ids:
+                world.release_rock(child_id, pod.pod_id)
+            pod.status = FamilyPodStatus.SOLD
+            self._message(world, actor.farm_id, seller.farm_id, "pod_purchased", f"{actor.profile.display_name} purchased rock #{action.child_id} from family pod {pod.pod_id}.", pod.pod_id)
+            return {"pod_id": pod.pod_id, "price": pod.price, "seller_farm_id": seller.farm_id}, (action.child_id,), f"Purchased family pod child #{action.child_id} for ${pod.price}."
         raise ValueError(f"Unsupported action: {action.action_type.value}")
+
+    @staticmethod
+    def _message(world, sender, recipient, kind, text, related_id=None, requires_response=False):
+        message_id = _stable_id("message", sender, recipient, kind, related_id, world.turn, len(world.messages))
+        world.messages.append(FarmMessage(message_id, sender, recipient, world.turn, kind, text, related_id, False, requires_response))
 
     @staticmethod
     def _price_points(appraised_value: int) -> tuple[int, ...]:

@@ -8,6 +8,9 @@ the renderers.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
+import random
 from typing import Any
 
 import Rock_Genetics.rock_genetic_helper as genetics
@@ -16,6 +19,15 @@ from Rock_Drawing.rock_lineage_drawing_helper import TreeDrawer
 from Rock_GameState.rock_game_state_helper import GameMaster
 from Rock_Market.rock_market_helper import POTION_SHOP
 from Rock_Serialization.rock_serialization_helper import game_from_json_string, game_to_json_string
+from Rock_World.rock_playable_world_manager import PlayableWorldManager
+from Rock_World.rock_world_manager_helper import create_playable_world
+from Rock_AI.actions.farmer_action import (
+    AcceptBidAction, AcceptTradeOfferAction, CancelListingAction, CreateListingAction,
+    CreateTradeOfferAction, PlaceBidAction, RejectBidAction, RejectTradeOfferAction,
+)
+from Rock_AI.economy.transaction_validator import EconomyTransactionManager
+from Rock_Market.rock_npc_market_helper import FamilyPodStatus, ListingStatus, OfferStatus
+from Rock_Market.rock_player_market_action_helper import CancelTradeOfferAction, PurchaseFamilyPodChildAction
 
 
 @dataclass(frozen=True)
@@ -32,6 +44,9 @@ class GameStartSettings:
     max_generation: int = 7
     max_pairs_per_generation: int = 3
     rock_farm_cost: int = 75
+    world_size_mode: str = "random"
+    world_farmer_count: int = 3
+    allow_neural_farmers: bool = True
 
 
 def start_new_game(
@@ -48,6 +63,9 @@ def start_new_game(
             "max_generation": settings.max_generation,
             "max_pairs_per_generation": settings.max_pairs_per_generation,
             "rock_farm_cost": settings.rock_farm_cost,
+            "world_size_mode": settings.world_size_mode,
+            "world_farmer_count": settings.world_farmer_count,
+            "allow_neural_farmers": settings.allow_neural_farmers,
         }
     else:
         settings_data = dict(settings)
@@ -55,7 +73,248 @@ def start_new_game(
     if seed is not None:
         settings_data["seed"] = seed
     settings_data.update(overrides)
-    return GameMaster(**settings_data)
+    resolved_seed = settings_data.get("seed")
+    if resolved_seed is None:
+        resolved_seed = random.SystemRandom().randrange(1, 2**31)
+    mode = str(settings_data.pop("world_size_mode", "random"))
+    requested_count = int(settings_data.pop("world_farmer_count", 3))
+    allow_neural = bool(settings_data.pop("allow_neural_farmers", True))
+    settings_data.pop("seed", None)
+    if mode not in {"fixed", "random"}:
+        raise ValueError("world_size_mode must be 'fixed' or 'random'")
+    if mode == "fixed" and not 2 <= requested_count <= 12:
+        raise ValueError("Fixed world farmer count must be between 2 and 12")
+    resolved_count = random.Random(int(resolved_seed) + 71_311).randint(3, 8) if mode == "random" else requested_count
+    game = GameMaster(
+        **settings_data,
+        seed=int(resolved_seed),
+        world_size_mode=mode,
+        resolved_world_farmer_count=resolved_count,
+        allow_neural_farmers=allow_neural,
+    )
+    create_playable_world(
+        game, seed=int(resolved_seed) + 90_001, npc_count=resolved_count,
+        allow_neural_farmers=allow_neural,
+    )
+    PlayableWorldManager().bootstrap_market(game)
+    return game
+
+
+def get_world(game: GameMaster):
+    if game.world is None:
+        raise RuntimeError("This game has no Rock World")
+    return game.world
+
+
+def get_world_summary(game: GameMaster) -> dict[str, Any]:
+    world = get_world(game)
+    unread = [message for message in world.messages if message.recipient_farm_id == "player" and not message.read]
+    return {
+        "turn": world.turn,
+        "generation": game.generation,
+        "npc_count": world.resolved_npc_count,
+        "unread_messages": len(unread),
+        "latest_message": unread[-1].text if unread else None,
+    }
+
+
+def get_public_farms(game: GameMaster) -> list[dict[str, Any]]:
+    world = get_world(game)
+    return [
+        {
+            "farm_id": farm_id,
+            "name": farm.profile.display_name,
+            "generation": farm.generation,
+            "rock_count": len(farm.rocks),
+            "active_count": sum(rock.is_active for rock in farm.rocks.values()),
+        }
+        for farm_id, farm in sorted(world.farms.items()) if farm_id != "player"
+    ]
+
+
+def get_public_farm_rocks(game: GameMaster, farm_id: str) -> list[genetics.Rock]:
+    world = get_world(game)
+    if farm_id == "player":
+        raise ValueError("Use player inventory helpers for the player farm")
+    farm = world.farm(farm_id)
+    return [farm.rocks[rock_id] for rock_id in sorted(farm.visible_rock_ids & set(farm.rocks))]
+
+
+def end_world_turn(game: GameMaster) -> ActionResult:
+    try:
+        payload = PlayableWorldManager().end_turn(game)
+    except Exception as exc:
+        return ActionResult(False, str(exc))
+    return ActionResult(True, f"Completed world turn {payload['turn']}.", payload)
+
+
+def _action_hash(action) -> str:
+    payload = json.dumps(action.to_dict(), sort_keys=True, separators=(",", ":"))
+    return "player_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
+
+
+def _execute_player_action(game: GameMaster, action) -> ActionResult:
+    try:
+        result = PlayableWorldManager().execute_player_action(game, action, _action_hash(action))
+    except Exception as exc:
+        return ActionResult(False, str(exc))
+    return ActionResult(bool(result.success), result.summary, result)
+
+
+def get_market_listings(game: GameMaster) -> list[dict[str, Any]]:
+    world = get_world(game)
+    rows = []
+    for listing in sorted(world.listings.values(), key=lambda row: (row.asking_price, row.listing_id)):
+        if listing.status != ListingStatus.ACTIVE or listing.expires_turn < world.turn:
+            continue
+        seller = world.farm(listing.seller_farm_id)
+        rock = seller.get_rock(listing.rock_id)
+        rows.append({
+            "listing_id": listing.listing_id, "seller_farm_id": seller.farm_id,
+            "seller_name": seller.profile.display_name, "rock": rock,
+            "asking_price": listing.asking_price, "expires_turn": listing.expires_turn,
+            "own_listing": seller.farm_id == "player",
+        })
+    return rows
+
+
+def place_listing_bid(game: GameMaster, listing_id: str, amount: int) -> ActionResult:
+    return _execute_player_action(game, PlaceBidAction("player", get_world(game).turn, listing_id, int(amount)))
+
+
+def create_player_listing(game: GameMaster, rock_id: int, asking_price: int) -> ActionResult:
+    return _execute_player_action(game, CreateListingAction("player", get_world(game).turn, int(rock_id), int(asking_price)))
+
+
+def cancel_player_listing(game: GameMaster, listing_id: str) -> ActionResult:
+    return _execute_player_action(game, CancelListingAction("player", get_world(game).turn, listing_id))
+
+
+def get_listing_price_options(game: GameMaster, rock_id: int) -> tuple[int, ...]:
+    rock = get_rock(game, rock_id)
+    return EconomyTransactionManager.legal_price_menu(rock.value)
+
+
+def get_bid_price_options(game: GameMaster, listing_id: str) -> tuple[int, ...]:
+    world = get_world(game)
+    listing = world.listings.get(listing_id)
+    if listing is None:
+        return ()
+    return EconomyTransactionManager.legal_bid_menu(listing, world.farm("player").available_money)
+
+
+def create_direct_trade_offer(
+    game: GameMaster, recipient_farm_id: str, *, offered_rock_id: int | None = None,
+    requested_rock_id: int | None = None, offered_money: int = 0, requested_money: int = 0,
+) -> ActionResult:
+    world = get_world(game)
+    action = CreateTradeOfferAction(
+        "player", world.turn, recipient_farm_id,
+        () if offered_rock_id is None else (int(offered_rock_id),),
+        () if requested_rock_id is None else (int(requested_rock_id),),
+        int(offered_money), int(requested_money), world.turn + 3,
+    )
+    return _execute_player_action(game, action)
+
+
+def cancel_direct_trade_offer(game: GameMaster, offer_id: str) -> ActionResult:
+    return _execute_player_action(game, CancelTradeOfferAction("player", get_world(game).turn, offer_id))
+
+
+def respond_to_trade_offer(game: GameMaster, offer_id: str, accept: bool) -> ActionResult:
+    cls = AcceptTradeOfferAction if accept else RejectTradeOfferAction
+    return _execute_player_action(game, cls("player", get_world(game).turn, offer_id))
+
+
+def respond_to_bid(game: GameMaster, listing_id: str, bid_id: str, accept: bool) -> ActionResult:
+    cls = AcceptBidAction if accept else RejectBidAction
+    return _execute_player_action(game, cls("player", get_world(game).turn, listing_id, bid_id))
+
+
+def get_direct_trade_rows(game: GameMaster, *, incoming: bool | None = None) -> list[dict[str, Any]]:
+    world = get_world(game)
+    rows = []
+    for offer in sorted(world.trade_offers.values(), key=lambda row: row.offer_id):
+        is_incoming = offer.recipient_farm_id == "player"
+        if incoming is not None and is_incoming != incoming:
+            continue
+        if offer.sender_farm_id != "player" and offer.recipient_farm_id != "player":
+            continue
+        other_id = offer.sender_farm_id if is_incoming else offer.recipient_farm_id
+        rows.append({
+            "offer_id": offer.offer_id, "incoming": is_incoming,
+            "other_farm_id": other_id, "other_name": world.farm(other_id).profile.display_name,
+            "offered_rock_ids": offer.offered_rock_ids, "requested_rock_ids": offer.requested_rock_ids,
+            "offered_money": offer.offered_money, "requested_money": offer.requested_money,
+            "status": offer.status.value, "expires_turn": offer.expires_turn,
+        })
+    return rows
+
+
+def get_family_pod_rows(game: GameMaster) -> list[dict[str, Any]]:
+    world = get_world(game)
+    rows = []
+    for pod in sorted(world.family_pods.values(), key=lambda row: row.pod_id):
+        if pod.status != FamilyPodStatus.ACTIVE or pod.expires_turn < world.turn or pod.seller_farm_id == "player":
+            continue
+        seller = world.farm(pod.seller_farm_id)
+        rows.append({
+            "pod_id": pod.pod_id, "seller_name": seller.profile.display_name,
+            "seller_farm_id": seller.farm_id, "parent_ids": pod.parent_ids,
+            "children": [seller.get_rock(child_id) for child_id in pod.child_ids],
+            "price": pod.price, "expires_turn": pod.expires_turn,
+        })
+    return rows
+
+
+def purchase_family_pod_child(game: GameMaster, pod_id: str, child_id: int) -> ActionResult:
+    world = get_world(game)
+    pod = world.family_pods.get(pod_id)
+    if pod is None:
+        return ActionResult(False, "Unknown family pod.")
+    return _execute_player_action(game, PurchaseFamilyPodChildAction("player", world.turn, pod_id, int(child_id), pod.price))
+
+
+def get_player_messages(game: GameMaster, unread_only: bool = False) -> list[dict[str, Any]]:
+    messages = [message for message in get_world(game).messages if message.recipient_farm_id == "player"]
+    if unread_only:
+        messages = [message for message in messages if not message.read]
+    return [
+        {
+            "message_id": message.message_id, "sender_farm_id": message.sender_farm_id,
+            "sender_name": get_world(game).farm(message.sender_farm_id).profile.display_name,
+            "turn": message.created_turn, "kind": message.kind, "text": message.text,
+            "related_id": message.related_id, "read": message.read,
+            "requires_response": message.requires_response,
+        }
+        for message in reversed(messages)
+    ]
+
+
+def mark_message_read(game: GameMaster, message_id: str) -> ActionResult:
+    for message in get_world(game).messages:
+        if message.message_id == message_id and message.recipient_farm_id == "player":
+            message.read = True
+            return ActionResult(True, "Message marked read.")
+    return ActionResult(False, "Unknown player message.")
+
+
+def respond_to_message(game: GameMaster, message_id: str, accept: bool) -> ActionResult:
+    world = get_world(game)
+    message = next((row for row in world.messages if row.message_id == message_id and row.recipient_farm_id == "player"), None)
+    if message is None or not message.related_id:
+        return ActionResult(False, "This message has no actionable request.")
+    if message.kind == "trade_received":
+        result = respond_to_trade_offer(game, message.related_id, accept)
+    elif message.kind == "bid_received":
+        bid = world.bids.get(message.related_id)
+        result = ActionResult(False, "This bid is no longer available.") if bid is None else respond_to_bid(game, bid.listing_id, bid.bid_id, accept)
+    else:
+        return ActionResult(False, "This message does not require a response.")
+    if result.ok:
+        message.read = True
+        message.requires_response = False
+    return result
 
 
 def rock_name(rock: genetics.Rock) -> str:
@@ -347,6 +606,8 @@ def get_pending_market_pod_rocks(game: GameMaster) -> dict[str, list[genetics.Ro
 
 
 def buy_market_pod(game: GameMaster, offer_id: str) -> ActionResult:
+    if game.world is not None:
+        return ActionResult(False, "Legacy market pods are disabled in persistent worlds. Use a farmer family pod.")
     try:
         pending = game.market_manager.buy_market_pod(game, offer_id)
     except Exception as exc:
@@ -360,6 +621,8 @@ def buy_market_pod(game: GameMaster, offer_id: str) -> ActionResult:
 
 
 def choose_market_pod_child(game: GameMaster, child_index: int) -> ActionResult:
+    if game.world is not None:
+        return ActionResult(False, "Legacy market pods are disabled in persistent worlds.")
     try:
         child = game.market_manager.choose_market_pod_child(game, child_index)
     except Exception as exc:
@@ -375,6 +638,8 @@ def validate_breeding_pair(game: GameMaster, parent_a_id: int, parent_b_id: int)
 
 
 def buy_random_rock(game: GameMaster) -> ActionResult:
+    if game.world is not None:
+        return ActionResult(False, "Synthetic imports are disabled. Buy or trade for a farmer-owned rock.")
     try:
         rock = game.buy_random_rock()
     except Exception as exc:
@@ -383,6 +648,8 @@ def buy_random_rock(game: GameMaster) -> ActionResult:
 
 
 def sell_rock(game: GameMaster, rock_id: int) -> ActionResult:
+    if game.world is not None:
+        return ActionResult(False, "Instant selling is disabled. Create a farmer-visible listing instead.")
     try:
         value = game.sell_rock(rock_id)
     except Exception as exc:
@@ -429,7 +696,11 @@ def advance_breeding_generation(game: GameMaster) -> ActionResult:
         return ActionResult(False, "No breeding pairs are queued.")
 
     try:
+        if game.world is not None:
+            game.next_rock_id = max(game.world.owner_by_rock_id, default=0) + 1
         children = game.advance_generation()
+        if game.world is not None:
+            PlayableWorldManager().advance_after_player_generation(game)
     except Exception as exc:
         return ActionResult(False, str(exc))
 

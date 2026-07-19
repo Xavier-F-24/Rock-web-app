@@ -10,7 +10,15 @@ from Rock_GameState.rock_game_state_helper import GameMaster
 from .rock_farm_profile_helper import FarmProfile
 
 
-WORLD_SAVE_VERSION = 1
+WORLD_SAVE_VERSION = 2
+
+
+@dataclass
+class FarmerControllerSpec:
+    policy_id: str = "heuristic"
+    seed: int = 0
+    policy_state: dict[str, Any] = field(default_factory=dict)
+    warning: str | None = None
 
 
 @dataclass
@@ -22,6 +30,7 @@ class FarmState:
     committed_money: int = 0
     observable_history: list[dict[str, Any]] = field(default_factory=list)
     private_messages: list[str] = field(default_factory=list)
+    controller: FarmerControllerSpec = field(default_factory=FarmerControllerSpec)
 
     @property
     def rocks(self):
@@ -61,14 +70,18 @@ class WorldState:
     listings: dict[str, Any] = field(default_factory=dict)
     bids: dict[str, Any] = field(default_factory=dict)
     trade_offers: dict[str, Any] = field(default_factory=dict)
+    family_pods: dict[str, Any] = field(default_factory=dict)
     messages: list[Any] = field(default_factory=list)
     public_events: list[Any] = field(default_factory=list)
     completed_transaction_ids: set[str] = field(default_factory=set)
     reserved_rock_ids: dict[int, str] = field(default_factory=dict)
     rule_version: str = "economy-1"
     save_version: int = WORLD_SAVE_VERSION
+    resolved_npc_count: int = 0
 
     def __post_init__(self) -> None:
+        if not self.resolved_npc_count:
+            self.resolved_npc_count = len([farm_id for farm_id in self.farms if farm_id != "player"])
         self.validate_ownership()
 
     def validate_ownership(self) -> None:

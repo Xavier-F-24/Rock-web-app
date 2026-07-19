@@ -9,6 +9,19 @@ from Rock_Streamlit.ui_components import page_header, section
 from rockgame_ui import game_controller
 
 
+def _world_settings(prefix: str):
+    mode_label = st.segmented_control(
+        "World farmer size", ("Random (3-8)", "Choose a number"),
+        default="Random (3-8)", key=f"{prefix}_world_size_mode",
+    )
+    mode = "random" if mode_label == "Random (3-8)" else "fixed"
+    count = st.number_input(
+        "NPC farmers", min_value=2, max_value=12, value=3, step=1,
+        disabled=mode == "random", key=f"{prefix}_world_farmer_count",
+    )
+    return mode, int(count)
+
+
 def _dev_settings_form() -> None:
     with st.expander("Dev Mode", expanded=False):
         with st.form("dev_start_settings"):
@@ -18,6 +31,8 @@ def _dev_settings_form() -> None:
             max_generation = st.number_input("Max generation", min_value=1, value=7, step=1)
             max_pairs = st.number_input("Max pairs per generation", min_value=1, value=3, step=1)
             farm_cost = st.number_input("Rock farm cost", min_value=0, value=75, step=1)
+            world_mode, world_count = _world_settings("dev")
+            neural_farmers = st.checkbox("Allow compatible neural farmers", value=True)
 
             if st.form_submit_button("Start Dev Game", type="primary"):
                 settings = game_controller.GameStartSettings(
@@ -26,6 +41,9 @@ def _dev_settings_form() -> None:
                     max_generation=int(max_generation),
                     max_pairs_per_generation=int(max_pairs),
                     rock_farm_cost=int(farm_cost),
+                    world_size_mode=world_mode,
+                    world_farmer_count=world_count,
+                    allow_neural_farmers=neural_farmers,
                 )
                 reset_game(settings=settings)
                 st.rerun()
@@ -56,8 +74,11 @@ def render() -> None:
     with col_start:
         with section("Start Farm", "Begin with the standard rules and a fresh starter set."):
             st.write("Default game: $10 starting money, 7 generations, 3 breeding pairs per generation.")
+            world_mode, world_count = _world_settings("standard")
             if st.button("Start Game", type="primary", key="start_standard_game", width="stretch"):
-                reset_game()
+                reset_game(settings=game_controller.GameStartSettings(
+                    world_size_mode=world_mode, world_farmer_count=world_count,
+                ))
                 st.rerun()
             _dev_settings_form()
 

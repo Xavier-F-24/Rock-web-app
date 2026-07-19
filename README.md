@@ -2,6 +2,23 @@
 
 A Streamlit app for breeding, importing, selling, saving, loading, and drawing lineage trees for the split-module rock genetics game.
 
+## Persistent Rock World
+
+Every new playable game now creates a persistent shared world containing the
+player farm and either 2–12 selected NPC farms or a seeded random 3–8. NPC
+farms begin with genuine simulated lineages one to three generations ahead.
+Every world rock has one owner and globally unique ID.
+
+Use **Rock World** to inspect public farmer galleries and lineage trees or send
+a direct trade offer. Use **Market** for farmer listings, real sibling family
+pods, player listings, outgoing offers, the farmer inbox, and potions. Synthetic
+imports and instant rock sales are disabled in persistent games. Press **End
+World Turn** when the NPC farmers should each take one action.
+
+Save version `0.4.0` includes the complete world economy. Older saves receive a
+deterministically generated farmer world without changing existing player
+rocks, money, generation, pending legacy market state, or game rules.
+
 ## Run Locally
 
 Install runtime dependencies, then start the Streamlit app:

@@ -73,6 +73,9 @@ class GameMaster:
     rock_farm_cost: int = DEFAULT_ROCK_FARM_COST
     seed: int | None = None
     auto_start: bool = True
+    world_size_mode: str = "random"
+    resolved_world_farmer_count: int = 0
+    allow_neural_farmers: bool = True
 
     rock_list: dict[int, genetics.Rock] = field(default_factory=dict)
     inventory: Inventory = field(default_factory=Inventory)
@@ -91,6 +94,7 @@ class GameMaster:
     name_generator: genetics.NameGenerator = field(default_factory=genetics.NameGenerator)
     breeding_master: breeding.BreedingMaster = field(default_factory=breeding.BreedingMaster)
     market_manager: MarketManager | None = None
+    world: Any = field(default=None, repr=False)
 
     def __post_init__(self):
         self.inventory.money = self.starting_money
@@ -185,7 +189,10 @@ class GameMaster:
             starters.append(rock)
 
         self.events.append(f"Created {len(starters)} starter rocks.")
-        self.update_market(force=True)
+        if self.world is None:
+            self.update_market(force=True)
+        else:
+            self.market_pods = []
         return starters
 
     def add_pair_to_queue(
@@ -334,7 +341,10 @@ class GameMaster:
         if self.generation >= self.max_generation:
             self.game_over = True
 
-        self.update_market(force=True)
+        if self.world is None:
+            self.update_market(force=True)
+        else:
+            self.market_pods = []
         self.events.append(f"Advanced to generation {self.generation}.")
         return children
 

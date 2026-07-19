@@ -6,6 +6,7 @@ import streamlit as st
 
 from Rock_Streamlit.app_state import clear_game_state, get_game_state
 from Rock_Streamlit.ui_components import metric_strip, page_header, section
+from Rock_Streamlit.components.world_turn_panel import render_world_turn_panel
 from rockgame_ui import game_controller
 
 
@@ -18,6 +19,9 @@ def render() -> None:
 
     game = get_game_state()
     summary = game_controller.get_game_summary(game)
+    world_summary = render_world_turn_panel(game, key_prefix="home")
+    if world_summary["latest_message"]:
+        st.info(f"New farmer message: {world_summary['latest_message']}")
     score = game_controller.get_final_score_summary(game)
 
     metric_strip(
