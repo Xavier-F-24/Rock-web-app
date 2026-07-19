@@ -64,6 +64,10 @@ class TrainingJobStatus:
     failure_summary: str | None = None
     cancellation_state: str | None = None
     warnings: tuple[str, ...] = ()
+    trainer_kind: str = "breeding_pair"
+    worlds_evaluated: int = 0
+    invalid_action_rate: float | None = None
+    market_transaction_rate: float | None = None
 
     def transition(self, status: TrainingJobState, **changes: Any) -> "TrainingJobStatus":
         if status != self.status and status not in LEGAL_TRANSITIONS[self.status]:

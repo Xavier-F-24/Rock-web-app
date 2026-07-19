@@ -8,7 +8,7 @@ from typing import Any
 from .training_job_config import TrainingJobConfig
 
 
-TRAINING_JOB_MANIFEST_VERSION = 1
+TRAINING_JOB_MANIFEST_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,7 @@ class TrainingJobManifest:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TrainingJobManifest":
-        if int(data.get("manifest_version", -1)) != TRAINING_JOB_MANIFEST_VERSION:
+        version = int(data.get("manifest_version", 1))
+        if version not in {1, TRAINING_JOB_MANIFEST_VERSION}:
             raise ValueError("Unsupported training-job manifest version")
-        return cls(str(data["job_id"]), str(data["created_at"]), str(data["repository_root"]), str(data["job_directory"]), TrainingJobConfig.from_dict(data["config"]), tuple(data["command"]), int(data["manifest_version"]))
+        return cls(str(data["job_id"]), str(data["created_at"]), str(data["repository_root"]), str(data["job_directory"]), TrainingJobConfig.from_dict(data["config"]), tuple(data["command"]), TRAINING_JOB_MANIFEST_VERSION)

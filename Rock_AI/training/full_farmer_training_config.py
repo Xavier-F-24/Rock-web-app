@@ -23,14 +23,31 @@ class FullFarmerTrainingConfig:
     action_ranking_weight: float = .05
     memory_weight: float = .05
     complexity_penalty: float = .00001
+    curriculum_max: ActionCurriculumStage = ActionCurriculumStage.OPPONENT_GENERALIZATION
+    minimum_generations_per_stage: int = 3
+    curriculum_stability_window: int = 3
+    curriculum_invalid_rate_threshold: float = .05
+    curriculum_validation_threshold: float = -.25
 
     def __post_init__(self):
         if min(self.population, self.generations, self.worlds_per_genome, self.max_rounds_per_world) <= 0:
             raise ValueError("Training counts must be positive")
         if self.worker_count != 1 and self.single_process:
             raise ValueError("single_process requires one worker")
+        if self.curriculum_max < self.curriculum_start:
+            raise ValueError("curriculum_max cannot precede curriculum_start")
+        if min(self.minimum_generations_per_stage, self.curriculum_stability_window) <= 0:
+            raise ValueError("Curriculum counts must be positive")
 
     def to_dict(self):
         data = asdict(self)
         data["curriculum_start"] = self.curriculum_start.name.lower()
+        data["curriculum_max"] = self.curriculum_max.name.lower()
         return data
+
+    @classmethod
+    def from_dict(cls, data):
+        payload = dict(data)
+        payload["curriculum_start"] = ActionCurriculumStage[str(payload.get("curriculum_start", "imports")).upper()]
+        payload["curriculum_max"] = ActionCurriculumStage[str(payload.get("curriculum_max", "opponent_generalization")).upper()]
+        return cls(**payload)

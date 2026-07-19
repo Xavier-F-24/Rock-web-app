@@ -10,12 +10,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from Rock_AI.training.neat_progress_reporter import NeatProgressReporter
+from Rock_AI.training.action_curriculum import ActionCurriculumStage
+from Rock_AI.training.full_farmer_neat_trainer import FullFarmerNeatTrainer
+from Rock_AI.training.full_farmer_training_config import FullFarmerTrainingConfig
+from Rock_AI.policies.recurrent_neat_farmer_policy import FULL_FARMER_OBSERVATION_SCHEMA_VERSION
 from Rock_AI.training.recurrent_neat_training_helper import (
     RecurrentNeatTrainer, RecurrentNeatTrainingConfig, TrainingCancelled,
 )
 from .champion_branch_builder import build_champion_branch_population
 from .run_continuation_helper import resolve_checkpoint, restore_population, validate_run_compatibility
-from .training_job_config import TrainingOperation
+from .training_job_config import TrainingBackendKind, TrainingOperation
 from .training_job_lock import TrainingJobLock
 from .training_job_manifest import TrainingJobManifest
 from .training_job_status import TrainingJobState, TrainingJobStatus
@@ -61,7 +65,7 @@ def run_training_job(job_directory: str | Path) -> TrainingJobStatus:
     manifest = TrainingJobManifest.from_dict(json.loads((job / "job_manifest.json").read_text(encoding="utf-8")))
     config = manifest.config
     root = Path(manifest.repository_root).resolve(); config.validate_paths(root)
-    source_run = (root / config.source_run).resolve() if not Path(config.source_run).is_absolute() else Path(config.source_run).resolve()
+    source_run = (root / config.source_run).resolve() if config.source_run and not Path(config.source_run).is_absolute() else Path(config.source_run).resolve() if config.source_run else root
     output_run = (root / config.output_run).resolve() if not Path(config.output_run).is_absolute() else Path(config.output_run).resolve()
     dataset = config.dataset_path
     status = TrainingProgressReader(job).status()
@@ -85,35 +89,69 @@ def run_training_job(job_directory: str | Path) -> TrainingJobStatus:
             (job / "worker.pid").write_text(str(os.getpid()), encoding="ascii")
             source_training = None; population = None; starting_generation = 0
             if config.operation in {TrainingOperation.CONTINUE, TrainingOperation.CONTINUE_AS_BRANCH}:
-                checkpoint = resolve_checkpoint(source_run, config.source_checkpoint)
-                compatibility = validate_run_compatibility(source_run, checkpoint)
+                requested_checkpoint = config.source_checkpoint
+                if requested_checkpoint and requested_checkpoint != "latest" and not Path(requested_checkpoint).is_absolute():
+                    root_relative = (root / requested_checkpoint).resolve()
+                    if root_relative.exists():
+                        requested_checkpoint = str(root_relative)
+                checkpoint = resolve_checkpoint(source_run, requested_checkpoint)
+                expected_type = "recurrent_neat_full_farmer" if config.trainer_kind is TrainingBackendKind.FULL_FARMER else "recurrent_neat_player_farmer"
+                compatibility = validate_run_compatibility(source_run, checkpoint, expected_run_type=expected_type)
                 source_training = compatibility["training_config"]
                 if config.operation is TrainingOperation.CONTINUE_AS_BRANCH:
                     if output_run.exists() and any(output_run.iterdir()): raise FileExistsError("Continuation branch output already exists")
                     output_run.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source_run / "neat_config.ini", output_run / "neat_config.ini")
+                    if config.trainer_kind is TrainingBackendKind.FULL_FARMER:
+                        for name in ("training_config.json", "action_schema.json", "observation_schema.json", "full_farmer_training_state.json"):
+                            source_file = source_run / name
+                            if source_file.exists():
+                                shutil.copy2(source_file, output_run / name)
                 population = restore_population(checkpoint)
                 starting_generation = int(population.generation)
-                dataset = dataset or source_training["dataset_path"]
+                dataset = dataset or source_training.get("dataset_path")
             elif config.operation is TrainingOperation.BRANCH_CHAMPION:
                 if output_run.exists() and any(output_run.iterdir()): raise FileExistsError("Champion branch output already exists")
                 source_training = json.loads((source_run / "training_config.json").read_text(encoding="utf-8"))
-                dataset = dataset or source_training["dataset_path"]
-            if not dataset: raise ValueError("Training dataset path is missing")
-            training = RecurrentNeatTrainingConfig(
-                dataset_path=str((root / dataset).resolve() if not Path(dataset).is_absolute() else Path(dataset).resolve()),
-                output_directory=str(output_run), seed=config.seed, population=config.population_size,
-                generations=config.additional_generations, training_scenarios_per_generation=config.training_scenarios,
-                validation_scenarios=config.validation_scenarios, checkpoint_frequency=config.checkpoint_frequency,
-                campaign_generations=config.campaign_generations, supervised_weight=config.supervised_weight,
-                campaign_weight=config.campaign_weight, complexity_penalty=config.complexity_penalty,
-                settling_steps=int((source_training or {}).get("settling_steps", 3)),
-            )
-            allow_existing = config.operation is TrainingOperation.CONTINUE
-            trainer = RecurrentNeatTrainer(
-                training, allow_existing=allow_existing, starting_generation=starting_generation,
-                cancel_path=job / "cancel.request",
-            )
+                dataset = dataset or source_training.get("dataset_path")
+            allow_existing = config.operation in {TrainingOperation.CONTINUE, TrainingOperation.CONTINUE_AS_BRANCH}
+            if config.trainer_kind is TrainingBackendKind.FULL_FARMER:
+                training = FullFarmerTrainingConfig(
+                    output_directory=str(output_run), seed=config.seed, population=config.population_size,
+                    generations=config.additional_generations, worlds_per_genome=config.worlds_per_genome,
+                    max_rounds_per_world=config.max_rounds_per_world,
+                    curriculum_start=ActionCurriculumStage[config.curriculum_start.upper()],
+                    checkpoint_frequency=config.checkpoint_frequency,
+                    showcase_frequency=config.showcase_frequency,
+                    settling_steps=int((source_training or {}).get("settling_steps", 3)),
+                    complexity_penalty=config.complexity_penalty,
+                    curriculum_max=ActionCurriculumStage[config.curriculum_max.upper()],
+                    minimum_generations_per_stage=config.minimum_generations_per_stage,
+                    curriculum_stability_window=config.curriculum_stability_window,
+                    curriculum_invalid_rate_threshold=config.curriculum_invalid_rate_threshold,
+                    curriculum_validation_threshold=config.curriculum_validation_threshold,
+                )
+                trainer = FullFarmerNeatTrainer(
+                    training, allow_existing=allow_existing, starting_generation=starting_generation,
+                    cancel_path=job / "cancel.request",
+                )
+                expected_schema = FULL_FARMER_OBSERVATION_SCHEMA_VERSION
+            else:
+                if not dataset: raise ValueError("Training dataset path is missing")
+                training = RecurrentNeatTrainingConfig(
+                    dataset_path=str((root / dataset).resolve() if not Path(dataset).is_absolute() else Path(dataset).resolve()),
+                    output_directory=str(output_run), seed=config.seed, population=config.population_size,
+                    generations=config.additional_generations, training_scenarios_per_generation=config.training_scenarios,
+                    validation_scenarios=config.validation_scenarios, checkpoint_frequency=config.checkpoint_frequency,
+                    campaign_generations=config.campaign_generations, supervised_weight=config.supervised_weight,
+                    campaign_weight=config.campaign_weight, complexity_penalty=config.complexity_penalty,
+                    settling_steps=int((source_training or {}).get("settling_steps", 3)),
+                )
+                trainer = RecurrentNeatTrainer(
+                    training, allow_existing=allow_existing, starting_generation=starting_generation,
+                    cancel_path=job / "cancel.request",
+                )
+                expected_schema = int(trainer.manifest["observation_schema_version"])
             trainer.prepare_run_metadata({
                 "training_job_id": manifest.job_id,
                 "training_operation": config.operation.value,
@@ -127,7 +165,7 @@ def run_training_job(job_directory: str | Path) -> TrainingJobStatus:
                 population, branch = build_champion_branch_population(
                     replace(config, source_champion=str((root / config.source_champion).resolve() if not Path(config.source_champion).is_absolute() else Path(config.source_champion).resolve())),
                     trainer.neat_config,
-                    expected_schema=int(trainer.manifest["observation_schema_version"]),
+                    expected_schema=expected_schema,
                     expected_features=trainer.feature_names,
                     historical_champions=historical,
                 )
@@ -158,6 +196,9 @@ def run_training_job(job_directory: str | Path) -> TrainingJobStatus:
                         current_best_training_fitness=event.get("best_fitness"),
                         current_best_validation_fitness=event.get("validation_quality"),
                         champion_topology_size=event.get("topology_complexity"),
+                        worlds_evaluated=int(event.get("worlds_evaluated", status.worlds_evaluated)),
+                        invalid_action_rate=event.get("invalid_action_rate"),
+                        market_transaction_rate=event.get("market_transaction_rate"),
                         last_heartbeat_time=_now(),
                         latest_checkpoint=_latest(output_run, "checkpoints/neat-checkpoint-*"),
                         latest_safe_champion_export=_latest(output_run, "champions/generation_*/network.json"),

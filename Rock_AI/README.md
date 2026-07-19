@@ -106,6 +106,15 @@ python -m Rock_AI.scripts.evaluate_full_neat_farmers --champion training_runs/fu
 
 In Streamlit, open **AI Observatory > World Economy**. The view provides farm
 comparison, public market, heterogeneous action rankings, transactions, direct
-trades, recurrent memory, and safe full-farmer training commands. Training is
-CLI-driven in this version; completed JSON champions are discovered by the UI
-and are never deployed into a live save automatically.
+trades, recurrent memory, and durable local full-farmer training. The Training
+tab can start a bounded run, continue its complete population checkpoint,
+continue into a new run, or branch from a safe per-generation JSON champion.
+It also supports cooperative cancellation and live generation, validation,
+invalid-action, market-action, species, and topology progress. Streamlit Cloud
+remains observation-only because hosted processes and storage are not durable.
+
+Full-farmer runs write trusted local population checkpoints plus safe viewing
+artifacts under `champions/generation_XXXX/`. Curriculum stages advance only at
+generation boundaries after stable validation and low invalid-action rates.
+Previously exported champions are frozen and may join a deterministic opponent
+pool; they are never modified during a candidate genome's evaluation.

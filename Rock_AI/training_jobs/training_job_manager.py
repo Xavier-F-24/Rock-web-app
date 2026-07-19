@@ -36,6 +36,7 @@ class TrainingJobManager:
             identifier, TrainingJobState.CREATED, config.operation.value,
             config.source_run, config.source_checkpoint, config.source_generation,
             config.source_champion, config.output_run, 0, 0, config.additional_generations,
+            trainer_kind=config.trainer_kind.value,
         )
         atomic_write_json(directory / "status.json", status.to_dict())
         return manifest
