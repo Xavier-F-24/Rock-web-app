@@ -62,6 +62,7 @@ MARKET_POD_TIERS = {
 RANDOM_ROCK_COST = 8
 REQUESTED_ROCK_BASE_COST = 8
 REQUESTED_ROCK_VALUE_MULTIPLIER = 2
+REQUESTED_TRAIT_SURCHARGE = 2
 
 
 @dataclass
@@ -365,6 +366,15 @@ class MarketManager:
         game.rock_list[preview.id] = preview
         game.events.append(f"Bought defined-trait rock #{preview.id} for ${cost}.")
         return preview
+
+    @staticmethod
+    def quote_defined_trait_request(selected_traits: dict[str, object]) -> int:
+        """Return a public quote without generating the rock's hidden genome."""
+        public_traits = {
+            str(name): value for name, value in selected_traits.items()
+            if value is not None
+        }
+        return REQUESTED_ROCK_BASE_COST + REQUESTED_TRAIT_SURCHARGE * len(public_traits)
 
     @staticmethod
     def price_defined_trait_rock(rock: genetics.Rock) -> int:

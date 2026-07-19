@@ -72,3 +72,40 @@ Only trusted local checkpoints are accepted for continuation. Uploaded replay
 artifacts remain JSON/NPZ and cannot start training code. Hosted Streamlit
 environments without durable subprocess support expose replay and inference
 only, alongside the equivalent CLI command.
+
+## Full Farmer Economy AI
+
+The full-farmer milestone adds a separate three-farm, headless economy. One
+recurrent policy scores a bounded authoritative list containing breeding,
+imports, pair-scoped potion use, immediate sales, listings, bids, simple direct
+trades, and pass actions. Candidate vectors contain player-visible information
+only; hidden genomes, private opponent cash, objectives, and recurrent state do
+not cross the observation boundary.
+
+Random imports are generated only after purchase. Requested imports use a
+public trait-count quote. Listings reserve rocks, bids reserve liquidity, and
+bid/trade settlement revalidates every asset before atomically moving money and
+ownership. The first direct-trade implementation supports one rock per side and
+optional money. Counteroffers, bid withdrawal, and standalone potion targeting
+are intentionally unavailable because the current game does not support them;
+potions are allocated through the existing breeding queue.
+
+Run a bounded smoke evolution:
+
+```powershell
+python -m Rock_AI.scripts.train_full_neat_farmers --output training_runs/full_farmer_smoke --population 20 --generations 5 --worlds-per-genome 3 --curriculum-start imports --seed 1234 --single-process
+```
+
+Run and replay a shared economy:
+
+```powershell
+python -m Rock_AI.scripts.run_multi_farm_episode --champion training_runs/full_farmer_smoke/champions/best_validation/network.json --seed 2468 --rounds 12 --output evaluation_runs/world_2468.json
+python -m Rock_AI.scripts.replay_multi_farm_episode --episode evaluation_runs/world_2468.json
+python -m Rock_AI.scripts.evaluate_full_neat_farmers --champion training_runs/full_farmer_smoke/champions/best_validation/network.json --episodes 10 --seed 5678
+```
+
+In Streamlit, open **AI Observatory > World Economy**. The view provides farm
+comparison, public market, heterogeneous action rankings, transactions, direct
+trades, recurrent memory, and safe full-farmer training commands. Training is
+CLI-driven in this version; completed JSON champions are discovered by the UI
+and are never deployed into a live save automatically.

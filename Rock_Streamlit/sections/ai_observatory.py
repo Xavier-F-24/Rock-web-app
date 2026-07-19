@@ -52,6 +52,7 @@ from Rock_Streamlit.components.mutation_event_panel import render_mutation_event
 from Rock_Streamlit.components.network_visualizer import render_network_trace
 from Rock_Streamlit.components.training_replay_panel import render_training_replay
 from Rock_Streamlit.components.neat_training_console import render_neat_training_console
+from Rock_Streamlit.components.world_economy_observatory import render_world_economy_observatory
 from Rock_Streamlit.components.observatory_state_helper import (
     auto_run_should_continue,
     control_states,
@@ -402,11 +403,13 @@ def render() -> None:
         "AI Breeding Observatory",
         "Watch player-like agents decide, inspect safe network signals, and replay evolution.",
     )
-    session_tab, network_tab, training_tab, console_tab = st.tabs(
-        ("Agent Session", "Network", "Training Replay", "Training Console")
+    session_tab, economy_tab, network_tab, training_tab, console_tab = st.tabs(
+        ("Agent Session", "World Economy", "Network", "Training Replay", "Training Console")
     )
     with session_tab:
         _render_agent_session()
+    with economy_tab:
+        render_world_economy_observatory()
     with network_tab:
         manager = get_runtime_manager()
         session_id = st.session_state.get(SESSION_ID_KEY)

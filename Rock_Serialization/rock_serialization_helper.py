@@ -15,7 +15,7 @@ from Rock_GameState.rock_game_state_helper import DEFAULT_ROCK_FARM_COST
 from Rock_Market.rock_market_helper import MarketPodOffer, PendingMarketPod
 
 
-SAVE_VERSION = "0.2.0"
+SAVE_VERSION = "0.3.0"
 
 
 def allele_to_dict(allele: genetics.Allele) -> dict[str, int]:
@@ -303,3 +303,93 @@ def load_game_json(filepath: str | Path) -> GameMaster:
 def make_save_filename(game: GameMaster) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"rock_game_gen{game.generation}_money{game.money}_{timestamp}.json"
+
+
+def world_to_dict(world) -> dict[str, Any]:
+    """Serialize the additive multi-farm economy without live policy objects."""
+    from dataclasses import asdict
+
+    serialized_games = {}
+    for farm_id, farm in sorted(world.farms.items()):
+        serialized = game_to_dict(farm.game)
+        serialized.pop("saved_at", None)
+        serialized_games[farm_id] = serialized
+    return {
+        "world_save_version": int(world.save_version),
+        "seed": int(world.seed),
+        "turn": int(world.turn),
+        "generation": int(world.generation),
+        "rule_version": world.rule_version,
+        "farms": {
+            farm_id: {
+                "profile": farm.profile.to_dict(),
+                "game": serialized_games[farm_id],
+                "visible_rock_ids": sorted(farm.visible_rock_ids),
+                "committed_money": int(farm.committed_money),
+                "observable_history": list(farm.observable_history),
+                "private_messages": list(farm.private_messages),
+            }
+            for farm_id, farm in sorted(world.farms.items())
+        },
+        "owner_by_rock_id": {str(key): value for key, value in world.owner_by_rock_id.items()},
+        "reserved_rock_ids": {str(key): value for key, value in world.reserved_rock_ids.items()},
+        "completed_transaction_ids": sorted(world.completed_transaction_ids),
+        "listings": {
+            key: {
+                **{name: value for name, value in asdict(listing).items() if name != "bids"},
+                "status": listing.status.value,
+                "bids": {bid_id: {**asdict(bid)} for bid_id, bid in listing.bids.items()},
+            }
+            for key, listing in world.listings.items()
+        },
+        "trade_offers": {
+            key: {**asdict(offer), "status": offer.status.value}
+            for key, offer in world.trade_offers.items()
+        },
+        "messages": [asdict(message) for message in world.messages],
+        "public_events": [asdict(event) for event in world.public_events],
+    }
+
+
+def world_from_dict(data: dict[str, Any]):
+    from Rock_AI.logging.public_world_event_record import PublicWorldEventRecord
+    from Rock_Market.rock_npc_market_helper import FarmMessage, ListingStatus, MarketBid, MarketListing, OfferStatus, TradeOffer
+    from Rock_World.rock_farm_profile_helper import FarmObjective, FarmProfile
+    from Rock_World.rock_world_state_helper import FarmState, WorldState
+
+    farms = {}
+    for farm_id, row in data.get("farms", {}).items():
+        profile_data = dict(row["profile"])
+        profile_data["objective"] = FarmObjective(profile_data["objective"])
+        farms[farm_id] = FarmState(
+            farm_id, FarmProfile(**profile_data), game_from_dict(row["game"]),
+            set(map(int, row.get("visible_rock_ids", ()))), int(row.get("committed_money", 0)),
+            list(row.get("observable_history", ())), list(row.get("private_messages", ())),
+        )
+    world = WorldState(
+        farms, {int(key): value for key, value in data.get("owner_by_rock_id", {}).items()},
+        int(data["seed"]), turn=int(data.get("turn", 0)), generation=int(data.get("generation", 0)),
+        rule_version=str(data.get("rule_version", "economy-1")),
+        save_version=int(data.get("world_save_version", 1)),
+    )
+    world.reserved_rock_ids = {int(key): value for key, value in data.get("reserved_rock_ids", {}).items()}
+    world.completed_transaction_ids = set(data.get("completed_transaction_ids", ()))
+    for listing_id, row in data.get("listings", {}).items():
+        listing = MarketListing(
+            listing_id, row["seller_farm_id"], int(row["rock_id"]), int(row["asking_price"]),
+            int(row["appraised_value"]), int(row["created_turn"]), int(row["expires_turn"]),
+            ListingStatus(row["status"]),
+        )
+        listing.bids = {bid_id: MarketBid(**bid) for bid_id, bid in row.get("bids", {}).items()}
+        world.listings[listing_id] = listing
+        world.bids.update(listing.bids)
+    for offer_id, row in data.get("trade_offers", {}).items():
+        payload = dict(row)
+        payload["offered_rock_ids"] = tuple(payload.get("offered_rock_ids", ()))
+        payload["requested_rock_ids"] = tuple(payload.get("requested_rock_ids", ()))
+        payload["status"] = OfferStatus(payload["status"])
+        world.trade_offers[offer_id] = TradeOffer(**payload)
+    world.messages = [FarmMessage(**row) for row in data.get("messages", ())]
+    world.public_events = [PublicWorldEventRecord(**row) for row in data.get("public_events", ())]
+    world.validate_ownership()
+    return world
