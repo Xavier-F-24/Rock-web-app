@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import ctypes
 import time
 import uuid
 from datetime import datetime, timezone
@@ -79,8 +80,36 @@ class TrainingProgressReader:
     def _process_alive(process_id: int | None) -> bool:
         if not process_id:
             return True
+        if os.name == "nt":
+            return TrainingProgressReader._windows_process_alive(int(process_id))
         try:
             os.kill(int(process_id), 0)
             return True
-        except (OSError, ValueError):
+        except (OSError, ValueError, SystemError):
             return False
+
+    @staticmethod
+    def _windows_process_alive(process_id: int) -> bool:
+        process_query_limited_information = 0x1000
+        still_active = 259
+        try:
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            kernel32.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32))
+            kernel32.GetExitCodeProcess.restype = ctypes.c_int
+            kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+            handle = kernel32.OpenProcess(process_query_limited_information, False, process_id)
+            if not handle:
+                # Access denied means the process may exist but is not inspectable.
+                return ctypes.get_last_error() == 5
+            try:
+                exit_code = ctypes.c_uint32()
+                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    return True
+                return exit_code.value == still_active
+            finally:
+                kernel32.CloseHandle(handle)
+        except (OSError, ValueError, TypeError, AttributeError):
+            # Status rendering must never take down Streamlit over a process probe.
+            return True

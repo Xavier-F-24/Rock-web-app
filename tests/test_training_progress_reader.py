@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 from Rock_AI.training_jobs.training_job_status import TrainingJobState, TrainingJobStatus
@@ -23,3 +24,8 @@ def test_stale_heartbeat_warns_without_mutating_status(tmp_path):
     reader = TrainingProgressReader(tmp_path)
     assert "stale" in reader.orphan_warning(30)
     assert reader.status().status is TrainingJobState.RUNNING
+
+
+def test_process_probe_is_safe_for_current_and_missing_processes():
+    assert TrainingProgressReader._process_alive(os.getpid())
+    assert isinstance(TrainingProgressReader._process_alive(2_147_483_647), bool)
