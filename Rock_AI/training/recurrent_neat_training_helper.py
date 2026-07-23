@@ -307,8 +307,47 @@ class RecurrentNeatTrainer:
                 progress_current=index, progress_total=total,
                 progress_label="Campaign baseline scenarios",
             )
+
+            def report_oracle_progress(event, *, scenario_id=index):
+                self._cancel_if_requested("oracle candidate evaluation")
+                campaign_generation = int(event["campaign_generation"])
+                decision_index = int(event["decision_index"])
+                current = int(event["completed"])
+                candidate_total = int(event["total"])
+                label = (
+                    f"Oracle campaign generation "
+                    f"{campaign_generation + 1}/{self.training_config.campaign_generations}, "
+                    f"decision {decision_index + 1}: candidate pairs"
+                )
+                progress_interval = max(1, candidate_total // 100)
+                force_progress = (
+                    event["event"] in {"decision_started", "decision_completed"}
+                    or current == candidate_total
+                    or current % progress_interval == 0
+                )
+                self._pulse(
+                    HeartbeatPhase.SCENARIO_EVALUATION,
+                    force=force_progress,
+                    operation="oracle_pair_evaluation",
+                    scenario_id=scenario_id,
+                    campaign_generation=campaign_generation,
+                    oracle_decision_index=decision_index,
+                    candidate_parent_ids=event.get("parent_ids"),
+                    candidate_seconds=event.get("candidate_seconds"),
+                    elapsed_seconds=event.get("elapsed_seconds"),
+                    estimated_remaining_seconds=event.get(
+                        "estimated_remaining_seconds"
+                    ),
+                    progress_current=current,
+                    progress_total=candidate_total,
+                    progress_label=label,
+                )
+
             oracle_episode = evaluator.run_episode(
-                OracleBreedingAgent(trial_count=self.training_config.oracle_trial_count),
+                OracleBreedingAgent(
+                    trial_count=self.training_config.oracle_trial_count,
+                    progress_callback=report_oracle_progress,
+                ),
                 seed=seed, initial_farm=copy.deepcopy(farm),
             )
             scenarios.append((seed, farm, evaluator,

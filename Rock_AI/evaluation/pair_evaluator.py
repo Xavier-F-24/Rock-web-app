@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import asdict, dataclass, field
+from functools import lru_cache
 from typing import Any, Mapping
 
 import Rock_Breeding.rock_breeding_helper as breeding
@@ -76,6 +77,7 @@ class PairEvaluator:
         self.expectation_evaluator = expectation_evaluator or BreedingExpectationEvaluator()
 
     @staticmethod
+    @lru_cache(maxsize=None)
     def _initial_allele_probabilities(gene_name: str) -> dict[int, float]:
         spec = genetics.GENE_SPECS[gene_name]
         counts = {allele: 0 for allele in spec.options}

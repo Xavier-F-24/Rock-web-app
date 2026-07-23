@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 
 import Rock_Genetics.rock_genetic_helper as genetics
 from Rock_AI.datasets.breeding_expectation_record import GeneOutcomeDistribution
@@ -11,9 +11,27 @@ from Rock_AI.representations.encoding_schema_helper import EncodingSchema, get_d
 
 
 class GeneticsEvaluator:
-    def __init__(self, schema: EncodingSchema | None = None):
+    def __init__(
+        self,
+        schema: EncodingSchema | None = None,
+        *,
+        distribution_cache_size: int = 128,
+    ):
         self.schema = schema or get_default_encoding_schema()
         self.expression_engine = genetics.ExpressionEngine()
+        # ExpressionEngine derives one gene's result solely from that gene's
+        # allele pair and sex, so these authoritative outcomes are finite.
+        self._phenotype_cache: dict[tuple[str, int, int, str], str] = {}
+        self._phenotype_cache_hits = 0
+        self._phenotype_cache_misses = 0
+        self._distribution_cache_size = max(0, int(distribution_cache_size))
+        # Keep repeated pair decisions fast without retaining an entire long run.
+        self._distribution_cache: OrderedDict[
+            tuple[tuple[tuple[str, int, int], ...], tuple[tuple[str, int, int], ...], float],
+            dict[str, GeneOutcomeDistribution],
+        ] = OrderedDict()
+        self._distribution_cache_hits = 0
+        self._distribution_cache_misses = 0
 
     @staticmethod
     def _transmission_probabilities(
@@ -61,6 +79,12 @@ class GeneticsEvaluator:
         allele_b: int,
         sex: genetics.Sex,
     ) -> str:
+        cache_key = (gene_name, int(allele_a), int(allele_b), str(sex.value))
+        cached = self._phenotype_cache.get(cache_key)
+        if cached is not None:
+            self._phenotype_cache_hits += 1
+            return cached
+
         rock = copy.deepcopy(template)
         rock.sex = sex
         spec = genetics.GENE_SPECS[gene_name]
@@ -72,7 +96,35 @@ class GeneticsEvaluator:
         )
         self.expression_engine.instantiate_phenotype(rock)
         phenotype = rock.genotype.genes[gene_name].phenotype
-        return "<missing>" if phenotype is None else str(phenotype)
+        result = "<missing>" if phenotype is None else str(phenotype)
+        self._phenotype_cache[cache_key] = result
+        self._phenotype_cache_misses += 1
+        return result
+
+    def phenotype_cache_info(self) -> dict[str, int]:
+        return {
+            "size": len(self._phenotype_cache),
+            "hits": self._phenotype_cache_hits,
+            "misses": self._phenotype_cache_misses,
+        }
+
+    def distribution_cache_info(self) -> dict[str, int]:
+        return {
+            "size": len(self._distribution_cache),
+            "hits": self._distribution_cache_hits,
+            "misses": self._distribution_cache_misses,
+            "max_size": self._distribution_cache_size,
+        }
+
+    def _genome_key(self, rock: genetics.Rock) -> tuple[tuple[str, int, int], ...]:
+        return tuple(
+            (
+                gene_name,
+                int(rock.genotype.genes[gene_name].allele_a.value),
+                int(rock.genotype.genes[gene_name].allele_b.value),
+            )
+            for gene_name in self.schema.gene_names
+        )
 
     def _phenotype_probabilities(
         self,
@@ -148,7 +200,19 @@ class GeneticsEvaluator:
         *,
         mutation_chance: float = 0.0,
     ) -> dict[str, GeneOutcomeDistribution]:
-        return {
+        cache_key = (
+            self._genome_key(parent_a),
+            self._genome_key(parent_b),
+            float(mutation_chance),
+        )
+        if self._distribution_cache_size:
+            cached = self._distribution_cache.get(cache_key)
+            if cached is not None:
+                self._distribution_cache.move_to_end(cache_key)
+                self._distribution_cache_hits += 1
+                return dict(cached)
+
+        result = {
             gene_name: self.evaluate_gene(
                 parent_a,
                 parent_b,
@@ -157,3 +221,10 @@ class GeneticsEvaluator:
             )
             for gene_name in self.schema.gene_names
         }
+        self._distribution_cache_misses += 1
+        if self._distribution_cache_size:
+            self._distribution_cache[cache_key] = result
+            self._distribution_cache.move_to_end(cache_key)
+            while len(self._distribution_cache) > self._distribution_cache_size:
+                self._distribution_cache.popitem(last=False)
+        return dict(result)

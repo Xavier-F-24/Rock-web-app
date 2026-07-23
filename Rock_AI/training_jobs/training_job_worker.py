@@ -203,6 +203,12 @@ def run_training_job(job_directory: str | Path) -> TrainingJobStatus:
                         operation_progress_current=int(event.get("progress_current", status.operation_progress_current)),
                         operation_progress_total=int(event.get("progress_total", status.operation_progress_total)),
                         operation_progress_label=event.get("progress_label", status.operation_progress_label),
+                        operation_elapsed_seconds=event.get("elapsed_seconds"),
+                        operation_eta_seconds=event.get("estimated_remaining_seconds"),
+                        current_candidate_parent_ids=tuple(
+                            str(value)
+                            for value in (event.get("candidate_parent_ids") or ())
+                        ),
                     )
                     write_status(status)
                 if event.get("event_type") == "genome_evaluation_progress":

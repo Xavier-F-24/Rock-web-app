@@ -14,6 +14,31 @@ from .training_job_status import TERMINAL_JOB_STATES, TrainingJobState, Training
 from .worker_heartbeat import HeartbeatHealth, classify_heartbeat
 
 
+class TrainingArtifactReadError(OSError):
+    """A durable training artifact remained unreadable after short retries."""
+
+
+def _read_text_with_retry(
+    path: Path,
+    *,
+    encoding: str,
+    errors: str | None = None,
+    attempts: int = 5,
+    delay_seconds: float = 0.04,
+) -> str:
+    last_error: OSError | None = None
+    for attempt in range(attempts):
+        try:
+            return path.read_text(encoding=encoding, errors=errors)
+        except (PermissionError, FileNotFoundError) as error:
+            last_error = error
+            if attempt + 1 < attempts:
+                time.sleep(delay_seconds)
+    raise TrainingArtifactReadError(
+        f"Could not read training artifact after {attempts} attempts: {path}"
+    ) from last_error
+
+
 def atomic_write_json(path: str | Path, payload: dict) -> None:
     destination = Path(path); destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
@@ -33,20 +58,38 @@ def atomic_write_json(path: str | Path, payload: dict) -> None:
 class TrainingProgressReader:
     def __init__(self, job_directory: str | Path): self.job_directory = Path(job_directory)
     def status(self) -> TrainingJobStatus:
-        return TrainingJobStatus.from_dict(json.loads((self.job_directory / "status.json").read_text(encoding="utf-8")))
+        path = self.job_directory / "status.json"
+        last_error: json.JSONDecodeError | None = None
+        for attempt in range(5):
+            try:
+                return TrainingJobStatus.from_dict(
+                    json.loads(_read_text_with_retry(path, encoding="utf-8"))
+                )
+            except json.JSONDecodeError as error:
+                last_error = error
+                if attempt < 4:
+                    time.sleep(0.04)
+        raise TrainingArtifactReadError(
+            f"Training status remained invalid after retries: {path}"
+        ) from last_error
     def progress(self) -> list[dict]:
         path = self.job_directory / "progress.jsonl"
         if not path.exists(): return []
         rows = []
-        for line in path.read_text(encoding="utf-8").splitlines():
+        for line in _read_text_with_retry(path, encoding="utf-8").splitlines():
             try: rows.append(json.loads(line))
             except json.JSONDecodeError: continue
         return rows
     def console_tail(self, lines: int = 200) -> str:
         path = self.job_directory / "console.log"
-        return "\n".join(path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]) if path.exists() else ""
-    def orphan_warning(self, stale_seconds: float = 120.0) -> str | None:
-        status = self.status()
+        return "\n".join(_read_text_with_retry(path, encoding="utf-8", errors="replace").splitlines()[-lines:]) if path.exists() else ""
+    def orphan_warning(
+        self,
+        stale_seconds: float = 120.0,
+        *,
+        status: TrainingJobStatus | None = None,
+    ) -> str | None:
+        status = status or self.status()
         if status.status in TERMINAL_JOB_STATES or not status.last_heartbeat_time: return None
         heartbeat = datetime.fromisoformat(status.last_heartbeat_time)
         age = (datetime.now(timezone.utc) - heartbeat).total_seconds()

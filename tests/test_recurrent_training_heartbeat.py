@@ -44,6 +44,18 @@ def test_campaign_baselines_report_random_and_oracle_phases(tmp_path, monkeypatc
             self.config = config
 
         def run_episode(self, agent, **kwargs):
+            if isinstance(agent, recurrent_training.OracleBreedingAgent):
+                agent.progress_callback({
+                    "event": "candidate_completed",
+                    "campaign_generation": 0,
+                    "decision_index": 0,
+                    "completed": 2,
+                    "total": 3,
+                    "parent_ids": (1, 2),
+                    "candidate_seconds": 0.1,
+                    "elapsed_seconds": 0.2,
+                    "estimated_remaining_seconds": 0.1,
+                })
             return SimpleNamespace(final_farm_summary={"objective_utility": 1.0})
 
     monkeypatch.setattr(recurrent_training, "BreedingAgentEvaluator", FastEvaluator)
@@ -63,7 +75,18 @@ def test_campaign_baselines_report_random_and_oracle_phases(tmp_path, monkeypatc
         row.get("operation") for row in events
         if row["event_type"] == "worker_heartbeat"
     }
-    assert {"random_campaign_baseline", "oracle_campaign_baseline", "campaign_baseline_completed"} <= operations
+    assert {
+        "random_campaign_baseline",
+        "oracle_campaign_baseline",
+        "oracle_pair_evaluation",
+        "campaign_baseline_completed",
+    } <= operations
+    candidate_event = next(
+        row for row in events if row.get("operation") == "oracle_pair_evaluation"
+    )
+    assert candidate_event["progress_current"] == 2
+    assert candidate_event["progress_total"] == 3
+    assert "candidate pairs" in candidate_event["progress_label"]
 
 
 def test_campaign_baseline_honors_cancellation_before_expensive_work(tmp_path):

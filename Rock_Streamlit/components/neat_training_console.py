@@ -62,14 +62,103 @@ def _render_durable_progress(status):
         context.append(f"Scenario: {status.current_scenario_id}")
     if status.current_world_turn is not None:
         context.append(f"World turn: {status.current_world_turn}")
+    if status.current_candidate_parent_ids:
+        context.append(
+            "Candidate: " + " x ".join(status.current_candidate_parent_ids)
+        )
+    if status.operation_elapsed_seconds is not None:
+        context.append(f"Elapsed: {status.operation_elapsed_seconds:.1f}s")
+    if status.operation_eta_seconds is not None:
+        context.append(f"Estimated remaining: {status.operation_eta_seconds:.1f}s")
     st.caption(" | ".join(context))
+
+
+def _render_worker_cleanup(manager: TrainingJobManager, active_job: str | None):
+    rows = manager.cleanup_candidates()
+    scan_errors = manager.cleanup_scan_errors
+    if not rows and not scan_errors:
+        return
+    ready_count = sum(row.cleanup_eligible for row in rows)
+    attention_count = len(rows) + len(scan_errors)
+    with st.expander(f"Worker cleanup ({ready_count} ready, {attention_count} attention needed)"):
+        st.caption("Deleting a job record preserves its checkpoints, champions, and training run.")
+        if scan_errors:
+            st.warning(
+                f"Skipped {len(scan_errors)} temporarily unreadable job record(s). "
+                "Refresh to retry; the rest of the Observatory remains available."
+            )
+            for error in scan_errors:
+                st.caption(f"`{error['job_id']}`: {error['error']}")
+        ready_rows = [row for row in rows if row.cleanup_eligible]
+        if ready_rows:
+            bulk_confirmed = st.checkbox(
+                f"Confirm deletion of all {len(ready_rows)} cleanup-ready job records",
+                key="cleanup_confirm_all",
+            )
+            if st.button(
+                "Delete all cleanup-ready records",
+                disabled=not bulk_confirmed,
+                key="cleanup_delete_all",
+            ):
+                failures = []
+                deleted = []
+                for ready in ready_rows:
+                    try:
+                        manager.delete_job_record(ready.job_id)
+                    except (OSError, RuntimeError, ValueError) as error:
+                        failures.append(f"{ready.job_id}: {error}")
+                    else:
+                        deleted.append(ready.job_id)
+                if active_job in deleted:
+                    st.session_state.pop(JOB_KEY, None)
+                if failures:
+                    st.error("Some records could not be deleted: " + " | ".join(failures))
+                if deleted:
+                    st.success(f"Deleted {len(deleted)} job records. Training runs were preserved.")
+                st.rerun()
+            st.divider()
+        for row in rows:
+            columns = st.columns([2.4, 1.0, 1.1, 1.5])
+            columns[0].write(f"`{row.job_id}`")
+            columns[1].write(row.status.replace("_", " ").title())
+            columns[2].write(row.heartbeat_health.value.title())
+            age = "No heartbeat" if row.heartbeat_age_seconds is None else f"{row.heartbeat_age_seconds:.0f}s ago"
+            columns[3].write(age)
+            st.caption(f"PID: {row.process_id or 'none'} | {row.reason.replace('_', ' ')} | Run preserved: `{row.output_run or 'none'}`")
+            if row.cleanup_eligible:
+                confirm_key = f"cleanup_confirm_{row.job_id}"
+                confirmed = st.checkbox("Confirm deletion of this job record", key=confirm_key)
+                if st.button("Delete job record", disabled=not confirmed, key=f"cleanup_delete_{row.job_id}"):
+                    try:
+                        result = manager.delete_job_record(row.job_id)
+                    except (OSError, RuntimeError, ValueError) as error:
+                        st.error(f"Could not delete job record: {error}")
+                    else:
+                        st.success(f"Deleted {row.job_id}. Training run preserved.")
+                        if active_job == row.job_id:
+                            st.session_state.pop(JOB_KEY, None)
+                        st.rerun()
+            elif row.process_alive and row.heartbeat_health.value in {"slow", "stagnant"}:
+                if st.button("Request cancellation", key=f"cleanup_cancel_{row.job_id}"):
+                    manager.request_cancel(row.job_id)
+                    st.rerun()
+            st.divider()
 
 
 def _render_active_job(manager: TrainingJobManager, job_id: str):
     directory = manager.jobs_root / job_id
     if not directory.exists(): st.error("Selected training job no longer exists."); return
-    reader = TrainingProgressReader(directory); status = reader.status()
-    orphan = reader.orphan_warning()
+    reader = TrainingProgressReader(directory)
+    try:
+        status = reader.status()
+        orphan = reader.orphan_warning(status=status)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        st.error(f"Could not read selected training job `{job_id}`: {error}")
+        st.caption("The record may be temporarily locked. Refresh, or clear the selection and inspect it under Worker cleanup.")
+        if st.button("Clear inaccessible job selection", key="neat_job_clear_inaccessible"):
+            st.session_state.pop(JOB_KEY, None)
+            st.rerun()
+        return
     render_training_job_status(status, orphan)
     _render_durable_progress(status)
     controls = st.columns(3)
@@ -77,7 +166,13 @@ def _render_active_job(manager: TrainingJobManager, job_id: str):
     if controls[1].button("Request cancellation", disabled=status.status in {TrainingJobState.COMPLETED, TrainingJobState.CANCELLED, TrainingJobState.FAILED}, key="neat_job_cancel"):
         manager.request_cancel(job_id); st.rerun()
     if controls[2].button("Clear selection", key="neat_job_clear"): st.session_state.pop(JOB_KEY, None); st.rerun()
-    render_training_progress(reader.progress()); render_training_log(reader.console_tail())
+    try:
+        progress = reader.progress()
+        console = reader.console_tail()
+    except OSError as error:
+        st.warning(f"Status is available, but detailed job logs could not be read: {error}")
+        progress, console = [], ""
+    render_training_progress(progress); render_training_log(console)
     auto_refresh = st.checkbox("Automatically refresh active job", value=True, key="neat_job_auto_refresh")
     refresh_interval = st.slider("Refresh interval", 1, 10, 2, key="neat_job_refresh_interval")
     if orphan and status.latest_checkpoint and st.button("Create recovery job", key="neat_job_recover"):
@@ -111,6 +206,7 @@ def render_neat_training_console():
         st.warning(capabilities.reason or "This environment supports replay and inference only.")
     manager = TrainingJobManager(ROOT)
     active_job = st.session_state.get(JOB_KEY)
+    _render_worker_cleanup(manager, active_job)
     if active_job:
         _render_active_job(manager, active_job)
         st.divider()

@@ -77,6 +77,9 @@ class TrainingJobStatus:
     operation_progress_current: int = 0
     operation_progress_total: int = 0
     operation_progress_label: str | None = None
+    operation_elapsed_seconds: float | None = None
+    operation_eta_seconds: float | None = None
+    current_candidate_parent_ids: tuple[str, ...] = ()
 
     @property
     def generation_progress(self) -> tuple[int, int, float]:
@@ -104,5 +107,10 @@ class TrainingJobStatus:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TrainingJobStatus":
-        payload = dict(data); payload["status"] = TrainingJobState(payload["status"]); payload["warnings"] = tuple(payload.get("warnings", ()))
+        payload = dict(data)
+        payload["status"] = TrainingJobState(payload["status"])
+        payload["warnings"] = tuple(payload.get("warnings", ()))
+        payload["current_candidate_parent_ids"] = tuple(
+            payload.get("current_candidate_parent_ids", ())
+        )
         return cls(**payload)
