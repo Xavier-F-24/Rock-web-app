@@ -74,6 +74,23 @@ class TrainingJobStatus:
     current_scenario_id: str | None = None
     current_world_turn: int | None = None
     last_completed_operation: str | None = None
+    operation_progress_current: int = 0
+    operation_progress_total: int = 0
+    operation_progress_label: str | None = None
+
+    @property
+    def generation_progress(self) -> tuple[int, int, float]:
+        total = max(1, self.requested_ending_generation - self.starting_generation + 1)
+        current = min(total, max(0, self.completed_generations))
+        return current, total, current / total
+
+    @property
+    def operation_progress(self) -> tuple[int, int, float] | None:
+        if self.operation_progress_total <= 0:
+            return None
+        total = self.operation_progress_total
+        current = min(total, max(0, self.operation_progress_current))
+        return current, total, current / total
 
     def transition(self, status: TrainingJobState, **changes: Any) -> "TrainingJobStatus":
         if status != self.status and status not in LEGAL_TRANSITIONS[self.status]:

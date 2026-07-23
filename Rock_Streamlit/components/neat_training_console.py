@@ -41,12 +41,37 @@ def launch_enabled(capabilities, confirmed: bool, active_job: bool) -> bool:
     return bool(capabilities.subprocess_supported and capabilities.persistent_storage_supported and capabilities.writable_training_directory and confirmed and not active_job)
 
 
+def _render_durable_progress(status):
+    generation_current, generation_total, generation_fraction = status.generation_progress
+    st.progress(
+        generation_fraction,
+        text=f"Training generations: {generation_current} / {generation_total}",
+    )
+    operation = status.operation_progress
+    if operation:
+        current, total, fraction = operation
+        label = status.operation_progress_label or "Current operation"
+        st.progress(fraction, text=f"{label}: {current} / {total}")
+    context = [
+        f"Phase: {status.heartbeat_phase or 'starting'}",
+        f"Operation: {status.last_completed_operation or 'waiting for first update'}",
+    ]
+    if status.current_genome_id is not None:
+        context.append(f"Genome: {status.current_genome_id}")
+    if status.current_scenario_id is not None:
+        context.append(f"Scenario: {status.current_scenario_id}")
+    if status.current_world_turn is not None:
+        context.append(f"World turn: {status.current_world_turn}")
+    st.caption(" | ".join(context))
+
+
 def _render_active_job(manager: TrainingJobManager, job_id: str):
     directory = manager.jobs_root / job_id
     if not directory.exists(): st.error("Selected training job no longer exists."); return
     reader = TrainingProgressReader(directory); status = reader.status()
     orphan = reader.orphan_warning()
     render_training_job_status(status, orphan)
+    _render_durable_progress(status)
     controls = st.columns(3)
     controls[0].button("Refresh", key="neat_job_refresh")
     if controls[1].button("Request cancellation", disabled=status.status in {TrainingJobState.COMPLETED, TrainingJobState.CANCELLED, TrainingJobState.FAILED}, key="neat_job_cancel"):

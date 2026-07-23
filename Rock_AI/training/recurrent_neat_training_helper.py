@@ -28,6 +28,7 @@ from Rock_AI.neat.neat_topology_helper import TopologyResourceLimits
 from Rock_AI.policies.recurrent_neat_pair_ranking_policy import RecurrentNeatPairRankingPolicy
 from Rock_Serialization.rock_serialization_helper import game_to_dict
 from Rock_AI.training.neat_training_helper import _candidate_feature_names, _candidate_matrix
+from Rock_AI.training_jobs.worker_heartbeat import BackgroundHeartbeat, HeartbeatPhase, TimedHeartbeat
 
 
 @dataclass(frozen=True)
@@ -53,12 +54,15 @@ class RecurrentNeatTrainingConfig:
     max_hidden_nodes: int = 128
     max_enabled_connections: int = 4096
     max_total_genes: int = 8192
+    heartbeat_interval_seconds: float = 5.0
 
     def __post_init__(self) -> None:
         if min(self.population, self.generations, self.training_scenarios_per_generation) <= 0:
             raise ValueError("Population, generations, and scenario count must be positive")
         if self.settling_steps <= 0:
             raise ValueError("settling_steps must be positive")
+        if self.heartbeat_interval_seconds <= 0:
+            raise ValueError("heartbeat_interval_seconds must be positive")
         if abs(self.supervised_weight + self.campaign_weight - 1.0) > 1e-9:
             raise ValueError("Supervised and campaign weights must sum to one")
 
@@ -141,6 +145,33 @@ class _SpeciesReporter(neat.reporting.BaseReporter):
         self.generation += 1
 
 
+class _HeartbeatCheckpointer(neat.Checkpointer):
+    def __init__(self, *args, heartbeat=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.heartbeat = heartbeat
+
+    def save_checkpoint(self, config, population, species_set, generation):
+        if self.heartbeat:
+            self.heartbeat(
+                HeartbeatPhase.CHECKPOINT_WRITING, force=True,
+                operation="checkpoint_started", progress_current=0,
+                progress_total=1, progress_label="Checkpoint writing",
+            )
+        result = super().save_checkpoint(config, population, species_set, generation)
+        if self.heartbeat:
+            self.heartbeat(
+                HeartbeatPhase.CHECKPOINT_WRITING, force=True,
+                operation="checkpoint_completed", progress_current=1,
+                progress_total=1, progress_label="Checkpoint writing",
+            )
+        return result
+
+    def __getstate__(self):
+        state = dict(self.__dict__)
+        state["heartbeat"] = None
+        return state
+
+
 class TrainingCancelled(RuntimeError):
     pass
 
@@ -180,6 +211,25 @@ class RecurrentNeatTrainer:
         self.validation_history: list[float] = []
         self.progress_callback = progress_callback
         self.cancel_path = Path(cancel_path) if cancel_path else None
+        self.heartbeat = TimedHeartbeat(
+            lambda event: self._emit(event), training_config.heartbeat_interval_seconds,
+        )
+        self.background_heartbeat = BackgroundHeartbeat(
+            lambda event: self._emit(event), training_config.heartbeat_interval_seconds,
+        )
+
+    def _emit(self, event) -> None:
+        if self.progress_callback:
+            self.progress_callback(event)
+
+    def _cancel_if_requested(self, operation: str) -> None:
+        if self.cancel_path is not None and self.cancel_path.exists():
+            raise TrainingCancelled(f"Cooperative cancellation requested during {operation}")
+
+    def _pulse(self, phase, *, force=False, **payload) -> None:
+        context = {"generation": self.generation, **payload}
+        self.background_heartbeat.update(phase, **context)
+        self.heartbeat.pulse(phase, force=force, **context)
 
     def _indices(self, count: int, total: int, salt: int) -> tuple[int, ...]:
         rng = random.Random(self.training_config.seed + salt + self.generation * 104729)
@@ -219,7 +269,15 @@ class RecurrentNeatTrainer:
 
     def _campaign_inputs(self):
         scenarios = []
-        for index in range(self.training_config.campaign_scenarios_per_generation):
+        total = self.training_config.campaign_scenarios_per_generation
+        for index in range(total):
+            self._cancel_if_requested("campaign baseline generation")
+            self._pulse(
+                HeartbeatPhase.SCENARIO_EVALUATION, force=True,
+                operation="campaign_farm_generation", scenario_id=index,
+                progress_current=index, progress_total=total,
+                progress_label="Campaign baseline scenarios",
+            )
             seed = self.training_config.seed + 2_000_003 + self.generation * 100_003 + index * 997
             generator = PairRankingDatasetGenerator(PairRankingDataConfig(
                 number_of_farms=1, trials_per_pair=max(1, self.training_config.oracle_trial_count),
@@ -234,7 +292,21 @@ class RecurrentNeatTrainer:
                 max_decisions=max(12, self.training_config.campaign_generations * 6),
             )
             evaluator = BreedingAgentEvaluator(campaign_config)
+            self._cancel_if_requested("random campaign baseline")
+            self._pulse(
+                HeartbeatPhase.SCENARIO_EVALUATION, force=True,
+                operation="random_campaign_baseline", scenario_id=index,
+                progress_current=index, progress_total=total,
+                progress_label="Campaign baseline scenarios",
+            )
             random_episode = evaluator.run_episode(RandomBreedingAgent(), seed=seed, initial_farm=copy.deepcopy(farm))
+            self._cancel_if_requested("oracle campaign baseline")
+            self._pulse(
+                HeartbeatPhase.SCENARIO_EVALUATION, force=True,
+                operation="oracle_campaign_baseline", scenario_id=index,
+                progress_current=index, progress_total=total,
+                progress_label="Campaign baseline scenarios",
+            )
             oracle_episode = evaluator.run_episode(
                 OracleBreedingAgent(trial_count=self.training_config.oracle_trial_count),
                 seed=seed, initial_farm=copy.deepcopy(farm),
@@ -242,6 +314,12 @@ class RecurrentNeatTrainer:
             scenarios.append((seed, farm, evaluator,
                 float(random_episode.final_farm_summary["objective_utility"]),
                 float(oracle_episode.final_farm_summary["objective_utility"])))
+            self._pulse(
+                HeartbeatPhase.SCENARIO_EVALUATION, force=True,
+                operation="campaign_baseline_completed", scenario_id=index,
+                progress_current=index + 1, progress_total=total,
+                progress_label="Campaign baseline scenarios",
+            )
         return scenarios
 
     @staticmethod
@@ -249,9 +327,17 @@ class RecurrentNeatTrainer:
         denominator = oracle_value - random_value
         return 0.0 if abs(denominator) <= 1e-9 else float(np.clip((agent_value - random_value) / denominator, -1.0, 1.0))
 
-    def _campaign_quality(self, artifact, scenarios) -> float:
+    def _campaign_quality(self, artifact, scenarios, *, genome_id=None, genome_index=0, genome_total=0) -> float:
         scores = []
-        for seed, farm, evaluator, random_value, oracle_value in scenarios:
+        for scenario_index, (seed, farm, evaluator, random_value, oracle_value) in enumerate(scenarios):
+            self._cancel_if_requested("genome campaign episode")
+            self._pulse(
+                HeartbeatPhase.WORLD_EPISODE,
+                genome_id=genome_id, scenario_id=scenario_index,
+                operation="genome_campaign_episode",
+                progress_current=genome_index, progress_total=genome_total,
+                progress_label="Genome campaign evaluation",
+            )
             policy = RecurrentNeatPairRankingPolicy(artifact, checkpoint_id="in-memory-recurrent-champion")
             episode = evaluator.run_episode(
                 RecurrentNeatBreedingAgent(policy), seed=seed, initial_farm=copy.deepcopy(farm)
@@ -266,6 +352,11 @@ class RecurrentNeatTrainer:
             raise TrainingCancelled("Cooperative cancellation requested")
         train_indices = self._indices(self.training_config.training_scenarios_per_generation, len(self.train_groups), 0)
         stage = self._curriculum_stage()
+        self._pulse(
+            HeartbeatPhase.GENERATION_FINALIZATION, force=True,
+            operation="generation_preparation", progress_current=0,
+            progress_total=len(genomes), progress_label="Genome evaluation",
+        )
         campaign_scenarios = self._campaign_inputs() if stage == "paired_campaign" else ()
         scored = []
         progress_interval = max(1, len(genomes) // 20)
@@ -273,9 +364,18 @@ class RecurrentNeatTrainer:
             if self.cancel_path is not None and self.cancel_path.exists():
                 raise TrainingCancelled("Cooperative cancellation requested during genome evaluation")
             try:
+                self._pulse(
+                    HeartbeatPhase.GENOME_EVALUATION, force=True,
+                    genome_id=genome.key, operation="supervised_pair_ranking",
+                    progress_current=genome_index - 1, progress_total=len(genomes),
+                    progress_label="Genome evaluation",
+                )
                 artifact, network = self._network(genome, config)
                 quality = self._quality(network, self.train_matrix, self.train_arrays["utility_scores"], self.train_arrays["group_offsets"], train_indices)
-                campaign_quality = self._campaign_quality(artifact, campaign_scenarios)
+                campaign_quality = self._campaign_quality(
+                    artifact, campaign_scenarios, genome_id=genome.key,
+                    genome_index=genome_index - 1, genome_total=len(genomes),
+                )
                 combined = quality if stage == "supervised_ranking" else (
                     self.training_config.supervised_weight * quality
                     + self.training_config.campaign_weight * campaign_quality
@@ -286,8 +386,14 @@ class RecurrentNeatTrainer:
                 genome.fitness = -1.0
                 quality, campaign_quality, complexity = -1.0, -1.0, 0
             scored.append((genome.fitness, quality, campaign_quality, complexity, genome))
+            self._pulse(
+                HeartbeatPhase.GENOME_EVALUATION, force=True,
+                genome_id=genome.key, operation="genome_completed",
+                progress_current=genome_index, progress_total=len(genomes),
+                progress_label="Genome evaluation",
+            )
             if self.progress_callback and (genome_index % progress_interval == 0 or genome_index == len(genomes)):
-                self.progress_callback({
+                self._emit({
                     "event_type": "genome_evaluation_progress",
                     "generation": self.generation,
                     "genomes_evaluated": genome_index,
@@ -297,7 +403,17 @@ class RecurrentNeatTrainer:
         champion = scored[0][4]
         artifact, network = self._network(champion, config)
         validation_indices = self._indices(self.training_config.validation_scenarios, len(self.validation_groups), 9_999_991)
+        self._pulse(
+            HeartbeatPhase.GENERATION_FINALIZATION, force=True,
+            operation="validation", progress_current=0,
+            progress_total=len(validation_indices), progress_label="Validation scenarios",
+        )
         validation = self._quality(network, self.validation_matrix, self.validation_arrays["utility_scores"], self.validation_arrays["group_offsets"], validation_indices)
+        self._pulse(
+            HeartbeatPhase.GENERATION_FINALIZATION, force=True,
+            operation="validation_completed", progress_current=len(validation_indices),
+            progress_total=len(validation_indices), progress_label="Validation scenarios",
+        )
         self.validation_history.append(validation)
         row = {
             "generation": self.generation, "curriculum_stage": stage,
@@ -309,11 +425,16 @@ class RecurrentNeatTrainer:
         with (self.output / "generation_metrics.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, sort_keys=True) + "\n")
         if self.progress_callback:
-            self.progress_callback({"event_type": "generation_completed", **row})
+            self._emit({"event_type": "generation_completed", **row})
         self._export_champion(champion, config, artifact, row)
         self.generation += 1
 
     def _export_champion(self, genome, config, artifact, metrics):
+        self._pulse(
+            HeartbeatPhase.CHECKPOINT_WRITING, force=True,
+            operation="champion_export", progress_current=0,
+            progress_total=3, progress_label="Champion artifacts",
+        )
         directory = self.output / "champions" / f"generation_{self.generation:04d}"
         directory.mkdir(parents=True, exist_ok=True)
         save_recurrent_artifact(artifact, directory / "network.json")
@@ -336,6 +457,11 @@ class RecurrentNeatTrainer:
         campaign_config = BreedingCampaignConfig(max_generations=3, max_pairs_per_generation=3, max_decisions=24)
         initial_environment = BreedingCampaignEnvironment(seed=showcase_seed, config=campaign_config)
         initial_environment.reset(showcase_seed, initial_farm=copy.deepcopy(showcase_farm))
+        self._pulse(
+            HeartbeatPhase.CHECKPOINT_WRITING, force=True,
+            operation="showcase_episode", progress_current=1,
+            progress_total=3, progress_label="Champion artifacts",
+        )
         episode = BreedingAgentEvaluator(campaign_config).run_episode(
             RecurrentNeatBreedingAgent(RecurrentNeatPairRankingPolicy(artifact, checkpoint_id="showcase")),
             seed=showcase_seed, initial_farm=copy.deepcopy(showcase_farm),
@@ -358,6 +484,11 @@ class RecurrentNeatTrainer:
             before_values=np.asarray([float(row[1]) for row in before], dtype=np.float64),
             after_node_ids=np.asarray([int(row[0]) for row in after], dtype=np.int64),
             after_values=np.asarray([float(row[1]) for row in after], dtype=np.float64),
+        )
+        self._pulse(
+            HeartbeatPhase.CHECKPOINT_WRITING, force=True,
+            operation="champion_export_completed", progress_current=3,
+            progress_total=3, progress_label="Champion artifacts",
         )
 
     def train(self):
@@ -391,5 +522,13 @@ class RecurrentNeatTrainer:
         for reporter in extra_reporters:
             population.add_reporter(reporter)
         (self.output / "checkpoints").mkdir(parents=True, exist_ok=True)
-        population.add_reporter(neat.Checkpointer(self.training_config.checkpoint_frequency, filename_prefix=str(self.output / "checkpoints" / "neat-checkpoint-")))
-        return population.run(self._fitness, int(generations))
+        population.add_reporter(_HeartbeatCheckpointer(
+            self.training_config.checkpoint_frequency,
+            filename_prefix=str(self.output / "checkpoints" / "neat-checkpoint-"),
+            heartbeat=self._pulse,
+        ))
+        self.background_heartbeat.start()
+        try:
+            return population.run(self._fitness, int(generations))
+        finally:
+            self.background_heartbeat.stop()

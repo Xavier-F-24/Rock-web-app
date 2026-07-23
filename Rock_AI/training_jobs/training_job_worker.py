@@ -152,6 +152,7 @@ def run_training_job(job_directory: str | Path) -> TrainingJobStatus:
                     campaign_generations=config.campaign_generations, supervised_weight=config.supervised_weight,
                     campaign_weight=config.campaign_weight, complexity_penalty=config.complexity_penalty,
                     settling_steps=int((source_training or {}).get("settling_steps", 3)),
+                    heartbeat_interval_seconds=config.heartbeat_interval_seconds,
                 )
                 trainer = RecurrentNeatTrainer(
                     training, allow_existing=allow_existing, starting_generation=starting_generation,
@@ -199,11 +200,19 @@ def run_training_job(job_directory: str | Path) -> TrainingJobStatus:
                         current_scenario_id=None if event.get("scenario_id") is None else str(event.get("scenario_id")),
                         current_world_turn=event.get("world_turn"),
                         last_completed_operation=event.get("operation"),
+                        operation_progress_current=int(event.get("progress_current", status.operation_progress_current)),
+                        operation_progress_total=int(event.get("progress_total", status.operation_progress_total)),
+                        operation_progress_label=event.get("progress_label", status.operation_progress_label),
                     )
                     write_status(status)
                 if event.get("event_type") == "genome_evaluation_progress":
                     status = TrainingProgressReader(job).status()
-                    status = replace(status, last_heartbeat_time=_now())
+                    status = replace(
+                        status, last_heartbeat_time=_now(),
+                        operation_progress_current=int(event.get("genomes_evaluated", status.operation_progress_current)),
+                        operation_progress_total=int(event.get("genomes_total", status.operation_progress_total)),
+                        operation_progress_label="Genome evaluation",
+                    )
                     write_status(status)
                 if event.get("event_type") == "generation_completed":
                     status = TrainingProgressReader(job).status()
@@ -218,6 +227,9 @@ def run_training_job(job_directory: str | Path) -> TrainingJobStatus:
                         worlds_evaluated=int(event.get("worlds_evaluated", status.worlds_evaluated)),
                         invalid_action_rate=event.get("invalid_action_rate"),
                         market_transaction_rate=event.get("market_transaction_rate"),
+                        operation_progress_current=0,
+                        operation_progress_total=0,
+                        operation_progress_label=None,
                         last_heartbeat_time=_now(),
                         latest_checkpoint=_latest(output_run, "checkpoints/neat-checkpoint-*"),
                         latest_safe_champion_export=_latest(output_run, "champions/generation_*/network.json"),
