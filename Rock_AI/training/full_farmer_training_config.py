@@ -11,6 +11,14 @@ class FullFarmerTrainingConfig:
     generations: int = 50
     worlds_per_genome: int = 3
     max_rounds_per_world: int = 6
+    maximum_decisions_per_farm: int = 100
+    maximum_no_progress_rounds: int = 8
+    maximum_consecutive_passes: int = 6
+    maximum_failed_transactions: int = 12
+    maximum_episode_wall_clock_seconds: float = 300.0
+    cycle_history_size: int = 12
+    cycle_repeat_limit: int = 3
+    heartbeat_interval_seconds: float = 5.0
     curriculum_start: ActionCurriculumStage = ActionCurriculumStage.IMPORTS
     checkpoint_frequency: int = 5
     showcase_frequency: int = 1
@@ -32,6 +40,17 @@ class FullFarmerTrainingConfig:
     def __post_init__(self):
         if min(self.population, self.generations, self.worlds_per_genome, self.max_rounds_per_world) <= 0:
             raise ValueError("Training counts must be positive")
+        if min(
+            self.maximum_decisions_per_farm,
+            self.maximum_no_progress_rounds,
+            self.maximum_consecutive_passes,
+            self.maximum_failed_transactions,
+            self.cycle_history_size,
+            self.cycle_repeat_limit,
+        ) <= 0:
+            raise ValueError("Full-farmer liveness limits must be positive")
+        if self.maximum_episode_wall_clock_seconds <= 0 or self.heartbeat_interval_seconds <= 0:
+            raise ValueError("Timing limits must be positive")
         if self.worker_count != 1 and self.single_process:
             raise ValueError("single_process requires one worker")
         if self.curriculum_max < self.curriculum_start:

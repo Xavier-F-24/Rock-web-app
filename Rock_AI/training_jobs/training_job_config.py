@@ -70,6 +70,12 @@ class TrainingJobConfig:
     trainer_kind: TrainingBackendKind = TrainingBackendKind.BREEDING_PAIR
     worlds_per_genome: int = 3
     max_rounds_per_world: int = 6
+    maximum_decisions_per_farm: int = 100
+    maximum_no_progress_rounds: int = 8
+    maximum_consecutive_passes: int = 6
+    maximum_failed_transactions: int = 12
+    maximum_episode_wall_clock_seconds: float = 300.0
+    heartbeat_interval_seconds: float = 5.0
     curriculum_start: str = "imports"
     curriculum_max: str = "opponent_generalization"
     minimum_generations_per_stage: int = 3
@@ -86,6 +92,10 @@ class TrainingJobConfig:
             raise ValueError("Fitness weights must sum to one")
         if min(self.worlds_per_genome, self.max_rounds_per_world, self.minimum_generations_per_stage, self.curriculum_stability_window) <= 0:
             raise ValueError("Full-farmer training counts must be positive")
+        if min(self.maximum_decisions_per_farm, self.maximum_no_progress_rounds, self.maximum_consecutive_passes, self.maximum_failed_transactions) <= 0:
+            raise ValueError("Full-farmer liveness limits must be positive")
+        if self.maximum_episode_wall_clock_seconds <= 0 or self.heartbeat_interval_seconds <= 0:
+            raise ValueError("Full-farmer timing limits must be positive")
         if not 0.0 <= self.curriculum_invalid_rate_threshold <= 1.0:
             raise ValueError("Curriculum invalid-rate threshold must be between zero and one")
         fractions = self.champion_descendant_fraction + self.fresh_genome_fraction + self.historical_diversity_fraction

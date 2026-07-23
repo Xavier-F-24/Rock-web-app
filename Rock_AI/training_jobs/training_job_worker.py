@@ -120,6 +120,12 @@ def run_training_job(job_directory: str | Path) -> TrainingJobStatus:
                     output_directory=str(output_run), seed=config.seed, population=config.population_size,
                     generations=config.additional_generations, worlds_per_genome=config.worlds_per_genome,
                     max_rounds_per_world=config.max_rounds_per_world,
+                    maximum_decisions_per_farm=config.maximum_decisions_per_farm,
+                    maximum_no_progress_rounds=config.maximum_no_progress_rounds,
+                    maximum_consecutive_passes=config.maximum_consecutive_passes,
+                    maximum_failed_transactions=config.maximum_failed_transactions,
+                    maximum_episode_wall_clock_seconds=config.maximum_episode_wall_clock_seconds,
+                    heartbeat_interval_seconds=config.heartbeat_interval_seconds,
                     curriculum_start=ActionCurriculumStage[config.curriculum_start.upper()],
                     checkpoint_frequency=config.checkpoint_frequency,
                     showcase_frequency=config.showcase_frequency,
@@ -182,6 +188,19 @@ def run_training_job(job_directory: str | Path) -> TrainingJobStatus:
                 nonlocal status
                 if append:
                     _append_event(job / "progress.jsonl", **event)
+                if event.get("event_type") == "worker_heartbeat":
+                    status = TrainingProgressReader(job).status()
+                    status = replace(
+                        status,
+                        last_heartbeat_time=event.get("heartbeat_time", _now()),
+                        heartbeat_health=event.get("health", "healthy"),
+                        heartbeat_phase=event.get("phase"),
+                        current_genome_id=None if event.get("genome_id") is None else str(event.get("genome_id")),
+                        current_scenario_id=None if event.get("scenario_id") is None else str(event.get("scenario_id")),
+                        current_world_turn=event.get("world_turn"),
+                        last_completed_operation=event.get("operation"),
+                    )
+                    write_status(status)
                 if event.get("event_type") == "genome_evaluation_progress":
                     status = TrainingProgressReader(job).status()
                     status = replace(status, last_heartbeat_time=_now())
@@ -232,5 +251,5 @@ def run_training_job(job_directory: str | Path) -> TrainingJobStatus:
             ); write_status(status); _append_event(job / "progress.jsonl", "cancellation_observed", summary=str(error)); return status
         except Exception as error:
             if status.status in {TrainingJobState.CREATED, TrainingJobState.VALIDATING, TrainingJobState.QUEUED, TrainingJobState.STARTING, TrainingJobState.RUNNING, TrainingJobState.CHECKPOINTING, TrainingJobState.CANCELLATION_REQUESTED}:
-                status = status.transition(TrainingJobState.FAILED, end_time=_now(), failure_summary=f"{type(error).__name__}: {error}")
+                status = status.transition(TrainingJobState.FAILED, end_time=_now(), failure_summary=f"{type(error).__name__}: {error}", heartbeat_health="failed")
             write_status(status); atomic_write_json(job / "failure.json", {"failed_at": _now(), "error_type": type(error).__name__, "summary": str(error)}); _append_event(job / "progress.jsonl", "training_failed", summary=str(error)); raise

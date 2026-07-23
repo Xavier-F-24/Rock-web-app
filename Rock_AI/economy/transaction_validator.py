@@ -19,6 +19,7 @@ from Rock_Market.rock_npc_market_helper import (
 )
 from Rock_Market.rock_player_market_action_helper import CancelTradeOfferAction, PurchaseFamilyPodChildAction
 from Rock_World.rock_world_state_helper import WorldState
+from .reservation_audit_helper import audit_transaction_reservations
 
 
 def _stable_id(prefix: str, *parts: object) -> str:
@@ -30,6 +31,7 @@ class EconomyTransactionManager:
     """Validate first, then commit each action as one authoritative transaction."""
 
     def execute(self, world: WorldState, action: FarmerAction, action_hash: str) -> ActionResult:
+        audit_transaction_reservations(world, repair=True)
         transaction_id = _stable_id("tx", action_hash, action.actor_farm_id, action.world_turn)
         if transaction_id in world.completed_transaction_ids:
             return ActionResult(True, action_hash, transaction_id, "Transaction already applied.", action.actor_farm_id, action.world_turn, idempotent_replay=True)
@@ -38,13 +40,18 @@ class EconomyTransactionManager:
         try:
             payload, rock_ids, summary = self._dispatch(world, action)
         except (ValueError, TypeError, KeyError, IndexError) as error:
+            audit_transaction_reservations(world, repair=True)
             return self._failure(action, action_hash, transaction_id, "validation_failed", str(error))
+        except Exception:
+            audit_transaction_reservations(world, repair=True)
+            raise
         world.completed_transaction_ids.add(transaction_id)
         event = PublicWorldEventRecord(
             _stable_id("event", transaction_id), world.turn, action.action_type.value,
             summary, (action.actor_farm_id,), tuple(rock_ids), payload,
         )
         world.public_events.append(event)
+        audit_transaction_reservations(world, repair=True)
         return ActionResult(True, action_hash, transaction_id, summary, action.actor_farm_id, world.turn, payload, affected_rock_ids=tuple(rock_ids))
 
     @staticmethod
@@ -139,7 +146,7 @@ class EconomyTransactionManager:
             bidder = world.farm(bid.bidder_farm_id)
             if isinstance(action, RejectBidAction):
                 bid.active = False
-                bidder.committed_money -= bid.amount
+                bidder.committed_money = max(0, bidder.committed_money - bid.amount)
                 self._message(world, actor.farm_id, bidder.farm_id, "bid_rejected", f"Your bid on rock #{listing.rock_id} was rejected.", bid.bid_id)
                 return {"bid_id": bid.bid_id}, (listing.rock_id,), f"Rejected bid {bid.bid_id}."
             if bidder.money < bid.amount:
@@ -302,6 +309,6 @@ class EconomyTransactionManager:
     @staticmethod
     def _release_trade(world, offer):
         sender = world.farm(offer.sender_farm_id)
-        sender.committed_money -= offer.offered_money
+        sender.committed_money = max(0, sender.committed_money - offer.offered_money)
         for rock_id in offer.offered_rock_ids:
             world.release_rock(rock_id, offer.offer_id)

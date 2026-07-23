@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .training_job_status import TERMINAL_JOB_STATES, TrainingJobState, TrainingJobStatus
+from .worker_heartbeat import HeartbeatHealth, classify_heartbeat
 
 
 def atomic_write_json(path: str | Path, payload: dict) -> None:
@@ -48,4 +49,38 @@ class TrainingProgressReader:
         if status.status in TERMINAL_JOB_STATES or not status.last_heartbeat_time: return None
         heartbeat = datetime.fromisoformat(status.last_heartbeat_time)
         age = (datetime.now(timezone.utc) - heartbeat).total_seconds()
-        return f"Worker heartbeat is stale by {age:.0f} seconds" if age > stale_seconds else None
+        health = classify_heartbeat(
+            age,
+            process_alive=self._process_alive(status.process_id),
+            failed=status.status is TrainingJobState.FAILED,
+            slow_seconds=min(30.0, stale_seconds / 2),
+            stagnant_seconds=stale_seconds,
+        )
+        if health is HeartbeatHealth.HEALTHY:
+            return None
+        label = "stale (stagnant)" if health is HeartbeatHealth.STAGNANT else health.value
+        return f"Worker heartbeat is {label} (last update {age:.0f} seconds ago during {status.heartbeat_phase or 'unknown phase'})"
+
+    def heartbeat_health(self, slow_seconds: float = 30.0, stagnant_seconds: float = 120.0) -> HeartbeatHealth:
+        status = self.status()
+        if status.status is TrainingJobState.FAILED:
+            return HeartbeatHealth.FAILED
+        if not status.last_heartbeat_time:
+            return HeartbeatHealth.ORPHANED if status.status not in TERMINAL_JOB_STATES else HeartbeatHealth.HEALTHY
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(status.last_heartbeat_time)).total_seconds()
+        return classify_heartbeat(
+            age,
+            process_alive=self._process_alive(status.process_id),
+            slow_seconds=slow_seconds,
+            stagnant_seconds=stagnant_seconds,
+        )
+
+    @staticmethod
+    def _process_alive(process_id: int | None) -> bool:
+        if not process_id:
+            return True
+        try:
+            os.kill(int(process_id), 0)
+            return True
+        except (OSError, ValueError):
+            return False

@@ -68,6 +68,12 @@ class TrainingJobStatus:
     worlds_evaluated: int = 0
     invalid_action_rate: float | None = None
     market_transaction_rate: float | None = None
+    heartbeat_health: str = "healthy"
+    heartbeat_phase: str | None = None
+    current_genome_id: str | None = None
+    current_scenario_id: str | None = None
+    current_world_turn: int | None = None
+    last_completed_operation: str | None = None
 
     def transition(self, status: TrainingJobState, **changes: Any) -> "TrainingJobStatus":
         if status != self.status and status not in LEGAL_TRANSITIONS[self.status]:

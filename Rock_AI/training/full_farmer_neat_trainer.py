@@ -11,6 +11,7 @@ import neat
 
 from Rock_AI.actions.action_schema import ActionObservationSchema
 from Rock_AI.agents.full_neat_farmer_agent import FullNeatFarmerAgent
+from Rock_AI.environments.episode_liveness_helper import EpisodeLivenessLimits, EpisodeTerminationReason
 from Rock_AI.environments.multi_farm_economy_environment import MultiFarmEconomyConfig, MultiFarmEconomyEnvironment
 from Rock_AI.neat.neat_export_helper import export_recurrent_genome, save_recurrent_artifact
 from Rock_AI.neat.neat_genome_helper import BoundedRecurrentGenome
@@ -20,6 +21,7 @@ from Rock_AI.policies.market_action_policy_adapter import LegalFarmerActionGener
 from Rock_AI.policies.recurrent_neat_farmer_policy import FULL_FARMER_OBSERVATION_SCHEMA_VERSION, RecurrentNeatFarmerPolicy
 from Rock_AI.training.recurrent_neat_training_helper import TrainingCancelled, _write_config
 from Rock_AI.training_jobs.training_progress_reader import atomic_write_json
+from Rock_AI.training_jobs.worker_heartbeat import BackgroundHeartbeat, HeartbeatPhase, TimedHeartbeat
 
 from .action_curriculum import availability_for_stage
 from .full_farmer_fitness import farm_objective_utility, normalized_campaign_fitness
@@ -27,6 +29,28 @@ from .full_farmer_training_config import FullFarmerTrainingConfig
 from .full_farmer_training_state import FullFarmerTrainingState, should_advance_curriculum
 from .multi_agent_scenario_manager import MultiAgentScenarioManager
 from .opponent_pool import OpponentPool
+from .stagnation_diagnostic_helper import write_stagnation_diagnostic
+
+
+class HeartbeatCheckpointer(neat.Checkpointer):
+    """NEAT checkpointer that keeps durable workers visibly alive during I/O."""
+
+    def __init__(self, *args, heartbeat=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.heartbeat = heartbeat
+
+    def save_checkpoint(self, config, population, species_set, generation):
+        if self.heartbeat:
+            self.heartbeat(HeartbeatPhase.CHECKPOINT_WRITING, force=True, operation="checkpoint_started", checkpoint_generation=generation)
+        result = super().save_checkpoint(config, population, species_set, generation)
+        if self.heartbeat:
+            self.heartbeat(HeartbeatPhase.CHECKPOINT_WRITING, force=True, operation="checkpoint_completed", checkpoint_generation=generation)
+        return result
+
+    def __getstate__(self):
+        state = dict(self.__dict__)
+        state["heartbeat"] = None
+        return state
 
 
 class FullFarmerNeatTrainer:
@@ -51,6 +75,9 @@ class FullFarmerNeatTrainer:
         self.generation = int(starting_generation)
         self.metrics = []
         self.progress_callback = progress_callback
+        self.heartbeat = TimedHeartbeat(lambda event: self._emit(event), config.heartbeat_interval_seconds)
+        self.background_heartbeat = BackgroundHeartbeat(lambda event: self._emit(event), config.heartbeat_interval_seconds)
+        self.run_metadata = {}
         self.cancel_path = Path(cancel_path) if cancel_path else None
         state_path = self.output / "full_farmer_training_state.json"
         if allow_existing and state_path.exists():
@@ -76,6 +103,7 @@ class FullFarmerNeatTrainer:
             "topology_implementation_version": 1, "fitness_implementation_version": 2,
         }
         metadata.update(extra or {})
+        self.run_metadata = metadata
         atomic_write_json(self.output / "run_manifest.json", metadata)
         return metadata
 
@@ -86,6 +114,13 @@ class FullFarmerNeatTrainer:
     def _emit(self, event):
         if self.progress_callback:
             self.progress_callback(event)
+
+    def _pulse(self, phase, *, force=False, **payload):
+        self.background_heartbeat.update(phase, generation=self.generation, **payload)
+        self.heartbeat.pulse(phase, force=force, generation=self.generation, **payload)
+
+    def _environment_heartbeat(self, phase, payload):
+        self._pulse(phase, **payload)
 
     def _artifact(self, genome, *, generation=None):
         return export_recurrent_genome(
@@ -102,6 +137,7 @@ class FullFarmerNeatTrainer:
         )
 
     def _evaluate_genome(self, genome, *, scenario_seed=None):
+        self._pulse(HeartbeatPhase.GENOME_EVALUATION, force=True, genome_id=genome.key, operation="genome_started")
         artifact = self._artifact(genome)
         scores = []
         definitions = self.scenarios.scenarios(scenario_seed if scenario_seed is not None else self.training_config.seed + self.generation * 100_003, self.training_config.worlds_per_genome)
@@ -109,6 +145,7 @@ class FullFarmerNeatTrainer:
         action_total = 0
         market_total = 0
         for scenario_index, definition in enumerate(definitions):
+            self._pulse(HeartbeatPhase.SCENARIO_EVALUATION, force=True, genome_id=genome.key, scenario_id=scenario_index, operation="scenario_started")
             world = self.scenarios.build(definition)
             farm_ids = sorted(world.farms)
             policy = RecurrentNeatFarmerPolicy(artifact, checkpoint_id="in-memory")
@@ -118,32 +155,76 @@ class FullFarmerNeatTrainer:
                 agents[farm_id] = opponent
             for index, (farm_id, agent) in enumerate(sorted(agents.items())):
                 agent.reset(definition.seed + 20_000 + index, f"train-{self.generation}-{scenario_index}")
-            env = MultiFarmEconomyEnvironment(definition.seed, MultiFarmEconomyConfig(max_world_turns=self.training_config.max_rounds_per_world))
+            liveness_limits = EpisodeLivenessLimits(
+                maximum_world_turns=self.training_config.max_rounds_per_world,
+                maximum_decisions_per_farm=self.training_config.maximum_decisions_per_farm,
+                maximum_no_progress_rounds=self.training_config.maximum_no_progress_rounds,
+                maximum_consecutive_passes=self.training_config.maximum_consecutive_passes,
+                maximum_failed_transactions=self.training_config.maximum_failed_transactions,
+                maximum_wall_clock_seconds=self.training_config.maximum_episode_wall_clock_seconds,
+                cycle_history_size=self.training_config.cycle_history_size,
+                cycle_repeat_limit=self.training_config.cycle_repeat_limit,
+            )
+            env = MultiFarmEconomyEnvironment(
+                definition.seed,
+                MultiFarmEconomyConfig(max_world_turns=self.training_config.max_rounds_per_world, liveness_limits=liveness_limits),
+                heartbeat_callback=self._environment_heartbeat,
+            )
             env.reset(initial_world=world)
-            env.candidate_generator = LegalFarmerActionGenerator(availability=availability_for_stage(self.curriculum_stage))
+            env.candidate_generator = LegalFarmerActionGenerator(
+                limits=env.config.candidate_limits,
+                availability=availability_for_stage(self.curriculum_stage),
+                heartbeat_callback=self._environment_heartbeat,
+            )
             env.observation_adapter.candidate_generator = env.candidate_generator
             initial = farm_objective_utility(env.world.farm(farm_ids[0]))
             invalid = 0
-            for _ in range(self.training_config.max_rounds_per_world):
-                selected = {}
-                for farm_id, agent in agents.items():
-                    observation = env.observe(farm_id, recurrent_state=getattr(getattr(agent, "policy", None), "state", None))
-                    selected[farm_id] = agent.choose_candidate(observation)
-                result = env.resolve_round(selected)
-                by_farm = {row.actor_farm_id: row for row in result.action_results}
-                for farm_id, agent in agents.items():
-                    agent.observe_result(selected[farm_id], by_farm[farm_id])
-                    invalid += int(not by_farm[farm_id].success and farm_id == farm_ids[0])
-                action_total += 1
-                invalid_total += int(not by_farm[farm_ids[0]].success)
-                if selected[farm_ids[0]].action.action_type.value not in {"breed_pair", "stop_breeding", "pass_turn"} and by_farm[farm_ids[0]].success:
-                    market_total += 1
-                if env.terminated:
-                    break
-            score = normalized_campaign_fitness(env.world, farm_ids[0], initial) - invalid * .25
+            active_farm = None
+            try:
+                for round_index in range(self.training_config.max_rounds_per_world):
+                    self._pulse(HeartbeatPhase.WORLD_EPISODE, genome_id=genome.key, scenario_id=scenario_index, world_turn=env.world.turn, operation="round_observation")
+                    selected = {}
+                    for farm_id, agent in agents.items():
+                        active_farm = farm_id
+                        observation = env.observe(farm_id, recurrent_state=getattr(getattr(agent, "policy", None), "state", None))
+                        selected[farm_id] = agent.choose_candidate(observation)
+                    result = env.resolve_round(selected)
+                    by_farm = {row.actor_farm_id: row for row in result.action_results}
+                    for farm_id, agent in agents.items():
+                        agent.observe_result(selected[farm_id], by_farm[farm_id])
+                        invalid += int(not by_farm[farm_id].success and farm_id == farm_ids[0])
+                    action_total += 1
+                    invalid_total += int(not by_farm[farm_ids[0]].success)
+                    if selected[farm_ids[0]].action.action_type.value not in {"breed_pair", "stop_breeding", "pass_turn"} and by_farm[farm_ids[0]].success:
+                        market_total += 1
+                    if env.terminated:
+                        break
+            except Exception as error:
+                env._terminate(EpisodeTerminationReason.ENVIRONMENT_FAILURE)
+                write_stagnation_diagnostic(
+                    self.output, job_id=self.run_metadata.get("training_job_id"), generation=self.generation,
+                    genome_id=genome.key, scenario_id=scenario_index, active_farm=active_farm,
+                    environment=env, error=error,
+                )
+            diagnostic_reasons = {
+                EpisodeTerminationReason.WALL_CLOCK_TIMEOUT,
+                EpisodeTerminationReason.STATE_CYCLE,
+                EpisodeTerminationReason.ECONOMY_STALLED,
+                EpisodeTerminationReason.MAX_FAILED_TRANSACTIONS,
+                EpisodeTerminationReason.ENVIRONMENT_FAILURE,
+            }
+            if env.termination_reason in diagnostic_reasons:
+                write_stagnation_diagnostic(
+                    self.output, job_id=self.run_metadata.get("training_job_id"), generation=self.generation,
+                    genome_id=genome.key, scenario_id=scenario_index, active_farm=active_farm,
+                    environment=env,
+                )
+            score = env.terminal_fitness(normalized_campaign_fitness(env.world, farm_ids[0], initial) - invalid * .25)
             scores.append(score)
+            self._pulse(HeartbeatPhase.SCENARIO_EVALUATION, force=True, genome_id=genome.key, scenario_id=scenario_index, world_turn=env.world.turn, operation="scenario_completed")
         complexity = len(genome.nodes) + sum(connection.enabled for connection in genome.connections.values())
         score = sum(scores) / max(1, len(scores)) - self.training_config.complexity_penalty * complexity
+        self._pulse(HeartbeatPhase.GENOME_EVALUATION, force=True, genome_id=genome.key, operation="genome_completed")
         return score, {
             "invalid_action_rate": invalid_total / max(1, action_total),
             "market_transaction_rate": market_total / max(1, action_total),
@@ -178,8 +259,9 @@ class FullFarmerNeatTrainer:
             self._cancel_if_requested()
             try:
                 genome.fitness, detail = self._evaluate_genome(genome)
-            except Exception:
+            except Exception as error:
                 genome.fitness = -10.0; detail = {"invalid_action_rate": 1.0, "market_transaction_rate": 0.0, "worlds_evaluated": 0}
+                self._emit({"event_type": "genome_evaluation_failed", "generation": self.generation, "genome_id": genome.key, "summary": f"{type(error).__name__}: {error}"})
             values.append(genome.fitness)
             details.append(detail)
             self._emit({"event_type": "genome_evaluation_progress", "generation": self.generation, "completed": index + 1, "total": len(ordered)})
@@ -215,8 +297,16 @@ class FullFarmerNeatTrainer:
         self._cancel_if_requested()
         for reporter in extra_reporters:
             population.add_reporter(reporter)
-        population.add_reporter(neat.Checkpointer(self.training_config.checkpoint_frequency, filename_prefix=str(self.output / "checkpoints" / "neat-checkpoint-")))
-        winner = population.run(self._fitness, generations)
+        population.add_reporter(HeartbeatCheckpointer(
+            self.training_config.checkpoint_frequency,
+            filename_prefix=str(self.output / "checkpoints" / "neat-checkpoint-"),
+            heartbeat=self._pulse,
+        ))
+        self.background_heartbeat.start()
+        try:
+            winner = population.run(self._fitness, generations)
+        finally:
+            self.background_heartbeat.stop()
         artifact = self._artifact(winner, generation=self.generation - 1)
         champion = self.output / "champions" / "best_validation"
         champion.mkdir(parents=True, exist_ok=True)
